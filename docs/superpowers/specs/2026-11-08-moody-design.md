@@ -247,3 +247,20 @@ equalizer preset values.
 
 ## Open (owner)
 - The GitHub repository that will host releases. It must be public.
+
+## Visual direction (unslop pass, requested by the owner mid-build)
+- **Product:** plays your own videos and music offline, and keeps private clips behind a PIN.
+- **Character:** hushed, warm, exact.
+- **World:** a late-night screening room, with projector light, film stock, an amber lamp and dark seats.
+- **Moments:** the real video thumbnails and album art carry the colour. The onboarding and empty-state illustrations
+  are the only painted scenes. Header backgrounds are quiet hairline drawings (a horizon and a moon outline) at low
+  opacity. There are no glows, grain, blobs or radial washes.
+- **Signature:** the "reel line", a thin 2 dp amber progress line. It is used for resume position, seek, scanning,
+  downloads and vault moves, and nowhere else.
+- **Rules:**
+  - Sentence-case labels, with no uppercase tracked labels. This deliberately overrides the mockup's `.sec-title`.
+  - Weights 400 and 500, with 600 used rarely.
+  - Radii: controls 10, cards and thumbnails 12–14, sheets 20.
+  - Spacing on a 4 dp grid.
+  - The amber accent appears only on the primary action, the selection and the reel line.
+  - Copy has no exclamation marks and no trailing periods on short strings.
