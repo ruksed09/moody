@@ -121,6 +121,17 @@ class ScreenshotTest {
         com.moody.player.ui.music.MusicContent(com.moody.player.ui.music.MusicUiState(loading = false), com.moody.player.ui.music.MusicTab.SONGS, null, true, true, musicNav, {}, { _, _ -> }, {}, {}, {})
     }
 
+    private fun lock() = com.moody.player.data.vault.VaultLock(
+        org.robolectric.RuntimeEnvironment.getApplication(),
+        com.moody.player.data.prefs.SettingsStore(org.robolectric.RuntimeEnvironment.getApplication()),
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined),
+    )
+
+    @Test fun vaultSetupDark() = shot("vault-setup-dark", ThemeMode.DARK) { com.moody.player.ui.vault.VaultSetupScreen(lock(), {}) }
+    @Test fun vaultUnlockLight() = shot("vault-unlock-light", ThemeMode.LIGHT) {
+        com.moody.player.ui.vault.VaultUnlockScreen(lock(), com.moody.player.data.vault.VaultInfo(true, 4, "Name of your first pet"), {})
+    }
+
     @Test fun videoFoldersDark() = shot("video-folders-dark", ThemeMode.DARK) { VideoLibraryContent(state(VideoView.FOLDERS), noop, nav) }
     @Test fun videoFoldersLight() = shot("video-folders-light", ThemeMode.LIGHT) { VideoLibraryContent(state(VideoView.FOLDERS), noop, nav) }
     @Test fun videoAllListDark() = shot("video-all-list-dark", ThemeMode.DARK) { VideoLibraryContent(state(VideoView.ALL, LayoutMode.LIST), noop, nav) }

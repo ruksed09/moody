@@ -33,6 +33,11 @@ import com.moody.player.ui.music.SongListScreen
 import com.moody.player.ui.music.NowPlayingScreen
 import com.moody.player.ui.nav.Routes
 import com.moody.player.ui.rememberVideoNav
+import com.moody.player.ui.vault.VaultRoute
+import com.moody.player.ui.vault.rememberHideFlow
+import com.moody.player.data.vault.VaultManager
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
@@ -41,6 +46,7 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var settingsStore: SettingsStore
     @Inject lateinit var media: MediaRepository
     @Inject lateinit var music: MusicController
+    @Inject lateinit var vault: VaultManager
 
     /** Bumped when a notification asks to open Now Playing. */
     private var openNowPlaying by mutableIntStateOf(0)
@@ -50,6 +56,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         if (intent?.getBooleanExtra(EXTRA_OPEN_NOW_PLAYING, false) == true) openNowPlaying++
+        lifecycleScope.launch { vault.recoverInterruptedMoves() }
         setContent {
             val settings by settingsStore.settings.collectAsStateWithLifecycle(Settings())
             val musicState by music.state.collectAsStateWithLifecycle()
@@ -60,7 +67,7 @@ class MainActivity : ComponentActivity() {
                         LaunchedEffect(openNowPlaying) { if (openNowPlaying > 0) nav.navigate(Routes.NOW_PLAYING) { launchSingleTop = true } }
                         rememberVideoNav(
                             nav,
-                            onHide = { _, done -> done() },
+                            onHide = rememberHideFlow(onNeedsSetup = { nav.navigate(Routes.VAULT) { launchSingleTop = true } }),
                             onRequestAccess = {},
                             onChanged = { media.refreshAccess() },
                         )
@@ -85,6 +92,9 @@ class MainActivity : ComponentActivity() {
                         MiniPlayer(musicState, onOpen = { nav.navigate(Routes.NOW_PLAYING) { launchSingleTop = true } }, onToggle = music::toggle, onNext = music::next)
                     },
                     extraRoutes = { nav ->
+                        composable(Routes.VAULT) {
+                            VaultRoute(hiltViewModel(), onBack = { nav.popBackStack() })
+                        }
                         composable(Routes.NOW_PLAYING) {
                             var eq by remember { mutableStateOf(false) }
                             NowPlayingScreen(hiltViewModel(), onClose = { nav.popBackStack() }, onEqualizer = { eq = true })
