@@ -216,7 +216,8 @@ class PlayerActivity : ComponentActivity() {
         if (isFinishing || inPip) return
         val st = vm.engine.state.value
         if (vm.settings.value.backgroundPlay && st.playing && !vm.isVault) {
-            VideoBackgroundService.start(this, vm.current?.title.orEmpty())
+            // Android 12+ can refuse a foreground start once the app is in the background; pause rather than crash.
+            runCatching { VideoBackgroundService.start(this, vm.current?.title.orEmpty()) }.onFailure { vm.engine.pause() }
         } else {
             vm.engine.pause()
         }
