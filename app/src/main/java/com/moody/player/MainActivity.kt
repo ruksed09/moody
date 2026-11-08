@@ -15,6 +15,7 @@ import com.moody.player.design.illustrations.EmptyMusic
 import com.moody.player.ui.AppSlots
 import com.moody.player.ui.MoodyRoot
 import com.moody.player.ui.nav.Routes
+import com.moody.player.ui.player.openVideo
 import com.moody.player.ui.video.VideoNav
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
@@ -36,7 +37,7 @@ class MainActivity : ComponentActivity() {
                     videoNav = { nav ->
                         VideoNav(
                             openFolder = { nav.navigate(Routes.folder(it)) },
-                            play = { _, _ -> },
+                            play = { list, i -> openVideo(list.map { it.uri }, i, titles = list.map { it.title }) },
                             openVault = {},
                             openSettings = {},
                             openStream = {},

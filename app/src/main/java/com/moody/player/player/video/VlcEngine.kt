@@ -1,0 +1,292 @@
+package com.moody.player.player.video
+
+import android.content.Context
+import android.net.Uri
+import android.os.ParcelFileDescriptor
+import com.moody.player.domain.Aspect
+import com.moody.player.domain.Decoder
+import com.moody.player.domain.SubBg
+import com.moody.player.domain.SubSize
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import org.videolan.libvlc.LibVLC
+import org.videolan.libvlc.Media
+import org.videolan.libvlc.MediaPlayer
+import org.videolan.libvlc.interfaces.IMedia
+import org.videolan.libvlc.util.VLCVideoLayout
+import javax.inject.Inject
+import javax.inject.Singleton
+
+data class Track(val id: Int, val name: String)
+
+data class PlayerState(
+    val uri: Uri? = null,
+    val playing: Boolean = false,
+    val buffering: Boolean = true,
+    val positionMs: Long = 0,
+    val durationMs: Long = 0,
+    val ended: Boolean = false,
+    val error: String? = null,
+    val audioTracks: List<Track> = emptyList(),
+    val subTracks: List<Track> = emptyList(),
+    val selectedAudio: Int = -1,
+    val selectedSub: Int = -1,
+    val videoWidth: Int = 0,
+    val videoHeight: Int = 0,
+    val rate: Float = 1f,
+    val aspect: Aspect = Aspect.FIT,
+    val decoder: Decoder = Decoder.HW,
+    val audioDelayMs: Long = 0,
+    val subDelayMs: Long = 0,
+)
+
+/** Subtitle look is fixed per LibVLC instance, so a change rebuilds the instance before the next open. */
+data class SubStyle(val size: SubSize = SubSize.M, val bg: SubBg = SubBg.SHADOW, val color: Long = 0xFFFFFAF2)
+
+sealed interface EngineEvent {
+    data object SwitchedToSoftware : EngineEvent
+    data object Ended : EngineEvent
+}
+
+/**
+ * The video engine: one libVLC player shared by the player screen and the background service.
+ * Every call is made on the main thread.
+ */
+@Singleton
+class VlcEngine @Inject constructor(@ApplicationContext private val context: Context) {
+    private var libVlc: LibVLC? = null
+    private var player: MediaPlayer? = null
+    private var style: SubStyle? = null
+    private var fd: ParcelFileDescriptor? = null
+    private var layout: VLCVideoLayout? = null
+    private var triedSoftware = false
+    private var lastOpen: Triple<Uri, Long, Decoder>? = null
+
+    private val _state = MutableStateFlow(PlayerState())
+    val state: StateFlow<PlayerState> = _state.asStateFlow()
+    private val _events = MutableSharedFlow<EngineEvent>(extraBufferCapacity = 4)
+    val events: SharedFlow<EngineEvent> = _events.asSharedFlow()
+
+    val audioSessionActive: Boolean get() = player?.isPlaying == true
+
+    private fun options(s: SubStyle): ArrayList<String> = arrayListOf(
+        "--audio-time-stretch",
+        "--avcodec-skiploopfilter=1",
+        "--freetype-rel-fontsize=${s.size.vlcRelSize}",
+        "--freetype-color=${(s.color and 0xFFFFFF).toInt()}",
+        "--freetype-outline-thickness=${if (s.bg == SubBg.SHADOW) 4 else 0}",
+        "--freetype-shadow-opacity=${if (s.bg == SubBg.SHADOW) 160 else 0}",
+        "--freetype-background-opacity=${when (s.bg) { SubBg.SHADOW -> 0; SubBg.SOFT -> 128; SubBg.SOLID -> 255 }}",
+        "--freetype-background-color=0",
+        "--sub-autodetect-fuzzy=3",
+        "--network-caching=1500",
+    )
+
+    private fun ensure(s: SubStyle): MediaPlayer {
+        val p = player
+        if (p != null && style == s) return p
+        val wasAttached = layout
+        releasePlayer()
+        val lib = LibVLC(context, options(s))
+        val mp = MediaPlayer(lib)
+        mp.setEventListener(::onEvent)
+        libVlc = lib
+        player = mp
+        style = s
+        wasAttached?.let { mp.attachViews(it, null, true, false) }
+        return mp
+    }
+
+    fun attach(view: VLCVideoLayout) {
+        if (layout === view) return
+        player?.let { if (layout != null) it.detachViews(); it.attachViews(view, null, true, false) }
+        layout = view
+        applyAspect(_state.value.aspect)
+    }
+
+    fun detach(view: VLCVideoLayout) {
+        if (layout !== view) return
+        player?.detachViews()
+        layout = null
+    }
+
+    fun open(uri: Uri, startMs: Long, decoder: Decoder, subStyle: SubStyle, extraSubtitle: Uri? = null) {
+        val mp = ensure(subStyle)
+        val lib = libVlc ?: return
+        triedSoftware = decoder == Decoder.SW
+        lastOpen = Triple(uri, startMs, decoder)
+        fd?.close(); fd = null
+        val media = when (uri.scheme) {
+            "content" -> {
+                val pfd = try { context.contentResolver.openFileDescriptor(uri, "r") } catch (e: Exception) { null }
+                if (pfd == null) {
+                    _state.value = PlayerState(uri = uri, buffering = false, error = "Moody could not open this file. It may have been moved or deleted.")
+                    return
+                }
+                fd = pfd
+                Media(lib, pfd.fileDescriptor)
+            }
+            else -> Media(lib, uri)
+        }
+        when (decoder) {
+            Decoder.SW -> media.setHWDecoderEnabled(false, false)
+            Decoder.HW -> media.setHWDecoderEnabled(true, false)
+            Decoder.HW_PLUS -> media.setHWDecoderEnabled(true, true)
+        }
+        if (startMs > 0) media.addOption(":start-time=${startMs / 1000.0}")
+        mp.media = media
+        media.release()
+        extraSubtitle?.let { mp.addSlave(IMedia.Slave.Type.Subtitle, it, true) }
+        val keep = _state.value
+        _state.value = PlayerState(uri = uri, positionMs = startMs, buffering = true, rate = keep.rate, aspect = keep.aspect, decoder = decoder)
+        mp.rate = keep.rate
+        mp.play()
+    }
+
+    private fun onEvent(e: MediaPlayer.Event) {
+        val mp = player ?: return
+        when (e.type) {
+            MediaPlayer.Event.Playing -> _state.update { it.copy(playing = true, buffering = false, ended = false, error = null) }
+            MediaPlayer.Event.Paused -> _state.update { it.copy(playing = false) }
+            MediaPlayer.Event.Stopped -> _state.update { it.copy(playing = false) }
+            MediaPlayer.Event.Buffering -> _state.update { it.copy(buffering = e.buffering < 100f) }
+            MediaPlayer.Event.TimeChanged -> _state.update { it.copy(positionMs = e.timeChanged, buffering = false) }
+            MediaPlayer.Event.LengthChanged -> _state.update { it.copy(durationMs = e.lengthChanged) }
+            MediaPlayer.Event.EndReached -> {
+                _state.update { it.copy(playing = false, ended = true, positionMs = it.durationMs) }
+                _events.tryEmit(EngineEvent.Ended)
+            }
+            MediaPlayer.Event.EncounteredError -> onError()
+            MediaPlayer.Event.ESAdded, MediaPlayer.Event.ESDeleted, MediaPlayer.Event.ESSelected, MediaPlayer.Event.Vout -> refreshTracks(mp)
+        }
+    }
+
+    private fun onError() {
+        val last = lastOpen
+        if (!triedSoftware && last != null) {
+            triedSoftware = true
+            _events.tryEmit(EngineEvent.SwitchedToSoftware)
+            open(last.first, _state.value.positionMs, com.moody.player.domain.Decoder.SW, style ?: SubStyle())
+            return
+        }
+        _state.update { it.copy(playing = false, buffering = false, error = "This file could not be played. It may be damaged or use a format Moody can't read.") }
+    }
+
+    private fun refreshTracks(mp: MediaPlayer) {
+        val v = mp.currentVideoTrack
+        _state.update {
+            it.copy(
+                audioTracks = mp.audioTracks?.map { t -> Track(t.id, t.name) }.orEmpty(),
+                subTracks = mp.spuTracks?.map { t -> Track(t.id, t.name) }.orEmpty(),
+                selectedAudio = mp.audioTrack,
+                selectedSub = mp.spuTrack,
+                videoWidth = v?.width ?: it.videoWidth,
+                videoHeight = v?.height ?: it.videoHeight,
+            )
+        }
+    }
+
+    fun play() {
+        val mp = player ?: return
+        if (_state.value.ended) { mp.stop(); lastOpen?.let { open(it.first, 0, it.third, style ?: SubStyle()) }; return }
+        mp.play()
+    }
+
+    fun pause() { player?.pause() }
+    fun toggle() { if (_state.value.playing) pause() else play() }
+
+    fun seekTo(ms: Long) {
+        val mp = player ?: return
+        val d = _state.value.durationMs
+        val target = if (d > 0) ms.coerceIn(0, d - 500) else ms.coerceAtLeast(0)
+        mp.setTime(target, false)
+        _state.update { it.copy(positionMs = target, ended = false) }
+    }
+
+    fun seekBy(deltaMs: Long) = seekTo(_state.value.positionMs + deltaMs)
+
+    fun setRate(r: Float) {
+        player?.rate = r
+        _state.update { it.copy(rate = r) }
+    }
+
+    fun setAspect(a: Aspect) {
+        _state.update { it.copy(aspect = a) }
+        applyAspect(a)
+    }
+
+    private fun applyAspect(a: Aspect) {
+        val mp = player ?: return
+        mp.videoScale = when (a) {
+            Aspect.FIT -> MediaPlayer.ScaleType.SURFACE_BEST_FIT
+            Aspect.FILL -> MediaPlayer.ScaleType.SURFACE_FIT_SCREEN
+            Aspect.STRETCH -> MediaPlayer.ScaleType.SURFACE_FILL
+            Aspect.R16_9 -> MediaPlayer.ScaleType.SURFACE_16_9
+            Aspect.R4_3 -> MediaPlayer.ScaleType.SURFACE_4_3
+            Aspect.ORIGINAL -> MediaPlayer.ScaleType.SURFACE_ORIGINAL
+        }
+    }
+
+    /** Free zoom for pinch: 0 = fit, otherwise a scale factor relative to the video's native size. */
+    fun setZoom(scale: Float) { player?.scale = scale }
+
+    fun selectAudio(id: Int) { player?.let { it.audioTrack = id; refreshTracks(it) } }
+    fun selectSub(id: Int) { player?.let { it.spuTrack = id; refreshTracks(it) } }
+    fun addSubtitle(uri: Uri) { player?.addSlave(IMedia.Slave.Type.Subtitle, uri, true) }
+
+    fun setAudioDelayMs(ms: Long) { player?.audioDelay = ms * 1000; _state.update { it.copy(audioDelayMs = ms) } }
+    fun setSubDelayMs(ms: Long) { player?.spuDelay = ms * 1000; _state.update { it.copy(subDelayMs = ms) } }
+
+    /** [preset] index from [equalizerPresets], or custom [bands] in dB; both null turns the equalizer off. */
+    fun setEqualizer(preset: Int?, bands: FloatArray?, preamp: Float? = null) {
+        val mp = player ?: return
+        when {
+            bands != null -> {
+                val eq = MediaPlayer.Equalizer.create()
+                bands.forEachIndexed { i, v -> eq.setAmp(i, v) }
+                preamp?.let { eq.setPreAmp(it) }
+                mp.setEqualizer(eq)
+            }
+            preset != null -> mp.setEqualizer(MediaPlayer.Equalizer.createFromPreset(preset))
+            else -> mp.setEqualizer(null)
+        }
+    }
+
+    fun equalizerPresets(): List<String> = (0 until MediaPlayer.Equalizer.getPresetCount()).map { MediaPlayer.Equalizer.getPresetName(it) }
+    fun equalizerBands(): List<Float> = (0 until MediaPlayer.Equalizer.getBandCount()).map { MediaPlayer.Equalizer.getBandFrequency(it) }
+    fun presetAmps(preset: Int): FloatArray {
+        val eq = MediaPlayer.Equalizer.createFromPreset(preset)
+        return FloatArray(MediaPlayer.Equalizer.getBandCount()) { eq.getAmp(it) }
+    }
+
+    fun stop() {
+        player?.stop()
+        fd?.close(); fd = null
+        _state.update { it.copy(playing = false) }
+    }
+
+    private fun releasePlayer() {
+        player?.let {
+            it.setEventListener(null)
+            if (layout != null) it.detachViews()
+            it.stop()
+            it.release()
+        }
+        libVlc?.release()
+        player = null
+        libVlc = null
+        fd?.close(); fd = null
+    }
+
+    fun release() {
+        releasePlayer()
+        layout = null
+        _state.value = PlayerState()
+    }
+}
