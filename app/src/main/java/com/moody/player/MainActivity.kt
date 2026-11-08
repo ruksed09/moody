@@ -42,6 +42,9 @@ import kotlinx.coroutines.flow.first
 import com.moody.player.ui.onboarding.OnboardingFlow
 import com.moody.player.ui.onboarding.PermissionsScreen
 import com.moody.player.ui.settings.SettingsScreen
+import com.moody.player.ui.update.UpdateDialogHost
+import com.moody.player.ui.update.UpdateSettingsRow
+import com.moody.player.data.update.UpdateManager
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
@@ -51,6 +54,7 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var media: MediaRepository
     @Inject lateinit var music: MusicController
     @Inject lateinit var vault: VaultManager
+    @Inject lateinit var updates: UpdateManager
 
     /** Bumped when a notification asks to open Now Playing. */
     private var openNowPlaying by mutableIntStateOf(0)
@@ -115,7 +119,7 @@ class MainActivity : ComponentActivity() {
                             SettingsScreen(
                                 hiltViewModel(), onBack = { nav.popBackStack() },
                                 onOpenVault = { nav.navigate(Routes.VAULT) { launchSingleTop = true } },
-                                updates = {},
+                                updates = { UpdateSettingsRow(updates, settings.lastUpdateCheck) { lifecycleScope.launch { updates.check(force = true) } } },
                             )
                         }
                         composable(Routes.VAULT) {
@@ -138,6 +142,12 @@ class MainActivity : ComponentActivity() {
                         }
                     },
                     startRoute = start,
+                    overlay = {
+                        if (settings.onboarded) {
+                            LaunchedEffect(Unit) { updates.check(force = false) }
+                            UpdateDialogHost(updates)
+                        }
+                    },
                 ),
             )
         }
