@@ -1,0 +1,19 @@
+<resources>
+    <style name="Theme.Moody" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/moody_bg</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+
+    <style name="Theme.Moody.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/moody_bg</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="postSplashScreenTheme">@style/Theme.Moody</item>
+    </style>
+
+    <style name="Theme.Moody.Player" parent="Theme.Moody">
+        <item name="android:windowBackground">@android:color/black</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+    </style>
+</resources>

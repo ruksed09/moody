@@ -1,0 +1,9 @@
+<!-- Moody mark: amber rounded square, a play glyph whose left edge curves in like a crescent. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="@color/moody_accent"
+        android:pathData="M41,30h26a11,11 0 0,1 11,11v26a11,11 0 0,1 -11,11h-26a11,11 0 0,1 -11,-11v-26a11,11 0 0,1 11,-11z" />
+    <path android:fillColor="@color/moody_ink"
+        android:pathData="M47,42.5 L65,54 L47,65.5 Q53,54 47,42.5Z" />
+</vector>
