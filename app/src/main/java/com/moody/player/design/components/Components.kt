@@ -310,8 +310,8 @@ fun ChoiceChip(text: String, selected: Boolean, onClick: () -> Unit, modifier: M
 
 /** Muted sentence-case section label. */
 @Composable
-fun SectionLabel(text: String, modifier: Modifier = Modifier, trailing: @Composable (() -> Unit)? = null) {
-    Row(modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 24.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+fun SectionLabel(text: String, modifier: Modifier = Modifier, inset: Dp = 16.dp, trailing: @Composable (() -> Unit)? = null) {
+    Row(modifier.fillMaxWidth().padding(start = inset, end = 8.dp, top = 24.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(text, style = MoodyTheme.type.section, color = MoodyTheme.colors.text3, modifier = Modifier.weight(1f))
         trailing?.invoke()
     }

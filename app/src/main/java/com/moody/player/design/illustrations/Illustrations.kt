@@ -52,6 +52,16 @@ private fun hills(w: Float, top: Float, bottom: Float, phase: Float, amp: Float)
     close()
 }
 
+private fun ridge(w: Float, top: Float, phase: Float, amp: Float): Path = Path().apply {
+    val steps = 24
+    for (i in 0..steps) {
+        val x = w * i / steps
+        val y = if (i == 0) top + amp * sin(phase)
+        else top + amp * sin(phase + i / steps.toFloat() * PI.toFloat() * 1.6f) * (0.6f + 0.4f * sin(i * 0.7f))
+        if (i == 0) moveTo(x, y) else lineTo(x, y)
+    }
+}
+
 /** Quiet header drawing behind a tab title. Fades into the page background at the bottom. */
 @Composable
 fun MoodBackdrop(kind: BackdropKind, modifier: Modifier = Modifier) {
@@ -62,13 +72,13 @@ fun MoodBackdrop(kind: BackdropKind, modifier: Modifier = Modifier) {
         val hair = Stroke(width = 1.dp.toPx())
         val line = c.text.copy(alpha = if (c.isDark) 0.08f else 0.10f)
 
-        // Moon outline, upper right.
-        drawPath(crescent(Offset(w * 0.84f, h * 0.24f), h * 0.11f, Offset(-h * 0.05f, -h * 0.03f)), c.accent.copy(alpha = 0.42f), style = hair)
+        // Moon outline, right of the title, clear of the top bar.
+        drawPath(crescent(Offset(w * 0.86f, h * 0.56f), h * 0.10f, Offset(-h * 0.045f, -h * 0.028f)), c.accent.copy(alpha = 0.42f), style = hair)
 
-        // Two horizon lines.
+        // Two horizon lines (open strokes, so no edge is drawn along the bottom).
         drawPath(hills(w, h * 0.70f, h, 0.4f, h * 0.05f), c.text.copy(alpha = 0.018f))
-        drawPath(hills(w, h * 0.70f, h, 0.4f, h * 0.05f), line, style = hair)
-        drawPath(hills(w, h * 0.80f, h, 2.1f, h * 0.035f), line, style = hair)
+        drawPath(ridge(w, h * 0.70f, 0.4f, h * 0.05f), line, style = hair)
+        drawPath(ridge(w, h * 0.80f, 2.1f, h * 0.035f), line, style = hair)
 
         when (kind) {
             BackdropKind.VIDEO -> filmRibbon(w, h, line)
