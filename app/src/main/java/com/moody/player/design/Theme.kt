@@ -17,7 +17,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
 val LocalMoodyColors = staticCompositionLocalOf { DarkColors }
-val LocalMoodyType = staticCompositionLocalOf { MoodyType() }
+val LocalMoodyType = staticCompositionLocalOf { moodyType() }
 
 object MoodyTheme {
     val colors: MoodyColors @Composable @ReadOnlyComposable get() = LocalMoodyColors.current
@@ -47,9 +47,9 @@ private fun animated(target: MoodyColors): MoodyColors {
 }
 
 @Composable
-fun MoodyTheme(mode: ThemeMode, content: @Composable () -> Unit) {
+fun MoodyTheme(mode: ThemeMode, fontMode: FontMode = FontMode.APP, content: @Composable () -> Unit) {
     val colors = animated(moodyColors(mode, isSystemInDarkTheme()))
-    val type = MoodyType()
+    val type = androidx.compose.runtime.remember(fontMode) { moodyType(fontMode) }
     val scheme = (if (colors.isDark) darkColorScheme() else lightColorScheme()).copy(
         primary = colors.accent, onPrimary = colors.accentInk,
         primaryContainer = colors.accentWash, onPrimaryContainer = colors.text,

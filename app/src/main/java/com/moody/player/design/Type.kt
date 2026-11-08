@@ -11,43 +11,62 @@ import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import com.moody.player.R
 
+/** Which typeface the app draws with: Moody's own (Geist) or whatever the phone uses. */
+enum class FontMode { APP, SYSTEM }
+
 @OptIn(ExperimentalTextApi::class)
-private fun variable(res: Int, weight: Int, vararg extra: FontVariation.Setting) = Font(
+private fun variable(res: Int, weight: Int) = Font(
     resId = res,
     weight = FontWeight(weight),
-    variationSettings = FontVariation.Settings(FontVariation.weight(weight), *extra),
+    variationSettings = FontVariation.Settings(FontVariation.weight(weight)),
 )
 
-@OptIn(ExperimentalTextApi::class)
-val Fraunces = FontFamily(
-    variable(R.font.fraunces, 400, FontVariation.Setting("opsz", 96f)),
-    variable(R.font.fraunces, 500, FontVariation.Setting("opsz", 96f)),
-    variable(R.font.fraunces, 600, FontVariation.Setting("opsz", 96f)),
-)
+/** Geist: a plain, even sans that stays out of the way of the pictures. OFL. */
+val Geist = FontFamily(variable(R.font.geist, 400), variable(R.font.geist, 500), variable(R.font.geist, 600))
 
-val Hanken = FontFamily(
-    variable(R.font.hanken_grotesk, 400),
-    variable(R.font.hanken_grotesk, 500),
-    variable(R.font.hanken_grotesk, 600),
-)
+/** Geist Mono for times, sizes and counts, so digits line up. OFL. */
+val GeistMono = FontFamily(variable(R.font.geist_mono, 400), variable(R.font.geist_mono, 500))
 
-val DmMono = FontFamily(
-    Font(R.font.dm_mono_regular, FontWeight.Normal),
-    Font(R.font.dm_mono_medium, FontWeight.Medium),
-)
+private const val TABULAR = "tnum"
 
 @Immutable
 data class MoodyType(
-    val hero: TextStyle = TextStyle(fontFamily = Fraunces, fontWeight = FontWeight.W500, fontSize = 34.sp, lineHeight = 38.sp, letterSpacing = (-0.015).em),
-    val display: TextStyle = TextStyle(fontFamily = Fraunces, fontWeight = FontWeight.W500, fontSize = 27.sp, lineHeight = 31.sp, letterSpacing = (-0.015).em),
-    val title: TextStyle = TextStyle(fontFamily = Fraunces, fontWeight = FontWeight.W500, fontSize = 20.sp, lineHeight = 25.sp, letterSpacing = (-0.01).em),
-    val heading: TextStyle = TextStyle(fontFamily = Hanken, fontWeight = FontWeight.W500, fontSize = 16.sp, lineHeight = 22.sp),
-    val body: TextStyle = TextStyle(fontFamily = Hanken, fontWeight = FontWeight.W400, fontSize = 15.sp, lineHeight = 22.sp),
-    val bodyStrong: TextStyle = TextStyle(fontFamily = Hanken, fontWeight = FontWeight.W500, fontSize = 14.sp, lineHeight = 19.sp),
-    val label: TextStyle = TextStyle(fontFamily = Hanken, fontWeight = FontWeight.W500, fontSize = 13.sp, lineHeight = 17.sp),
-    val caption: TextStyle = TextStyle(fontFamily = Hanken, fontWeight = FontWeight.W400, fontSize = 12.sp, lineHeight = 16.sp),
+    val hero: TextStyle,
+    val display: TextStyle,
+    val title: TextStyle,
+    val heading: TextStyle,
+    val body: TextStyle,
+    val bodyStrong: TextStyle,
+    val label: TextStyle,
+    val caption: TextStyle,
     /** Section labels: sentence case, muted, no wide tracking. */
-    val section: TextStyle = TextStyle(fontFamily = Hanken, fontWeight = FontWeight.W500, fontSize = 13.sp, lineHeight = 18.sp),
-    val mono: TextStyle = TextStyle(fontFamily = DmMono, fontWeight = FontWeight.W400, fontSize = 12.sp, lineHeight = 16.sp, letterSpacing = 0.02.em),
-    val monoSmall: TextStyle = TextStyle(fontFamily = DmMono, fontWeight = FontWeight.W400, fontSize = 10.5.sp, lineHeight = 13.sp, letterSpacing = 0.03.em),
+    val section: TextStyle,
+    val mono: TextStyle,
+    val monoSmall: TextStyle,
 )
+
+/**
+ * One sans family carries everything; hierarchy comes from size and colour, not weight.
+ * With [FontMode.SYSTEM] the phone's own font is used and figures switch to tabular digits instead of a mono face.
+ */
+fun moodyType(mode: FontMode = FontMode.APP): MoodyType {
+    val sans = if (mode == FontMode.APP) Geist else FontFamily.Default
+    val mono = if (mode == FontMode.APP) GeistMono else FontFamily.Default
+    fun s(size: Float, line: Float, weight: Int, tracking: Float = 0f, family: FontFamily = sans, features: String? = null) = TextStyle(
+        fontFamily = family, fontWeight = FontWeight(weight), fontSize = size.sp, lineHeight = line.sp,
+        letterSpacing = tracking.em, fontFeatureSettings = features,
+    )
+    return MoodyType(
+        hero = s(32f, 38f, 600, -0.025f),
+        display = s(25f, 31f, 600, -0.02f),
+        title = s(19f, 25f, 600, -0.01f),
+        heading = s(16f, 22f, 500, -0.005f),
+        body = s(15f, 22f, 400),
+        bodyStrong = s(15f, 20f, 500),
+        label = s(14f, 18f, 500),
+        caption = s(12.5f, 17f, 400),
+        section = s(13f, 18f, 500),
+        mono = s(12.5f, 16f, 400, family = mono, features = TABULAR),
+        monoSmall = s(11f, 14f, 400, 0.01f, family = mono, features = TABULAR),
+    )
+}

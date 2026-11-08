@@ -38,6 +38,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.moody.player.R
 import com.moody.player.design.MoodyTheme
 import com.moody.player.design.ThemeMode
@@ -87,7 +88,8 @@ class PlayerActivity : ComponentActivity() {
         setContent {
             val toaster = remember { Toaster() }
             LaunchedEffect(Unit) { vm.toasts.collect { toaster.show(it) } }
-            MoodyTheme(ThemeMode.DARK) {
+            val fontMode = vm.settings.collectAsStateWithLifecycle().value.fontMode
+            MoodyTheme(ThemeMode.DARK, fontMode) {
                 Box(Modifier.fillMaxSize()) {
                     PlayerScreen(
                         vm,

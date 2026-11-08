@@ -11,6 +11,7 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.moody.player.design.FontMode
 import com.moody.player.design.ThemeMode
 import com.moody.player.domain.Decoder
 import com.moody.player.domain.LayoutMode
@@ -28,6 +29,7 @@ import javax.inject.Singleton
 data class Settings(
     // Appearance
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
+    val fontMode: FontMode = FontMode.APP,
     val backgrounds: Boolean = true,
     val videoView: VideoView = VideoView.FOLDERS,
     val videoLayout: LayoutMode = LayoutMode.GRID,
@@ -63,6 +65,7 @@ private val Context.settingsStore: DataStore<Preferences> by preferencesDataStor
 
 private object K {
     val theme = stringPreferencesKey("theme")
+    val font = stringPreferencesKey("font")
     val backgrounds = booleanPreferencesKey("backgrounds")
     val videoView = stringPreferencesKey("video_view")
     val videoLayout = stringPreferencesKey("video_layout")
@@ -97,6 +100,7 @@ internal fun Preferences.toSettings(): Settings {
     val d = Settings()
     return Settings(
         themeMode = enum(K.theme, d.themeMode),
+        fontMode = enum(K.font, d.fontMode),
         backgrounds = this[K.backgrounds] ?: d.backgrounds,
         videoView = enum(K.videoView, d.videoView),
         videoLayout = enum(K.videoLayout, d.videoLayout),
@@ -126,6 +130,7 @@ internal fun Preferences.toSettings(): Settings {
 
 internal fun MutablePreferences.write(s: Settings) {
     this[K.theme] = s.themeMode.name
+    this[K.font] = s.fontMode.name
     this[K.backgrounds] = s.backgrounds
     this[K.videoView] = s.videoView.name
     this[K.videoLayout] = s.videoLayout.name

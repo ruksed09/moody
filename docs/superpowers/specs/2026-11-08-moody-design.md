@@ -264,3 +264,10 @@ equalizer preset values.
   - Spacing on a 4 dp grid.
   - The amber accent appears only on the primary action, the selection and the reel line.
   - Copy has no exclamation marks and no trailing periods on short strings.
+
+## Typeface change (owner request, mid-build)
+- The owner found Fraunces + Hanken Grotesk + DM Mono too "AI slop". They are replaced by **Geist** (UI and headings,
+  weights 400/500/600, slight negative tracking on large sizes) and **Geist Mono** (times, sizes, counts), both OFL
+  and bundled.
+- Settings > Appearance gets **Font: App font / System font**. System font uses the phone's typeface with tabular digits
+  for figures.

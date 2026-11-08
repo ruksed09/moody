@@ -51,7 +51,7 @@ data class AppSlots(
 
 @Composable
 fun MoodyRoot(settings: Settings, slots: AppSlots, toaster: Toaster = remember { Toaster() }) {
-    MoodyTheme(settings.themeMode) {
+    MoodyTheme(settings.themeMode, settings.fontMode) {
         CompositionLocalProvider(LocalToaster provides toaster) {
             val nav = rememberNavController()
             Box(Modifier.fillMaxSize().background(MoodyTheme.colors.bg)) {
