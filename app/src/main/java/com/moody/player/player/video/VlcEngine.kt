@@ -68,6 +68,56 @@ class VlcEngine @Inject constructor(@ApplicationContext private val context: Con
     private var triedSoftware = false
     private var lastOpen: Triple<Uri, Long, Decoder>? = null
 
+    // Audio focus: libVLC doesn't ask for it, so the engine does. Calls and other apps pause or duck the video.
+    private val audio = context.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
+    private var pausedByFocus = false
+    private var hasFocus = false
+    private val focusListener = android.media.AudioManager.OnAudioFocusChangeListener { change ->
+        when (change) {
+            android.media.AudioManager.AUDIOFOCUS_LOSS -> { pausedByFocus = false; player?.pause(); abandonFocus() }
+            android.media.AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> if (_state.value.playing) { pausedByFocus = true; player?.pause() }
+            android.media.AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> player?.volume = 30
+            android.media.AudioManager.AUDIOFOCUS_GAIN -> {
+                player?.volume = 100
+                if (pausedByFocus) { pausedByFocus = false; player?.play() }
+            }
+        }
+    }
+    private val focusRequest = android.media.AudioFocusRequest.Builder(android.media.AudioManager.AUDIOFOCUS_GAIN)
+        .setAudioAttributes(
+            android.media.AudioAttributes.Builder()
+                .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MOVIE)
+                .build(),
+        )
+        .setOnAudioFocusChangeListener(focusListener)
+        .build()
+
+    private fun requestFocus() {
+        if (hasFocus) return
+        hasFocus = audio.requestAudioFocus(focusRequest) == android.media.AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+    }
+
+    private fun abandonFocus() {
+        if (!hasFocus) return
+        audio.abandonAudioFocusRequest(focusRequest)
+        hasFocus = false
+    }
+
+    private var noisyRegistered = false
+    private val noisy = object : android.content.BroadcastReceiver() {
+        override fun onReceive(c: android.content.Context, i: android.content.Intent) { player?.pause() }
+    }
+
+    private fun setNoisy(on: Boolean) {
+        if (on == noisyRegistered) return
+        if (on) androidx.core.content.ContextCompat.registerReceiver(
+            context, noisy, android.content.IntentFilter(android.media.AudioManager.ACTION_AUDIO_BECOMING_NOISY),
+            androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED,
+        ) else runCatching { context.unregisterReceiver(noisy) }
+        noisyRegistered = on
+    }
+
     private val _state = MutableStateFlow(PlayerState())
     val state: StateFlow<PlayerState> = _state.asStateFlow()
     private val _events = MutableSharedFlow<EngineEvent>(extraBufferCapacity = 4)
@@ -152,9 +202,12 @@ class VlcEngine @Inject constructor(@ApplicationContext private val context: Con
     private fun onEvent(e: MediaPlayer.Event) {
         val mp = player ?: return
         when (e.type) {
-            MediaPlayer.Event.Playing -> _state.update { it.copy(playing = true, buffering = false, ended = false, error = null) }
-            MediaPlayer.Event.Paused -> _state.update { it.copy(playing = false) }
-            MediaPlayer.Event.Stopped -> _state.update { it.copy(playing = false) }
+            MediaPlayer.Event.Playing -> {
+                requestFocus(); setNoisy(true)
+                _state.update { it.copy(playing = true, buffering = false, ended = false, error = null) }
+            }
+            MediaPlayer.Event.Paused -> { setNoisy(false); if (!pausedByFocus) abandonFocus(); _state.update { it.copy(playing = false) } }
+            MediaPlayer.Event.Stopped -> { setNoisy(false); abandonFocus(); _state.update { it.copy(playing = false) } }
             MediaPlayer.Event.Buffering -> _state.update { it.copy(buffering = e.buffering < 100f) }
             MediaPlayer.Event.TimeChanged -> _state.update { it.copy(positionMs = e.timeChanged, buffering = false) }
             MediaPlayer.Event.LengthChanged -> _state.update { it.copy(durationMs = e.lengthChanged) }
@@ -264,6 +317,9 @@ class VlcEngine @Inject constructor(@ApplicationContext private val context: Con
         val eq = MediaPlayer.Equalizer.createFromPreset(preset)
         return FloatArray(MediaPlayer.Equalizer.getBandCount()) { eq.getAmp(it) }
     }
+
+    /** Stops only if [uri] is still what's loaded, so a closing screen can't stop the video that replaced it. */
+    fun stopIfCurrent(uri: Uri?) { if (uri == null || _state.value.uri == uri) stop() }
 
     fun stop() {
         player?.stop()

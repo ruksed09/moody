@@ -224,7 +224,7 @@ class PlayerActivity : ComponentActivity() {
 
     override fun onDestroy() {
         runCatching { unregisterReceiver(pipReceiver) }
-        if (isFinishing && !VideoBackgroundService.running) vm.engine.stop()
+        if (isFinishing && !VideoBackgroundService.running) vm.engine.stopIfCurrent(vm.current?.uri)
         super.onDestroy()
     }
 
@@ -235,12 +235,18 @@ class PlayerActivity : ComponentActivity() {
         const val PIP_BACK = 2
         const val PIP_FWD = 3
 
-        fun intent(context: Context, uris: List<Uri>, index: Int, vault: Boolean = false, titles: List<String>? = null) =
-            Intent(context, PlayerActivity::class.java)
-                .putParcelableArrayListExtra(PlayerViewModel.EXTRA_QUEUE, ArrayList(uris))
-                .putExtra(PlayerViewModel.EXTRA_INDEX, index)
+        /** At most this many videos either side of the chosen one travel in the Intent (Binder limit ~1 MB). */
+        private const val WINDOW = 100
+
+        fun intent(context: Context, uris: List<Uri>, index: Int, vault: Boolean = false, titles: List<String>? = null): Intent {
+            val from = (index - WINDOW).coerceAtLeast(0)
+            val to = (index + WINDOW + 1).coerceAtMost(uris.size)
+            return Intent(context, PlayerActivity::class.java)
+                .putParcelableArrayListExtra(PlayerViewModel.EXTRA_QUEUE, ArrayList(uris.subList(from, to)))
+                .putExtra(PlayerViewModel.EXTRA_INDEX, index - from)
                 .putExtra(PlayerViewModel.EXTRA_VAULT, vault)
-                .apply { titles?.let { putStringArrayListExtra(PlayerViewModel.EXTRA_TITLES, ArrayList(it)) } }
+                .apply { titles?.let { putStringArrayListExtra(PlayerViewModel.EXTRA_TITLES, ArrayList(it.subList(from, to))) } }
+        }
     }
 }
 

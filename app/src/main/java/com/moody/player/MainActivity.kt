@@ -67,6 +67,7 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch { firstSettings = settingsStore.settings.first() }
         enableEdgeToEdge()
         if (intent?.getBooleanExtra(EXTRA_OPEN_NOW_PLAYING, false) == true) openNowPlaying++
+        handleAudioView(intent)
         lifecycleScope.launch { vault.recoverInterruptedMoves() }
         setContent {
             val current by settingsStore.settings.collectAsStateWithLifecycle(null)
@@ -156,6 +157,22 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         if (intent.getBooleanExtra(EXTRA_OPEN_NOW_PLAYING, false)) openNowPlaying++
+        handleAudioView(intent)
+    }
+
+    /** A song opened from another app plays as a one-song queue and Now Playing opens. */
+    private fun handleAudioView(i: Intent?) {
+        val uri = i?.data ?: return
+        if (i.action != Intent.ACTION_VIEW || i.type?.startsWith("audio/") != true && i.type != null) return
+        val name = runCatching {
+            contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+        }.getOrNull() ?: uri.lastPathSegment.orEmpty()
+        val song = com.moody.player.data.media.AudioItem(
+            uri, 0, name.substringBeforeLast('.'), "Unknown artist", "", 0, 0, "", i.type ?: "audio/*", 0, name, 0,
+        )
+        music.playQueue(listOf(song), 0)
+        openNowPlaying++
+        i.data = null
     }
 
     override fun onStart() {

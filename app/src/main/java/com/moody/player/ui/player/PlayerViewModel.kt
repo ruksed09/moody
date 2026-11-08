@@ -252,7 +252,7 @@ class PlayerViewModel @Inject constructor(
 
     override fun onCleared() {
         // The engine outlives this screen only when the background service has taken it.
-        if (!VideoBackgroundState.active) engine.stop()
+        if (!VideoBackgroundState.active) engine.stopIfCurrent(current?.uri)
     }
 
     companion object {
