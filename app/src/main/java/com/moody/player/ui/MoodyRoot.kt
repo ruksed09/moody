@@ -42,7 +42,7 @@ import com.moody.player.ui.video.VideoViewModel
 
 /** Slots filled by later features (music, vault, settings, onboarding). Keeps MoodyRoot's wiring in one place. */
 data class AppSlots(
-    val videoNav: (NavHostController) -> VideoNav,
+    val videoNav: @Composable (NavHostController) -> VideoNav,
     val music: @Composable (NavHostController) -> Unit,
     val miniPlayer: @Composable (NavHostController) -> Unit = {},
     val extraRoutes: androidx.navigation.NavGraphBuilder.(NavHostController) -> Unit = {},

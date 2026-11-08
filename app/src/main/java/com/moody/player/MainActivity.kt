@@ -15,8 +15,7 @@ import com.moody.player.design.illustrations.EmptyMusic
 import com.moody.player.ui.AppSlots
 import com.moody.player.ui.MoodyRoot
 import com.moody.player.ui.nav.Routes
-import com.moody.player.ui.player.openVideo
-import com.moody.player.ui.video.VideoNav
+import com.moody.player.ui.rememberVideoNav
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
@@ -35,14 +34,11 @@ class MainActivity : ComponentActivity() {
                 settings,
                 AppSlots(
                     videoNav = { nav ->
-                        VideoNav(
-                            openFolder = { nav.navigate(Routes.folder(it)) },
-                            play = { list, i -> openVideo(list.map { it.uri }, i, titles = list.map { it.title }) },
-                            openVault = {},
-                            openSettings = {},
-                            openStream = {},
-                            requestAccess = {},
-                            onSelection = { _, _, done -> done() },
+                        rememberVideoNav(
+                            nav,
+                            onHide = { _, done -> done() },
+                            onRequestAccess = {},
+                            onChanged = { media.refreshAccess() },
                         )
                     },
                     music = { EmptyState({ EmptyMusic() }, "Music", "Coming together") },
