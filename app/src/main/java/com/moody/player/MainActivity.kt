@@ -38,6 +38,9 @@ import com.moody.player.ui.vault.rememberHideFlow
 import com.moody.player.data.vault.VaultManager
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
+import com.moody.player.ui.onboarding.OnboardingFlow
+import com.moody.player.ui.onboarding.PermissionsScreen
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
@@ -52,13 +55,18 @@ class MainActivity : ComponentActivity() {
     private var openNowPlaying by mutableIntStateOf(0)
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        installSplashScreen()
+        val splash = installSplashScreen()
         super.onCreate(savedInstanceState)
+        var firstSettings: Settings? = null
+        splash.setKeepOnScreenCondition { firstSettings == null }
+        lifecycleScope.launch { firstSettings = settingsStore.settings.first() }
         enableEdgeToEdge()
         if (intent?.getBooleanExtra(EXTRA_OPEN_NOW_PLAYING, false) == true) openNowPlaying++
         lifecycleScope.launch { vault.recoverInterruptedMoves() }
         setContent {
-            val settings by settingsStore.settings.collectAsStateWithLifecycle(Settings())
+            val current by settingsStore.settings.collectAsStateWithLifecycle(null)
+            val settings = current ?: return@setContent
+            val start = remember { if (settings.onboarded) Routes.MAIN else Routes.ONBOARDING }
             val musicState by music.state.collectAsStateWithLifecycle()
             MoodyRoot(
                 settings,
@@ -68,7 +76,7 @@ class MainActivity : ComponentActivity() {
                         rememberVideoNav(
                             nav,
                             onHide = rememberHideFlow(onNeedsSetup = { nav.navigate(Routes.VAULT) { launchSingleTop = true } }),
-                            onRequestAccess = {},
+                            onRequestAccess = { nav.navigate(Routes.PERMISSIONS) { launchSingleTop = true } },
                             onChanged = { media.refreshAccess() },
                         )
                     },
@@ -82,7 +90,7 @@ class MainActivity : ComponentActivity() {
                                 openFolder = { nav.navigate(Routes.musicFolder(it)) },
                                 openPlaylist = { nav.navigate(Routes.playlist(it)) },
                                 openSettings = { nav.navigate(Routes.SETTINGS) { launchSingleTop = true } },
-                                requestAccess = {},
+                                requestAccess = { nav.navigate(Routes.PERMISSIONS) { launchSingleTop = true } },
                             ),
                             hasAccess = hasAudioAccess(this@MainActivity),
                             backgrounds = settings.backgrounds,
@@ -92,6 +100,16 @@ class MainActivity : ComponentActivity() {
                         MiniPlayer(musicState, onOpen = { nav.navigate(Routes.NOW_PLAYING) { launchSingleTop = true } }, onToggle = music::toggle, onNext = music::next)
                     },
                     extraRoutes = { nav ->
+                        composable(Routes.ONBOARDING) {
+                            OnboardingFlow(onFinished = {
+                                lifecycleScope.launch { settingsStore.update { it.copy(onboarded = true) } }
+                                media.refreshAccess()
+                                nav.navigate(Routes.MAIN) { popUpTo(Routes.ONBOARDING) { inclusive = true } }
+                            })
+                        }
+                        composable(Routes.PERMISSIONS) {
+                            PermissionsScreen(onContinue = { media.refreshAccess(); nav.popBackStack() }, onBack = { nav.popBackStack() })
+                        }
                         composable(Routes.VAULT) {
                             VaultRoute(hiltViewModel(), onBack = { nav.popBackStack() })
                         }
@@ -111,6 +129,7 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     },
+                    startRoute = start,
                 ),
             )
         }

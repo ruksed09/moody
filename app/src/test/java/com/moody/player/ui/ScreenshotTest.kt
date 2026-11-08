@@ -132,6 +132,24 @@ class ScreenshotTest {
         com.moody.player.ui.vault.VaultUnlockScreen(lock(), com.moody.player.data.vault.VaultInfo(true, 4, "Name of your first pet"), {})
     }
 
+    private fun bare(name: String, mode: ThemeMode, ms: Long = 1_000, content: @Composable () -> Unit) {
+        compose.mainClock.autoAdvance = false
+        compose.setContent { MoodyTheme(mode) { Box(Modifier.fillMaxSize().background(MoodyTheme.colors.bg)) { content() } } }
+        compose.mainClock.advanceTimeBy(ms)
+        org.robolectric.shadows.ShadowLooper.idleMainLooper()
+        compose.mainClock.advanceTimeBy(100)
+        val v = compose.activity.window.decorView
+        val bmp = Bitmap.createBitmap(v.width, v.height, Bitmap.Config.ARGB_8888)
+        v.draw(android.graphics.Canvas(bmp))
+        File(out, "$name.png").outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
+    }
+
+    @Test fun welcomeDark() = bare("welcome-dark", ThemeMode.DARK) { com.moody.player.ui.onboarding.WelcomePager {} }
+    @Test fun welcomeLight() = bare("welcome-light", ThemeMode.LIGHT) { com.moody.player.ui.onboarding.WelcomePager {} }
+    @Test fun permissionsDark() = bare("permissions-dark", ThemeMode.DARK) { com.moody.player.ui.onboarding.PermissionsScreen({}) }
+    @Test fun logoMid() = bare("logo-mid", ThemeMode.DARK, 700) { com.moody.player.ui.onboarding.LogoAnimation {} }
+    @Test fun logoEnd() = bare("logo-end", ThemeMode.DARK, 1_700) { com.moody.player.ui.onboarding.LogoAnimation {} }
+
     @Test fun videoFoldersDark() = shot("video-folders-dark", ThemeMode.DARK) { VideoLibraryContent(state(VideoView.FOLDERS), noop, nav) }
     @Test fun videoFoldersLight() = shot("video-folders-light", ThemeMode.LIGHT) { VideoLibraryContent(state(VideoView.FOLDERS), noop, nav) }
     @Test fun videoAllListDark() = shot("video-all-list-dark", ThemeMode.DARK) { VideoLibraryContent(state(VideoView.ALL, LayoutMode.LIST), noop, nav) }

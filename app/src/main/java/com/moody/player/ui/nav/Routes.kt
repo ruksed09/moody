@@ -5,6 +5,7 @@ import android.net.Uri
 object Routes {
     const val ONBOARDING = "onboarding"
     const val MAIN = "main"
+    const val PERMISSIONS = "permissions"
     const val FOLDER = "folder/{path}"
     const val VAULT = "vault"
     const val SETTINGS = "settings"
