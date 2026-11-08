@@ -97,6 +97,30 @@ class ScreenshotTest {
         positions = positions, totalBytes = videos.sumOf { it.sizeBytes },
     )
 
+    private fun song(id: Long, title: String, artist: String, album: String, albumId: Long, ms: Long) = com.moody.player.data.media.AudioItem(
+        Uri.parse("content://media/external/audio/media/$id"), id, title, artist, album, albumId, ms, "Music/", "audio/mpeg", 0, "$title.mp3", id,
+    )
+    private val songs = listOf(
+        song(1, "Says", "Nils Frahm", "Spaces", 1, 498_000), song(2, "Ambre", "Nils Frahm", "Wintermusik", 2, 260_000),
+        song(3, "Avril 14th", "Aphex Twin", "Drukqs", 3, 125_000), song(4, "Svefn-g-englar", "Sigur Rós", "Ágætis byrjun", 4, 604_000),
+        song(5, "Teardrop", "Massive Attack", "Mezzanine", 5, 330_000), song(6, "Re: Stacks", "Bon Iver", "For Emma, Forever Ago", 6, 401_000),
+    )
+    private val musicNav = com.moody.player.ui.music.MusicNav({}, {}, {}, {}, {}, {})
+    private fun musicState(): com.moody.player.ui.music.MusicUiState {
+        val (albums, artists, folders) = com.moody.player.ui.music.groupMusic(songs)
+        return com.moody.player.ui.music.MusicUiState(false, songs, albums, artists, folders, emptyList(), songs.take(2), songs.sumOf { it.durationMs })
+    }
+
+    @Test fun musicSongsDark() = shot("music-songs-dark", ThemeMode.DARK) {
+        com.moody.player.ui.music.MusicContent(musicState(), com.moody.player.ui.music.MusicTab.SONGS, songs[0].uri.toString(), true, true, musicNav, {}, { _, _ -> }, {}, {}, {})
+    }
+    @Test fun musicAlbumsLight() = shot("music-albums-light", ThemeMode.LIGHT) {
+        com.moody.player.ui.music.MusicContent(musicState(), com.moody.player.ui.music.MusicTab.ALBUMS, null, true, true, musicNav, {}, { _, _ -> }, {}, {}, {})
+    }
+    @Test fun musicEmptyMidnight() = shot("music-empty-midnight", ThemeMode.MIDNIGHT) {
+        com.moody.player.ui.music.MusicContent(com.moody.player.ui.music.MusicUiState(loading = false), com.moody.player.ui.music.MusicTab.SONGS, null, true, true, musicNav, {}, { _, _ -> }, {}, {}, {})
+    }
+
     @Test fun videoFoldersDark() = shot("video-folders-dark", ThemeMode.DARK) { VideoLibraryContent(state(VideoView.FOLDERS), noop, nav) }
     @Test fun videoFoldersLight() = shot("video-folders-light", ThemeMode.LIGHT) { VideoLibraryContent(state(VideoView.FOLDERS), noop, nav) }
     @Test fun videoAllListDark() = shot("video-all-list-dark", ThemeMode.DARK) { VideoLibraryContent(state(VideoView.ALL, LayoutMode.LIST), noop, nav) }

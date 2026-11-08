@@ -66,7 +66,7 @@ fun MoodyRoot(settings: Settings, slots: AppSlots, toaster: Toaster = remember {
                     composable(Routes.MAIN) { MainScreen(nav, slots) }
                     composable(Routes.FOLDER, arguments = listOf(navArgument("path") { type = NavType.StringType })) { entry ->
                         val vm: VideoViewModel = hiltViewModel(nav.getBackStackEntry(Routes.MAIN))
-                        FolderScreen(Uri.decode(entry.arguments?.getString("path").orEmpty()), vm, slots.videoNav(nav), onBack = { nav.popBackStack() })
+                        FolderScreen(Routes.decodePath(entry.arguments?.getString("path")), vm, slots.videoNav(nav), onBack = { nav.popBackStack() })
                     }
                     slots.extraRoutes(this, nav)
                 }

@@ -167,6 +167,21 @@ class MusicController @Inject constructor(
     fun removeAt(i: Int) = withController { it.removeMediaItem(i) }
     fun setSpeed(r: Float) = withController { it.playbackParameters = PlaybackParameters(r) }
 
+    data class EqInfo(val presets: List<String>, val preset: Int, val bass: Boolean)
+
+    /** Asks the service for its equalizer, optionally changing it first. Null when effects are unavailable. */
+    fun equalizer(set: Pair<Int, Boolean>? = null, onResult: (EqInfo?) -> Unit) = withController { c ->
+        val cmd = androidx.media3.session.SessionCommand(if (set == null) CMD_EQ_GET else CMD_EQ_SET, android.os.Bundle.EMPTY)
+        val args = android.os.Bundle().apply { set?.let { putInt(ARG_PRESET, it.first); putBoolean(ARG_BASS, it.second) } }
+        val f = c.sendCustomCommand(cmd, args)
+        f.addListener({
+            val r = runCatching { f.get() }.getOrNull()
+            val b = r?.extras
+            onResult(if (r == null || r.resultCode != androidx.media3.session.SessionResult.RESULT_SUCCESS || b == null) null
+            else EqInfo(b.getStringArrayList(ARG_PRESETS).orEmpty(), b.getInt(ARG_PRESET, -1), b.getBoolean(ARG_BASS, false)))
+        }, ContextCompat.getMainExecutor(context))
+    }
+
     fun sleepIn(minutes: Int?) {
         sleepJob?.cancel()
         if (minutes == null) { _state.update { it.copy(sleepAt = null) }; return }

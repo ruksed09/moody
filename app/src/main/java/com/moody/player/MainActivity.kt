@@ -1,6 +1,7 @@
 package com.moody.player
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -8,6 +9,8 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -16,12 +19,17 @@ import androidx.navigation.compose.composable
 import com.moody.player.data.media.MediaRepository
 import com.moody.player.data.prefs.Settings
 import com.moody.player.data.prefs.SettingsStore
-import com.moody.player.design.components.EmptyState
-import com.moody.player.design.illustrations.EmptyMusic
+import com.moody.player.data.media.hasAudioAccess
 import com.moody.player.player.music.MusicController
 import com.moody.player.ui.AppSlots
 import com.moody.player.ui.MoodyRoot
+import com.moody.player.ui.music.EqualizerSheet
 import com.moody.player.ui.music.MiniPlayer
+import com.moody.player.ui.music.MusicNav
+import com.moody.player.ui.music.MusicScreen
+import com.moody.player.ui.music.MusicViewModel
+import com.moody.player.ui.music.SongListKind
+import com.moody.player.ui.music.SongListScreen
 import com.moody.player.ui.music.NowPlayingScreen
 import com.moody.player.ui.nav.Routes
 import com.moody.player.ui.rememberVideoNav
@@ -57,13 +65,40 @@ class MainActivity : ComponentActivity() {
                             onChanged = { media.refreshAccess() },
                         )
                     },
-                    music = { EmptyState({ EmptyMusic() }, "Music", "Coming together") },
+                    music = { nav ->
+                        val vm: MusicViewModel = hiltViewModel()
+                        MusicScreen(
+                            vm,
+                            MusicNav(
+                                openAlbum = { nav.navigate(Routes.album(it)) },
+                                openArtist = { nav.navigate(Routes.artist(it)) },
+                                openFolder = { nav.navigate(Routes.musicFolder(it)) },
+                                openPlaylist = { nav.navigate(Routes.playlist(it)) },
+                                openSettings = { nav.navigate(Routes.SETTINGS) { launchSingleTop = true } },
+                                requestAccess = {},
+                            ),
+                            hasAccess = hasAudioAccess(this@MainActivity),
+                            backgrounds = settings.backgrounds,
+                        )
+                    },
                     miniPlayer = { nav ->
                         MiniPlayer(musicState, onOpen = { nav.navigate(Routes.NOW_PLAYING) { launchSingleTop = true } }, onToggle = music::toggle, onNext = music::next)
                     },
                     extraRoutes = { nav ->
                         composable(Routes.NOW_PLAYING) {
-                            NowPlayingScreen(hiltViewModel(), onClose = { nav.popBackStack() }, onEqualizer = {})
+                            var eq by remember { mutableStateOf(false) }
+                            NowPlayingScreen(hiltViewModel(), onClose = { nav.popBackStack() }, onEqualizer = { eq = true })
+                            if (eq) EqualizerSheet(music, onDismiss = { eq = false })
+                        }
+                        listOf(
+                            Routes.ALBUM to SongListKind.ALBUM, Routes.ARTIST to SongListKind.ARTIST,
+                            Routes.MUSIC_FOLDER to SongListKind.FOLDER, Routes.PLAYLIST to SongListKind.PLAYLIST,
+                        ).forEach { (route, kind) ->
+                            composable(route) { entry ->
+                                val key = Routes.decodePath(entry.arguments?.getString("key"))
+                                val vm: MusicViewModel = hiltViewModel(nav.getBackStackEntry(Routes.MAIN))
+                                SongListScreen(vm, kind, key, onBack = { nav.popBackStack() })
+                            }
                         }
                     },
                 ),

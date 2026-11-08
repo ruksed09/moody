@@ -110,6 +110,7 @@ object MoodyIcons {
     val Close by lazy { icon("close", "M18 6L6 18M6 6l12 12") }
     val ChevronRight by lazy { icon("chev-right", "M9 18l6-6-6-6") }
     val ChevronDown by lazy { icon("chev-down", "M6 9l6 6 6-6") }
+    val ChevronUp by lazy { icon("chev-up", "M18 15l-6-6-6 6") }
     val ArrowBack by lazy { icon("arrow-back", "M19 12H5M12 19l-7-7 7-7") }
     val Plus by lazy { icon("plus", "M12 5v14M5 12h14") }
     val Download by lazy { icon("download", "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", "M7 10l5 5 5-5", "M12 15V3") }
