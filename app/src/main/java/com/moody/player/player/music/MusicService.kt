@@ -57,6 +57,7 @@ fun AudioItem.toMediaItem(): MediaItem = MediaItem.Builder()
             .setAlbumTitle(album)
             .setArtworkUri(MediaScanner.albumArtUri(albumId))
             .setTrackNumber(trackNo.takeIf { it > 0 })
+            .setExtras(Bundle().apply { putBoolean(EXTRA_VLC, com.moody.player.domain.needsVlc(mime, fileName)) })
             .setIsPlayable(true)
             .setIsBrowsable(false)
             .build(),
@@ -71,6 +72,28 @@ class MusicService : MediaSessionService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var saver: Job? = null
     private var effects: AudioEffects? = null
+    private lateinit var exo: ExoPlayer
+    private var vlc: VlcAudioPlayer? = null
+
+    /** Items sent from a controller may arrive without their uri; the media id is the uri. */
+    private fun resolve(items: List<MediaItem>): List<MediaItem> = items.map {
+        if (it.localConfiguration != null) it else it.buildUpon().setUri(Uri.parse(it.mediaId)).build()
+    }
+
+    /** Media3 plays most files; a queue holding anything it can't decode goes to libVLC as a whole. */
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+    private fun pickPlayer(items: List<MediaItem>) {
+        val s = session ?: return
+        val wantVlc = items.any { it.mediaMetadata.extras?.getBoolean(EXTRA_VLC) == true }
+        val target: Player = if (wantVlc) (vlc ?: VlcAudioPlayer(this).also { vlc = it }) else exo
+        if (s.player !== target) {
+            s.player.pause()
+            s.player.stop()
+            target.repeatMode = s.player.repeatMode
+            target.shuffleModeEnabled = s.player.shuffleModeEnabled
+            s.player = target
+        }
+    }
 
     private val callback = object : MediaSession.Callback {
         override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult =
@@ -82,6 +105,17 @@ class MusicService : MediaSessionService() {
                         .build(),
                 )
                 .build()
+
+        override fun onAddMediaItems(mediaSession: MediaSession, controller: MediaSession.ControllerInfo, mediaItems: MutableList<MediaItem>): ListenableFuture<MutableList<MediaItem>> =
+            Futures.immediateFuture(resolve(mediaItems).toMutableList())
+
+        override fun onSetMediaItems(
+            mediaSession: MediaSession, controller: MediaSession.ControllerInfo, mediaItems: MutableList<MediaItem>, startIndex: Int, startPositionMs: Long,
+        ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
+            val resolved = resolve(mediaItems)
+            pickPlayer(resolved)
+            return Futures.immediateFuture(MediaSession.MediaItemsWithStartPosition(resolved, startIndex, startPositionMs))
+        }
 
         override fun onCustomCommand(session: MediaSession, controller: MediaSession.ControllerInfo, customCommand: SessionCommand, args: Bundle): ListenableFuture<SessionResult> {
             val fx = effects ?: return Futures.immediateFuture(SessionResult(SessionError.ERROR_NOT_SUPPORTED))
@@ -97,6 +131,7 @@ class MusicService : MediaSessionService() {
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(C.WAKE_MODE_LOCAL)
             .build()
+        exo = player
         val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java).putExtra(MainActivity.EXTRA_OPEN_NOW_PLAYING, true), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         player.audioSessionId = (getSystemService(AUDIO_SERVICE) as android.media.AudioManager).generateAudioSessionId()
         effects = AudioEffects(player.audioSessionId)
@@ -134,8 +169,10 @@ class MusicService : MediaSessionService() {
         val items = ids.mapNotNull { byUri[it]?.toMediaItem() }
         if (items.isEmpty()) return
         val index = (prefs[KEY_INDEX] ?: 0).coerceIn(0, items.lastIndex)
-        p.setMediaItems(items, index, prefs[KEY_POS] ?: 0L)
-        p.prepare()
+        pickPlayer(items)
+        val target = session?.player ?: p
+        target.setMediaItems(items, index, prefs[KEY_POS] ?: 0L)
+        target.prepare()
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
@@ -148,7 +185,9 @@ class MusicService : MediaSessionService() {
     override fun onDestroy() {
         effects?.release()
         scope.cancel()
-        session?.run { player.release(); release() }
+        session?.release()
+        exo.release()
+        vlc?.release()
         session = null
         super.onDestroy()
     }
@@ -190,3 +229,5 @@ private class AudioEffects(sessionId: Int) {
 
     fun release() { runCatching { eq?.release() }; runCatching { bass?.release() } }
 }
+
+const val EXTRA_VLC = "moody.vlc"
