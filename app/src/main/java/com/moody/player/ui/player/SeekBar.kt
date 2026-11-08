@@ -51,13 +51,16 @@ fun SeekBar(
     modifier: Modifier = Modifier,
     abA: Long? = null,
     abB: Long? = null,
+    rail: androidx.compose.ui.graphics.Color = OnVideo.rail,
+    tipBg: androidx.compose.ui.graphics.Color = OnVideo.ink,
+    tipText: androidx.compose.ui.graphics.Color = OnVideo.text,
 ) {
     val accent = MoodyTheme.colors.accent
     var width by remember { mutableStateOf(1f) }
     var dragging by remember { mutableStateOf(false) }
     var dragFrac by remember { mutableStateOf(0f) }
     val frac = if (dragging) dragFrac else if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
-    val rail by animateDpAsState(if (dragging) 6.dp else 4.dp, Motion.fast(), label = "rail")
+    val railH by animateDpAsState(if (dragging) 6.dp else 4.dp, Motion.fast(), label = "rail")
     val density = LocalDensity.current
 
     BoxWithConstraints(modifier.fillMaxWidth().height(36.dp)) {
@@ -66,11 +69,11 @@ fun SeekBar(
             Text(
                 formatDuration((dragFrac * durationMs).toLong()).let { if (it == "--:--") "0:00" else it },
                 style = MoodyTheme.type.mono,
-                color = OnVideo.text,
+                color = tipText,
                 modifier = Modifier
                     .offset(x = tipX.coerceIn(0.dp, maxWidth - 56.dp), y = (-34).dp)
                     .clip(Radii.sm)
-                    .background(OnVideo.ink)
+                    .background(tipBg)
                     .padding(horizontal = 8.dp, vertical = 4.dp),
             )
         }
@@ -96,10 +99,10 @@ fun SeekBar(
                     ) { change, _ -> change.consume(); dragFrac = (change.position.x / size.width).coerceIn(0f, 1f) }
                 },
         ) {
-            val h = rail.toPx()
+            val h = railH.toPx()
             val y = size.height / 2 - h / 2
             val r = CornerRadius(h / 2)
-            drawRoundRect(OnVideo.rail, Offset(0f, y), Size(size.width, h), r)
+            drawRoundRect(rail, Offset(0f, y), Size(size.width, h), r)
             if (abA != null && durationMs > 0) {
                 val ax = abA / durationMs.toFloat() * size.width
                 val bx = (abB ?: positionMs) / durationMs.toFloat() * size.width
