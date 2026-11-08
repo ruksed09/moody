@@ -41,6 +41,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
 import com.moody.player.ui.onboarding.OnboardingFlow
 import com.moody.player.ui.onboarding.PermissionsScreen
+import com.moody.player.ui.settings.SettingsScreen
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
@@ -109,6 +110,13 @@ class MainActivity : ComponentActivity() {
                         }
                         composable(Routes.PERMISSIONS) {
                             PermissionsScreen(onContinue = { media.refreshAccess(); nav.popBackStack() }, onBack = { nav.popBackStack() })
+                        }
+                        composable(Routes.SETTINGS) {
+                            SettingsScreen(
+                                hiltViewModel(), onBack = { nav.popBackStack() },
+                                onOpenVault = { nav.navigate(Routes.VAULT) { launchSingleTop = true } },
+                                updates = {},
+                            )
                         }
                         composable(Routes.VAULT) {
                             VaultRoute(hiltViewModel(), onBack = { nav.popBackStack() })

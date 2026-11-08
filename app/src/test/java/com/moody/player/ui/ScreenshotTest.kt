@@ -72,6 +72,7 @@ class ScreenshotTest {
         override fun setLayout(l: LayoutMode) {}
         override fun setSort(s: SortSpec) {}
         override fun refresh() {}
+        override fun hideFolder(path: String) {}
     }
     private val nav = VideoNav({}, { _, _ -> }, {}, {}, {}, {}, { _, _, d -> d() })
 

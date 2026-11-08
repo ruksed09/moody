@@ -100,6 +100,7 @@ interface VideoActions {
     fun setLayout(l: LayoutMode)
     fun setSort(s: SortSpec)
     fun refresh()
+    fun hideFolder(path: String)
 }
 
 @Composable
@@ -114,6 +115,7 @@ fun VideoLibraryContent(s: VideoUiState, vm: VideoActions, nav: VideoNav, modifi
     var searching by rememberSaveable { mutableStateOf(false) }
     var sortSheet by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf(setOf<String>()) }
+    var hidingFolder by remember { mutableStateOf<com.moody.player.data.media.Folder?>(null) }
     val selecting = selected.isNotEmpty()
     val haptics = LocalHapticFeedback.current
 
@@ -174,8 +176,9 @@ fun VideoLibraryContent(s: VideoUiState, vm: VideoActions, nav: VideoNav, modifi
                         continueRow(s, nav)
                         full { SectionLabel("Folders", inset = if (grid) 0.dp else 16.dp) }
                         items(s.folders, key = { it.path }) { f ->
-                            if (grid) FolderGridCard(f, { nav.openFolder(f.path) }, { })
-                            else FolderListRow(f, { nav.openFolder(f.path) }, { })
+                            val long = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); hidingFolder = f }
+                            if (grid) FolderGridCard(f, { nav.openFolder(f.path) }, long)
+                            else FolderListRow(f, { nav.openFolder(f.path) }, long)
                         }
                     }
                     else -> {
@@ -192,6 +195,14 @@ fun VideoLibraryContent(s: VideoUiState, vm: VideoActions, nav: VideoNav, modifi
                 }
             }
         }
+    }
+
+    hidingFolder?.let { f ->
+        ConfirmDialog(
+            "Hide “${f.name}” from Videos?",
+            "Its videos stay on your phone. You can show the folder again in Settings, under Library.",
+            "Hide folder", onDismiss = { hidingFolder = null }, destructive = false,
+        ) { vm.hideFolder(f.path); hidingFolder = null }
     }
 
     if (sortSheet) {

@@ -90,7 +90,7 @@ class VideoViewModel @Inject constructor(
     override fun setSort(s: SortSpec) { viewModelScope.launch { settingsStore.update { it.copy(sort = s) } } }
     override fun refresh() { viewModelScope.launch { repo.rescan() } }
     fun refreshAccess() = repo.refreshAccess()
-    fun hideFolder(path: String) = viewModelScope.launch { settingsStore.update { it.copy(hiddenFolders = it.hiddenFolders + path) } }
+    override fun hideFolder(path: String) { viewModelScope.launch { settingsStore.update { it.copy(hiddenFolders = it.hiddenFolders + path) } } }
 
     fun inFolder(path: String): List<VideoItem> = state.value.all.filter { it.relativePath == path }
         .sortedBy(state.value.sort, { it.name }, { it.dateAdded }, { it.sizeBytes }, { it.durationMs ?: 0 })
