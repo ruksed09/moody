@@ -9,6 +9,7 @@ object Routes {
     const val FOLDER = "folder/{path}"
     const val VAULT = "vault"
     const val SETTINGS = "settings"
+    const val SHORTCUTS = "settings/shortcuts"
     const val PLAYLIST = "playlist/{key}"
     const val NOW_PLAYING = "now-playing"
     const val ALBUM = "album/{key}"

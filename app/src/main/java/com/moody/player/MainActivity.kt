@@ -121,7 +121,11 @@ class MainActivity : ComponentActivity() {
                                 hiltViewModel(), onBack = { nav.popBackStack() },
                                 onOpenVault = { nav.navigate(Routes.VAULT) { launchSingleTop = true } },
                                 updates = { UpdateSettingsRow(updates, settings.lastUpdateCheck) { lifecycleScope.launch { updates.check(force = true) } } },
+                                onShortcuts = { nav.navigate(Routes.SHORTCUTS) },
                             )
+                        }
+                        composable(Routes.SHORTCUTS) {
+                            com.moody.player.ui.settings.ShortcutsScreen(hiltViewModel(), onBack = { nav.popBackStack() })
                         }
                         composable(Routes.VAULT) {
                             VaultRoute(hiltViewModel(), onBack = { nav.popBackStack() })

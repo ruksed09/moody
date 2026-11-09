@@ -39,6 +39,10 @@ data class PlayerState(
     val selectedSub: Int = -1,
     val videoWidth: Int = 0,
     val videoHeight: Int = 0,
+    /** Size as it should appear on screen: rotation metadata and pixel aspect applied. 0 until known. */
+    val displayWidth: Int = 0,
+    val displayHeight: Int = 0,
+    val muted: Boolean = false,
     val rate: Float = 1f,
     val aspect: Aspect = Aspect.FIT,
     val decoder: Decoder = Decoder.HW,
@@ -255,6 +259,7 @@ class VlcEngine @Inject constructor(@ApplicationContext private val context: Con
 
     private fun refreshTracks(mp: MediaPlayer) {
         val v = mp.currentVideoTrack
+        val (dw, dh) = if (v != null && v.width > 0 && v.height > 0) displaySize(v.width, v.height, v.sarNum, v.sarDen, v.orientation) else 0 to 0
         _state.update {
             it.copy(
                 audioTracks = mp.audioTracks?.map { t -> Track(t.id, t.name) }.orEmpty(),
@@ -263,6 +268,8 @@ class VlcEngine @Inject constructor(@ApplicationContext private val context: Con
                 selectedSub = mp.spuTrack,
                 videoWidth = v?.width ?: it.videoWidth,
                 videoHeight = v?.height ?: it.videoHeight,
+                displayWidth = if (dw > 0) dw else it.displayWidth,
+                displayHeight = if (dh > 0) dh else it.displayHeight,
             )
         }
     }
@@ -286,6 +293,28 @@ class VlcEngine @Inject constructor(@ApplicationContext private val context: Con
     }
 
     fun seekBy(deltaMs: Long) = seekTo(_state.value.positionMs + deltaMs)
+
+    fun setMuted(on: Boolean) {
+        player?.volume = if (on) 0 else 100
+        _state.update { it.copy(muted = on) }
+    }
+
+    /**
+     * Grabs the current frame from the video surface (libVLC 3 has no snapshot call on Android).
+     * [onResult] runs on the main thread with null when the surface isn't ready.
+     */
+    fun snapshot(onResult: (android.graphics.Bitmap?) -> Unit) {
+        val surface = layout?.let { findSurface(it) }
+        if (surface == null || surface.width == 0 || surface.height == 0 || !surface.holder.surface.isValid) { onResult(null); return }
+        val bmp = android.graphics.Bitmap.createBitmap(surface.width, surface.height, android.graphics.Bitmap.Config.ARGB_8888)
+        android.view.PixelCopy.request(surface, bmp, { code -> onResult(if (code == android.view.PixelCopy.SUCCESS) bmp else null) }, main)
+    }
+
+    private fun findSurface(v: android.view.View): android.view.SurfaceView? {
+        if (v is android.view.SurfaceView && v.visibility == android.view.View.VISIBLE && v.width > 0) return v
+        if (v is android.view.ViewGroup) for (i in 0 until v.childCount) findSurface(v.getChildAt(i))?.let { return it }
+        return null
+    }
 
     fun setRate(r: Float) {
         player?.rate = r
@@ -374,4 +403,13 @@ class VlcEngine @Inject constructor(@ApplicationContext private val context: Con
         layout = null
         _state.value = PlayerState()
     }
+}
+
+/**
+ * On-screen size of a video track: pixel aspect ([sarNum]/[sarDen]) applied, and width/height swapped when the
+ * rotation metadata turns the picture sideways (libVLC orientations 4..7 are the transposed ones).
+ */
+fun displaySize(width: Int, height: Int, sarNum: Int, sarDen: Int, orientation: Int): Pair<Int, Int> {
+    val w = if (sarNum > 0 && sarDen > 0) (width.toLong() * sarNum / sarDen).toInt() else width
+    return if (orientation in 4..7) height to w else w to height
 }

@@ -42,6 +42,7 @@ data class Settings(
     val perFileSettings: Boolean = false,
     val backgroundPlay: Boolean = true,
     val autoPip: Boolean = true,
+    val playerShortcuts: List<com.moody.player.domain.PlayerShortcut> = com.moody.player.domain.DEFAULT_SHORTCUTS,
     val subSize: SubSize = SubSize.M,
     val subBg: SubBg = SubBg.SHADOW,
     val subColor: Long = 0xFFFFFAF2,
@@ -78,6 +79,7 @@ private object K {
     val perFile = booleanPreferencesKey("per_file")
     val bgPlay = booleanPreferencesKey("bg_play")
     val autoPip = booleanPreferencesKey("auto_pip")
+    val shortcuts = stringPreferencesKey("player_shortcuts")
     val subSize = stringPreferencesKey("sub_size")
     val subBg = stringPreferencesKey("sub_bg")
     val subColor = longPreferencesKey("sub_color")
@@ -112,6 +114,7 @@ internal fun Preferences.toSettings(): Settings {
         perFileSettings = this[K.perFile] ?: d.perFileSettings,
         backgroundPlay = this[K.bgPlay] ?: d.backgroundPlay,
         autoPip = this[K.autoPip] ?: d.autoPip,
+        playerShortcuts = this[K.shortcuts]?.let { com.moody.player.domain.decodeShortcuts(it) } ?: d.playerShortcuts,
         subSize = enum(K.subSize, d.subSize),
         subBg = enum(K.subBg, d.subBg),
         subColor = this[K.subColor] ?: d.subColor,
@@ -143,6 +146,7 @@ internal fun MutablePreferences.write(s: Settings) {
     this[K.perFile] = s.perFileSettings
     this[K.bgPlay] = s.backgroundPlay
     this[K.autoPip] = s.autoPip
+    this[K.shortcuts] = com.moody.player.domain.encodeShortcuts(s.playerShortcuts)
     this[K.subSize] = s.subSize.name
     this[K.subBg] = s.subBg.name
     this[K.subColor] = s.subColor

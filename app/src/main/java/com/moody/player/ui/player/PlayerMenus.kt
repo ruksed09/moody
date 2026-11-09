@@ -46,6 +46,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.draw.scale
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
+import com.moody.player.domain.Aspect
+import com.moody.player.domain.trackLabel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.moody.player.design.MoodyTheme
 import com.moody.player.design.Radii
@@ -63,30 +71,38 @@ import java.io.File
 
 enum class PlayerMenu(val title: String, val parent: PlayerMenu? = null) {
     MORE("Playback"),
-    AUDIO("Audio"),
-    SUBTITLES("Subtitles"),
+    AUDIO("Audio", MORE),
+    SUBTITLES("Subtitles", MORE),
     SUB_STYLE("Subtitle style", SUBTITLES),
     SUB_DELAY("Subtitle timing", SUBTITLES),
     AUDIO_DELAY("Audio timing", AUDIO),
-    SPEED("Speed"),
+    SPEED("Speed", MORE),
     DECODER("Decoder", MORE),
     EQUALIZER("Equalizer", MORE),
     AB("A-B repeat", MORE),
     LOOP("Loop", MORE),
     SLEEP("Sleep timer", MORE),
+    ASPECT("Aspect ratio", MORE),
 }
 
 private val SPEEDS = listOf(0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f, 3f, 4f)
 private val SUB_COLORS = listOf(0xFFFFFAF2 to "Warm white", 0xFFFFE58A to "Yellow", 0xFFBFE9F2 to "Ice", 0xFFF2B8A0 to "Peach")
+private val SheetBg = Color(0xFA131118)
+private val CardBg = Color(0x0AFFFFFF)
 
-/** The menu panel from the mockup (`.pop`): anchored bottom-right on wide screens, a full sheet on narrow ones. */
+fun decoderLabel(d: Decoder) = when (d) { Decoder.HW -> "Hardware"; Decoder.HW_PLUS -> "Hardware+"; Decoder.SW -> "Software" }
+
+/**
+ * The one Playback sheet (owner's mockup): drag handle, header with a purple tile, grouped cards.
+ * Sub-pages (Speed, Loop...) replace the content inside this same sheet; nothing stacks.
+ */
 @Composable
 fun PlayerMenus(menu: PlayerMenu, vm: PlayerViewModel, st: PlayerState, host: PlayerHost, onNavigate: (PlayerMenu) -> Unit, onDismiss: () -> Unit) {
     val c = MoodyTheme.colors
     BoxWithConstraints(
         Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.35f))
+            .background(Color.Black.copy(alpha = 0.4f))
             .clickable(remember { MutableInteractionSource() }, indication = null, onClick = onDismiss),
     ) {
         val narrow = maxWidth < 560.dp
@@ -95,23 +111,28 @@ fun PlayerMenus(menu: PlayerMenu, vm: PlayerViewModel, st: PlayerState, host: Pl
                 .align(if (narrow) Alignment.BottomCenter else Alignment.BottomEnd)
                 .windowInsetsPadding(WindowInsets.safeDrawing)
                 .padding(if (narrow) 8.dp else 16.dp)
-                .widthIn(max = if (narrow) 560.dp else 340.dp)
+                .widthIn(max = if (narrow) 560.dp else 380.dp)
                 .fillMaxWidth()
-                .heightIn(max = maxHeight * 0.8f)
-                .clip(Radii.lg)
-                .background(Color(0xFA16141B))
-                .border(1.dp, c.line2, Radii.lg)
-                .clickable(remember { MutableInteractionSource() }, indication = null) {}
-                .padding(8.dp),
+                .heightIn(max = maxHeight * 0.86f)
+                .clip(Radii.xl)
+                .background(SheetBg)
+                .border(1.dp, c.line2, Radii.xl)
+                .clickable(remember { MutableInteractionSource() }, indication = null) {},
         ) {
-            Row(Modifier.fillMaxWidth().height(44.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (menu.parent != null) VideoIcon(MoodyIcons.ArrowBack, "Back", { onNavigate(menu.parent) }, size = 18.dp)
-                else Spacer(Modifier.width(8.dp))
-                Text(menu.title, style = MoodyTheme.type.heading, color = c.text, modifier = Modifier.weight(1f))
+            Box(Modifier.align(Alignment.CenterHorizontally).padding(top = 8.dp).width(36.dp).height(4.dp).clip(Radii.pill).background(c.line3))
+            Row(Modifier.fillMaxWidth().height(52.dp).padding(start = 12.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (menu.parent != null) {
+                    VideoIcon(MoodyIcons.ArrowBack, "Back", { onNavigate(menu.parent) }, size = 18.dp)
+                } else {
+                    Box(Modifier.size(32.dp).clip(Radii.md).background(c.accentWash).border(1.dp, c.accent.copy(alpha = 0.5f), Radii.md), contentAlignment = Alignment.Center) {
+                        Icon(MoodyIcons.Play, null, Modifier.size(14.dp), tint = c.accent)
+                    }
+                    Spacer(Modifier.width(12.dp))
+                }
+                Text(menu.title, style = MoodyTheme.type.title, color = c.text, modifier = Modifier.weight(1f))
                 VideoIcon(MoodyIcons.Close, "Close", onDismiss, size = 18.dp)
             }
-            Box(Modifier.fillMaxWidth().height(1.dp).background(c.line))
-            Column(Modifier.verticalScroll(rememberScrollState()).padding(vertical = 4.dp)) {
+            Column(Modifier.verticalScroll(rememberScrollState()).padding(start = 12.dp, end = 12.dp, bottom = 12.dp)) {
                 when (menu) {
                     PlayerMenu.MORE -> MoreMenu(vm, st, host, onNavigate, onDismiss)
                     PlayerMenu.AUDIO -> AudioMenu(vm, st, onNavigate)
@@ -125,6 +146,7 @@ fun PlayerMenus(menu: PlayerMenu, vm: PlayerViewModel, st: PlayerState, host: Pl
                     PlayerMenu.AB -> AbMenu(vm)
                     PlayerMenu.LOOP -> LoopMenu(vm)
                     PlayerMenu.SLEEP -> SleepMenu(vm, onDismiss)
+                    PlayerMenu.ASPECT -> AspectMenu(vm, st)
                 }
             }
         }
@@ -132,18 +154,48 @@ fun PlayerMenus(menu: PlayerMenu, vm: PlayerViewModel, st: PlayerState, host: Pl
 }
 
 @Composable
-private fun NavRow(icon: ImageVector, label: String, value: String?, onClick: () -> Unit) {
+private fun GroupLabel(text: String) {
+    Text(
+        text.uppercase(), style = MoodyTheme.type.caption.copy(letterSpacing = 0.08.em, fontWeight = FontWeight.SemiBold),
+        color = MoodyTheme.colors.text3, modifier = Modifier.padding(start = 6.dp, top = 14.dp, bottom = 8.dp),
+    )
+}
+
+@Composable
+private fun Card(content: @Composable ColumnScope.() -> Unit) {
+    Column(Modifier.fillMaxWidth().clip(Radii.lg).background(CardBg).border(1.dp, MoodyTheme.colors.line, Radii.lg), content = content)
+}
+
+@Composable
+private fun CardDivider() = Box(Modifier.padding(start = 52.dp, end = 12.dp).fillMaxWidth().height(1.dp).background(MoodyTheme.colors.line))
+
+/** A row in a card: purple icon, label, value, chevron, or a switch instead. */
+@Composable
+private fun SheetRow(
+    icon: ImageVector?, label: String, value: String? = null, glyph: String? = null,
+    switch: Boolean? = null, onClick: () -> Unit,
+) {
     val c = MoodyTheme.colors
     Row(
-        Modifier.fillMaxWidth().height(48.dp).clip(Radii.md).clickable(role = Role.Button, onClick = onClick).padding(horizontal = 12.dp),
+        Modifier.fillMaxWidth().height(48.dp).clickable(role = if (switch != null) Role.Switch else Role.Button, onClick = onClick).padding(start = 14.dp, end = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, null, Modifier.size(20.dp), tint = c.text2)
+        Box(Modifier.width(26.dp), contentAlignment = Alignment.Center) {
+            if (glyph != null) Text(glyph, style = MoodyTheme.type.label, color = c.accent)
+            else if (icon != null) Icon(icon, null, Modifier.size(20.dp), tint = c.accent)
+        }
         Spacer(Modifier.width(12.dp))
-        Text(label, style = MoodyTheme.type.body, color = c.text, modifier = Modifier.weight(1f))
-        if (value != null) Text(value, style = MoodyTheme.type.monoSmall, color = c.text3, maxLines = 1)
-        Spacer(Modifier.width(4.dp))
-        Icon(MoodyIcons.ChevronRight, null, Modifier.size(16.dp), tint = c.text3)
+        Text(label, style = MoodyTheme.type.body, color = c.text, modifier = Modifier.weight(1f), maxLines = 1)
+        if (switch != null) {
+            Switch(
+                switch, { onClick() }, modifier = Modifier.scale(0.72f),
+                colors = SwitchDefaults.colors(checkedTrackColor = c.accentDeep, checkedThumbColor = Color.White, checkedBorderColor = c.accentDeep, uncheckedTrackColor = c.raised, uncheckedThumbColor = c.text3, uncheckedBorderColor = c.line2),
+            )
+        } else {
+            if (value != null) Text(value, style = MoodyTheme.type.caption, color = c.text2, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 150.dp))
+            Spacer(Modifier.width(6.dp))
+            Icon(MoodyIcons.ChevronRight, null, Modifier.size(16.dp), tint = c.text3)
+        }
     }
 }
 
@@ -151,15 +203,18 @@ private fun NavRow(icon: ImageVector, label: String, value: String?, onClick: ()
 private fun OptionRow(label: String, checked: Boolean, meta: String? = null, onClick: () -> Unit) {
     val c = MoodyTheme.colors
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(Radii.md).clickable(role = Role.RadioButton, onClick = onClick).padding(horizontal = 12.dp, vertical = 8.dp),
+        Modifier.fillMaxWidth().heightIn(min = 44.dp).clip(Radii.md).clickable(role = Role.RadioButton, onClick = onClick).padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.size(20.dp), contentAlignment = Alignment.Center) {
             if (checked) Icon(MoodyIcons.Check, null, Modifier.size(18.dp), tint = c.accent)
         }
         Spacer(Modifier.width(12.dp))
-        Text(label, style = MoodyTheme.type.body, color = if (checked) c.text else c.text2, modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
-        if (meta != null) Text(meta, style = MoodyTheme.type.monoSmall, color = c.text3)
+        Text(label, style = MoodyTheme.type.body, color = if (checked) c.text else c.text2, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        if (meta != null) {
+            Spacer(Modifier.width(8.dp))
+            Text(meta, style = MoodyTheme.type.monoSmall, color = c.text2, modifier = Modifier.border(1.dp, c.line3, Radii.sm).padding(horizontal = 5.dp, vertical = 1.dp))
+        }
     }
 }
 
@@ -169,59 +224,83 @@ private fun Note(text: String) = Text(text, style = MoodyTheme.type.caption, col
 @Composable
 private fun Divider() = Box(Modifier.padding(vertical = 4.dp, horizontal = 4.dp).fillMaxWidth().height(1.dp).background(MoodyTheme.colors.line))
 
+private fun speedValue(r: Float) = if (r == 1f) "Normal (1.0\u00d7)" else rateLabel(r)
+
 @Composable
 private fun MoreMenu(vm: PlayerViewModel, st: PlayerState, host: PlayerHost, go: (PlayerMenu) -> Unit, close: () -> Unit) {
     val loop by vm.loop.collectAsStateWithLifecycle()
     val ab by vm.ab.collectAsStateWithLifecycle()
     val sleep by vm.sleepAt.collectAsStateWithLifecycle()
-    NavRow(MoodyIcons.Speed, "Speed", if (st.rate == 1f) "Normal" else rateLabel(st.rate)) { go(PlayerMenu.SPEED) }
-    NavRow(MoodyIcons.Audio, "Audio", st.audioTracks.firstOrNull { it.id == st.selectedAudio }?.name) { go(PlayerMenu.AUDIO) }
-    NavRow(MoodyIcons.Subtitles, "Subtitles", st.subTracks.firstOrNull { it.id == st.selectedSub }?.name ?: "Off") { go(PlayerMenu.SUBTITLES) }
-    Divider()
-    NavRow(MoodyIcons.Equalizer, "Equalizer", null) { go(PlayerMenu.EQUALIZER) }
-    NavRow(MoodyIcons.Decoder, "Decoder", st.decoder.label) { go(PlayerMenu.DECODER) }
-    NavRow(MoodyIcons.AbRepeat, "A-B repeat", if (ab.first != null) "On" else "Off") { go(PlayerMenu.AB) }
-    NavRow(MoodyIcons.Repeat, "Loop", loop.label) { go(PlayerMenu.LOOP) }
-    NavRow(MoodyIcons.Aspect, "Aspect ratio", st.aspect.label) { val a = st.aspect.next(); vm.engine.setAspect(a); vm.toast(a.label) }
-    NavRow(MoodyIcons.Rotate, "Rotate screen", null) { host.onRotate(); close() }
-    host.onPip?.let { pip -> NavRow(MoodyIcons.Pip, "Picture in picture", null) { close(); pip() } }
-    NavRow(MoodyIcons.Timer, "Sleep timer", when { sleep == null -> "Off"; sleep == -1L -> "End of video"; else -> "${((sleep!! - System.currentTimeMillis()) / 60_000) + 1} min" }) { go(PlayerMenu.SLEEP) }
+    val audio = st.audioTracks.filter { it.id != -1 }
+    val subs = st.subTracks.filter { it.id != -1 }
+    val audioValue = audio.indexOfFirst { it.id == st.selectedAudio }.takeIf { it >= 0 }?.let { i ->
+        val l = trackLabel(audio[i].name, i); if (l.lang != null) "${l.name} \u2013 ${l.lang}" else l.name
+    } ?: "Default"
+    val subValue = subs.indexOfFirst { it.id == st.selectedSub }.takeIf { it >= 0 }?.let { i -> trackLabel(subs[i].name, i).name } ?: "Off"
+
+    GroupLabel("Audio & display")
+    Card {
+        SheetRow(MoodyIcons.Speed, "Speed", speedValue(st.rate)) { go(PlayerMenu.SPEED) }
+        CardDivider()
+        SheetRow(MoodyIcons.Audio, "Audio", audioValue) { go(PlayerMenu.AUDIO) }
+        CardDivider()
+        SheetRow(MoodyIcons.Cc, "Subtitles", subValue) { go(PlayerMenu.SUBTITLES) }
+        CardDivider()
+        SheetRow(MoodyIcons.Equalizer, "Equalizer") { go(PlayerMenu.EQUALIZER) }
+    }
+    GroupLabel("Playback")
+    Card {
+        SheetRow(null, "A-B repeat", glyph = "A-B", switch = ab.first != null) { vm.toggleAb() }
+        CardDivider()
+        SheetRow(MoodyIcons.Repeat, "Loop", loop.label) { go(PlayerMenu.LOOP) }
+        CardDivider()
+        SheetRow(MoodyIcons.Timer, "Sleep timer", when { sleep == null -> "Off"; sleep == -1L -> "End of video"; else -> "${((sleep!! - System.currentTimeMillis()) / 60_000) + 1} min" }) { go(PlayerMenu.SLEEP) }
+    }
+    GroupLabel("Video")
+    Card {
+        SheetRow(MoodyIcons.Aspect, "Aspect ratio", st.aspect.label) { go(PlayerMenu.ASPECT) }
+        CardDivider()
+        SheetRow(MoodyIcons.Rotate, "Rotate screen") { host.onRotate(); close() }
+        if (host.onPip != null) {
+            CardDivider()
+            SheetRow(MoodyIcons.Pip, "Picture in picture", switch = false) { close(); host.onPip.invoke() }
+        }
+    }
+    Spacer(Modifier.height(12.dp))
+    Card {
+        SheetRow(MoodyIcons.Decoder, "Decoder", decoderLabel(st.decoder)) { go(PlayerMenu.DECODER) }
+    }
 }
 
 @Composable
 private fun AudioMenu(vm: PlayerViewModel, st: PlayerState, go: (PlayerMenu) -> Unit) {
-    if (st.audioTracks.isEmpty()) Note("This video has no separate audio tracks")
-    st.audioTracks.forEach { t -> OptionRow(t.name, t.id == st.selectedAudio) { vm.engine.selectAudio(t.id); vm.toast(t.name) } }
+    val audio = st.audioTracks.filter { it.id != -1 }
+    if (audio.isEmpty()) Note("This video has one audio track")
+    audio.forEachIndexed { i, t ->
+        val l = trackLabel(t.name, i)
+        OptionRow(l.name, t.id == st.selectedAudio, l.lang) { vm.engine.selectAudio(t.id); vm.toast(l.name) }
+    }
     Divider()
-    NavRow(MoodyIcons.Timer, "Audio timing", delayLabel(st.audioDelayMs)) { go(PlayerMenu.AUDIO_DELAY) }
+    SheetRow(MoodyIcons.Timer, "Audio timing", delayLabel(st.audioDelayMs)) { go(PlayerMenu.AUDIO_DELAY) }
 }
 
 @Composable
 private fun SubtitlesMenu(vm: PlayerViewModel, st: PlayerState, go: (PlayerMenu) -> Unit) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        scope.launch {
-            // libVLC reads subtitle slaves from paths, so the picked file is copied into the cache first.
-            val name = uri.lastPathSegment?.substringAfterLast('/')?.substringAfterLast(':') ?: "subtitle.srt"
-            val file = withContext(Dispatchers.IO) {
-                runCatching {
-                    val dir = File(context.cacheDir, "subs").apply { mkdirs() }
-                    val out = File(dir, name.takeIf { '.' in it } ?: "$name.srt")
-                    context.contentResolver.openInputStream(uri)!!.use { i -> out.outputStream().use { i.copyTo(it) } }
-                    out
-                }.getOrNull()
-            }
-            if (file == null) vm.toast("Couldn't read that file") else { vm.engine.addSubtitle(Uri.fromFile(file)); vm.toast("Subtitles added") }
-        }
-    }
+    val pick = rememberSubtitlePicker(vm)
     OptionRow("Off", st.selectedSub == -1) { vm.engine.selectSub(-1); vm.toast("Subtitles off") }
-    st.subTracks.filter { it.id != -1 }.forEach { t -> OptionRow(t.name, t.id == st.selectedSub) { vm.engine.selectSub(t.id); vm.toast(t.name) } }
+    st.subTracks.filter { it.id != -1 }.forEachIndexed { i, t ->
+        val l = trackLabel(t.name, i)
+        OptionRow(l.name, t.id == st.selectedSub, l.lang) { vm.engine.selectSub(t.id); vm.toast(l.name) }
+    }
     Divider()
-    NavRow(MoodyIcons.Plus, "Load from file", "SRT, ASS, VTT") { picker.launch(arrayOf("*/*")) }
-    NavRow(MoodyIcons.Palette, "Style", null) { go(PlayerMenu.SUB_STYLE) }
-    NavRow(MoodyIcons.Timer, "Timing", delayLabel(st.subDelayMs)) { go(PlayerMenu.SUB_DELAY) }
+    SheetRow(MoodyIcons.Plus, "Load from file", "SRT, ASS, VTT") { pick() }
+    SheetRow(MoodyIcons.Palette, "Style") { go(PlayerMenu.SUB_STYLE) }
+    SheetRow(MoodyIcons.Timer, "Timing", delayLabel(st.subDelayMs)) { go(PlayerMenu.SUB_DELAY) }
+}
+
+@Composable
+private fun AspectMenu(vm: PlayerViewModel, st: PlayerState) {
+    Aspect.entries.forEach { a -> OptionRow(a.label, st.aspect == a) { vm.engine.setAspect(a); vm.toast(a.label) } }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -325,7 +404,7 @@ private fun DecoderMenu(vm: PlayerViewModel, st: PlayerState, close: () -> Unit)
         Decoder.HW_PLUS to "Hardware for everything, including colour conversion. Fastest when it works",
         Decoder.SW to "Decodes in software. Slower, but plays files the chip can't",
     ).forEach { (d, note) ->
-        OptionRow(d.label, st.decoder == d, null) { vm.reopenHere(d); vm.toast("${d.label} decoder"); close() }
+        OptionRow(decoderLabel(d), st.decoder == d, null) { vm.reopenHere(d); vm.toast("${decoderLabel(d)} decoder"); close() }
         Text(note, style = MoodyTheme.type.caption, color = MoodyTheme.colors.text3, modifier = Modifier.padding(start = 44.dp, end = 12.dp, bottom = 8.dp))
     }
 }

@@ -108,11 +108,13 @@ class PlayerActivity : ComponentActivity() {
 
         lifecycleScope.launch {
             vm.engine.state.collect { st ->
-                if (st.uri != null && st.videoWidth > 0 && sizedFor != st.uri) {
+                // Orientation follows how the video is meant to be seen (rotation metadata applied),
+                // so phone-recorded portrait clips and Reels stay portrait.
+                if (st.uri != null && st.displayWidth > 0 && st.displayHeight > 0 && sizedFor != st.uri) {
                     sizedFor = st.uri
-                    if (userOrientation == null) {
-                        requestedOrientation = if (st.videoWidth >= st.videoHeight) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
-                    }
+                    // A manual rotation applies to one video; each new video follows its own shape.
+                    userOrientation = null
+                    requestedOrientation = if (st.displayWidth > st.displayHeight) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
                 }
                 if (inPip) updatePip()
             }
@@ -138,6 +140,7 @@ class PlayerActivity : ComponentActivity() {
         val vault = intent.getBooleanExtra(PlayerViewModel.EXTRA_VAULT, false)
         if (vault) window.addFlags(WindowManager.LayoutParams.FLAG_SECURE) else window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
         sizedFor = null
+        userOrientation = null
         vm.load(uris, intent.getIntExtra(PlayerViewModel.EXTRA_INDEX, 0), intent.getStringArrayListExtra(PlayerViewModel.EXTRA_TITLES), vault)
     }
 
@@ -166,12 +169,14 @@ class PlayerActivity : ComponentActivity() {
 
     private fun pipParams(): PictureInPictureParams {
         val st = vm.engine.state.value
-        val ratio = if (st.videoWidth > 0 && st.videoHeight > 0) {
-            val r = st.videoWidth.toFloat() / st.videoHeight
+        val vw = if (st.displayWidth > 0) st.displayWidth else st.videoWidth
+        val vh = if (st.displayHeight > 0) st.displayHeight else st.videoHeight
+        val ratio = if (vw > 0 && vh > 0) {
+            val r = vw.toFloat() / vh
             when {
                 r > 2.39f -> Rational(239, 100)
                 r < 1 / 2.39f -> Rational(100, 239)
-                else -> Rational(st.videoWidth, st.videoHeight)
+                else -> Rational(vw, vh)
             }
         } else Rational(16, 9)
         fun action(code: Int, icon: Int, title: String) = RemoteAction(

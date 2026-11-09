@@ -77,10 +77,14 @@ fun PlayerScreen(vm: PlayerViewModel, host: PlayerHost, inPip: Boolean) {
     var menu by remember { mutableStateOf<PlayerMenu?>(null) }
     var showRemaining by remember { mutableStateOf(false) }
     var poke by remember { mutableStateOf(0) }
+    var tracks by remember { mutableStateOf<TrackKind?>(null) }
+    val settings by vm.settings.collectAsStateWithLifecycle()
+    val loop by vm.loop.collectAsStateWithLifecycle()
+    val shuffle by vm.shuffle.collectAsStateWithLifecycle()
 
     // Controls hide 3 s after the last touch while playing.
-    LaunchedEffect(controls, st.playing, scrubbing, menu, poke) {
-        if (controls && st.playing && !scrubbing && menu == null) { delay(3_000); controls = false }
+    LaunchedEffect(controls, st.playing, scrubbing, menu, tracks, poke) {
+        if (controls && st.playing && !scrubbing && menu == null && tracks == null) { delay(3_000); controls = false }
     }
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
@@ -103,26 +107,50 @@ fun PlayerScreen(vm: PlayerViewModel, host: PlayerHost, inPip: Boolean) {
             CircularProgressIndicator(Modifier.align(Alignment.Center).size(40.dp), color = MoodyTheme.colors.accent, strokeWidth = 2.dp, trackColor = OnVideo.rail)
         }
 
-        AnimatedVisibility(controls && !locked, enter = fadeIn(Motion.base()), exit = fadeOut(Motion.base())) {
+        // Finished with Loop off: a Replay button in the centre; the top controls step away, the bottom row stays usable.
+        val ended = st.ended && st.error == null
+        AnimatedVisibility(ended && !locked, Modifier.align(Alignment.Center), enter = fadeIn(Motion.base()), exit = fadeOut(Motion.fast())) {
+            Box(
+                Modifier.size(72.dp).clip(CircleShape).background(OnVideo.ink)
+                    .clickable(role = Role.Button) { vm.dismissResume(); vm.engine.play(); poke++ }
+                    .semantics { contentDescription = "Replay" },
+                contentAlignment = Alignment.Center,
+            ) { Icon(MoodyIcons.Replay, null, Modifier.size(34.dp), tint = OnVideo.text) }
+        }
+
+        AnimatedVisibility((controls || ended) && !locked, enter = fadeIn(Motion.base()), exit = fadeOut(Motion.base())) {
             Box(Modifier.fillMaxSize()) {
-                Box(Modifier.fillMaxWidth().height(140.dp).background(Brush.verticalGradient(listOf(Color(0xA608070B), Color.Transparent))))
-                Box(Modifier.fillMaxWidth().height(220.dp).align(Alignment.BottomCenter).background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xE008070B)))))
+                if (!ended) Box(Modifier.fillMaxWidth().height(150.dp).background(Brush.verticalGradient(listOf(Color(0xB308070B), Color.Transparent))))
+                Box(Modifier.fillMaxWidth().height(200.dp).align(Alignment.BottomCenter).background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xE008070B)))))
                 Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
-                    TitleBar(vm.current?.title.orEmpty(), st, host.onBack) { menu = PlayerMenu.MORE; poke++ }
+                    AnimatedVisibility(!ended, enter = fadeIn(Motion.base()), exit = fadeOut(Motion.fast())) {
+                    Column {
+                    TitleBar(
+                        title = vm.current?.title.orEmpty(), st = st, onBack = host.onBack,
+                        onAudio = { tracks = TrackKind.AUDIO; poke++ },
+                        onCc = { tracks = TrackKind.SUBS; poke++ },
+                        onMore = { menu = PlayerMenu.MORE; poke++ },
+                    )
+                    ShortcutRow(vm, st, settings.playerShortcuts, ab, loop, shuffle, settings.backgroundPlay) { poke++ }
+                    }
+                    }
                     Spacer(Modifier.weight(1f))
                     BottomControls(
                         st = st, showRemaining = showRemaining, ab = ab,
-                        canPrev = vm.hasPrev || st.positionMs > 5_000, hasNext = vm.hasNext,
-                        onPrev = { vm.prev(); poke++ }, onToggle = { vm.engine.toggle(); poke++ }, onNext = { vm.next(); poke++ },
+                        canPrev = vm.hasPrev || st.positionMs > 5_000, hasNext = vm.hasNext || (shuffle && vm.queue.size > 1),
+                        onPrev = { vm.prev(); poke++ },
+                        onToggle = { vm.dismissResume(); vm.engine.toggle(); poke++ },
+                        onNext = { vm.next(); poke++ },
                         onToggleTime = { showRemaining = !showRemaining; poke++ },
-                        onSeek = { vm.engine.seekTo(it); poke++ },
-                        onScrubbing = { scrubbing = it },
+                        onSeek = { vm.dismissResume(); vm.engine.seekTo(it); poke++ },
+                        onScrubbing = { scrubbing = it; if (it) vm.dismissResume() },
                         onLock = { locked = true; controls = false; vm.toast("Controls locked") },
-                        onSpeed = { menu = PlayerMenu.SPEED; poke++ },
-                        onFit = {
-                            val a = if (st.aspect == Aspect.FILL) Aspect.FIT else Aspect.FILL
-                            vm.engine.setAspect(a); vm.toast(if (a == Aspect.FILL) "Fill screen" else "Fit to screen"); poke++
+                        onScreenSize = {
+                            val order = listOf(Aspect.FIT, Aspect.FILL, Aspect.STRETCH)
+                            val a = order[(order.indexOf(st.aspect).coerceAtLeast(0) + 1) % order.size]
+                            vm.engine.setAspect(a); vm.toast(a.label); poke++
                         },
+                        onPopup = host.onPip ?: { vm.toast("Floating playback isn't available on this phone") },
                     )
                 }
             }
@@ -132,9 +160,26 @@ fun PlayerScreen(vm: PlayerViewModel, host: PlayerHost, inPip: Boolean) {
             LockedOverlay(controls) { locked = false; controls = true; vm.toast("Controls unlocked") }
         }
 
-        resumedAt?.let { at ->
-            ResumeChip(at, onStartOver = vm::startOver, modifier = Modifier.align(Alignment.BottomStart).windowInsetsPadding(WindowInsets.safeDrawing).padding(start = 16.dp, bottom = if (controls) 188.dp else 24.dp))
+        // A-B: A is set, B not yet: offer the second mark right on the video.
+        if (ab.first != null && ab.second == null && !locked) {
+            Text(
+                "Set B", style = MoodyTheme.type.label, color = MoodyTheme.colors.accentInk,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .windowInsetsPadding(WindowInsets.safeDrawing)
+                    .padding(end = 16.dp, bottom = if (controls) 132.dp else 24.dp)
+                    .clip(Radii.pill)
+                    .background(MoodyTheme.colors.accent)
+                    .clickable(role = Role.Button) { vm.markB(); poke++ }
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
+            )
         }
+
+        resumedAt?.takeIf { it.first == vm.current?.uri }?.let { (_, at) ->
+            ResumeChip(at, onStartOver = vm::startOver, modifier = Modifier.align(Alignment.BottomStart).windowInsetsPadding(WindowInsets.safeDrawing).padding(start = 16.dp, bottom = if (controls) 132.dp else 24.dp))
+        }
+
+        tracks?.let { kind -> TrackPopover(kind, vm, st, onDismiss = { tracks = null }) }
 
         st.error?.let { msg ->
             ErrorSheet(
@@ -152,32 +197,84 @@ fun PlayerScreen(vm: PlayerViewModel, host: PlayerHost, inPip: Boolean) {
     }
 }
 
+/** Back, filename, resolution, Audio, CC, overflow. The filename gives way first; the buttons never move. */
 @Composable
-private fun TitleBar(title: String, st: PlayerState, onBack: () -> Unit, onMore: () -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        VideoIcon(MoodyIcons.ArrowBack, "Back", onBack)
-        Text(title, style = MoodyTheme.type.heading, color = OnVideo.text, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).padding(horizontal = 4.dp))
+private fun TitleBar(title: String, st: PlayerState, onBack: () -> Unit, onAudio: () -> Unit, onCc: () -> Unit, onMore: () -> Unit) {
+    Row(Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        VideoIcon(MoodyIcons.ArrowBack, "Back", onBack, size = 22.dp)
+        androidx.compose.foundation.layout.BoxWithConstraints(Modifier.weight(1f).padding(horizontal = 4.dp)) {
+            val maxChars = (maxWidth.value / 8.2f).toInt().coerceAtLeast(8)
+            Text(middleEllipsize(title, maxChars), style = MoodyTheme.type.heading, color = OnVideo.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
         resolution(st)?.let {
             Text(
                 it, style = MoodyTheme.type.monoSmall, color = OnVideo.text.copy(alpha = 0.88f),
-                modifier = Modifier.border(1.dp, OnVideo.text.copy(alpha = 0.24f), Radii.sm).padding(horizontal = 6.dp, vertical = 3.dp),
+                modifier = Modifier.padding(end = 2.dp).border(1.dp, OnVideo.text.copy(alpha = 0.28f), Radii.sm).padding(horizontal = 5.dp, vertical = 2.dp),
             )
         }
-        VideoIcon(MoodyIcons.More, "More options", onMore)
+        VideoIcon(MoodyIcons.Audio, "Audio tracks", onAudio, size = 20.dp)
+        VideoIcon(MoodyIcons.Cc, "Subtitles", onCc, size = 20.dp)
+        VideoIcon(MoodyIcons.More, "More options", onMore, size = 20.dp)
     }
 }
 
-private fun resolution(st: PlayerState): String? = when {
-    st.videoHeight >= 2000 || st.videoWidth >= 3800 -> "4K"
-    st.videoHeight >= 1000 || st.videoWidth >= 1900 -> "1080p"
-    st.videoHeight >= 700 || st.videoWidth >= 1260 -> "720p"
-    st.videoHeight > 0 -> "${st.videoHeight}p"
-    else -> null
+/** "Snapinsta.to_AQM4igzf…X8NU.mp4": keeps the start and the end, which is where names differ. */
+fun middleEllipsize(text: String, maxChars: Int): String {
+    if (text.length <= maxChars || maxChars < 8) return text
+    val tail = (maxChars / 3).coerceAtLeast(3)
+    val head = maxChars - tail - 1
+    return text.take(head).trimEnd() + "\u2026" + text.takeLast(tail).trimStart()
 }
 
+private fun resolution(st: PlayerState): String? {
+    val w = if (st.displayWidth > 0) st.displayWidth else st.videoWidth
+    val h = if (st.displayHeight > 0) st.displayHeight else st.videoHeight
+    val short = minOf(w, h)
+    val long = maxOf(w, h)
+    return when {
+        short <= 0 -> null
+        short >= 2000 || long >= 3800 -> "4K"
+        short >= 1000 || long >= 1900 -> "1080p"
+        short >= 700 || long >= 1260 -> "720p"
+        else -> "${short}p"
+    }
+}
+
+/** The user's chosen shortcuts, small and in one row under the title bar (MX style). Never the six fixed controls. */
+@Composable
+private fun ShortcutRow(
+    vm: PlayerViewModel, st: PlayerState, shortcuts: List<com.moody.player.domain.PlayerShortcut>,
+    ab: Pair<Long?, Long?>, loop: com.moody.player.domain.LoopMode, shuffle: Boolean, backgroundPlay: Boolean, onUse: () -> Unit,
+) {
+    if (shortcuts.isEmpty()) return
+    val accent = MoodyTheme.colors.accent
+    val idle = OnVideo.text.copy(alpha = 0.9f)
+    Row(Modifier.padding(start = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        shortcuts.forEach { sc ->
+            val (icon, label, active, action) = when (sc) {
+                com.moody.player.domain.PlayerShortcut.LOOP -> Quad(
+                    if (loop == com.moody.player.domain.LoopMode.ONE) MoodyIcons.RepeatOne else MoodyIcons.Repeat,
+                    "Loop: ${loop.label}", loop != com.moody.player.domain.LoopMode.OFF, vm::cycleLoop,
+                )
+                com.moody.player.domain.PlayerShortcut.SHUFFLE -> Quad(MoodyIcons.Shuffle, "Shuffle", shuffle, vm::toggleShuffle)
+                com.moody.player.domain.PlayerShortcut.SCREENSHOT -> Quad(MoodyIcons.Camera, "Screenshot", false, vm::screenshot)
+                com.moody.player.domain.PlayerShortcut.AB_REPEAT -> Quad(MoodyIcons.AbRepeat, "A-B repeat", ab.first != null, vm::toggleAb)
+                com.moody.player.domain.PlayerShortcut.MUTE -> Quad(if (st.muted) MoodyIcons.VolumeMute else MoodyIcons.VolumeHigh, if (st.muted) "Unmute" else "Mute", st.muted, vm::toggleMute)
+                com.moody.player.domain.PlayerShortcut.BACKGROUND_PLAY -> Quad(MoodyIcons.Music, "Background play", backgroundPlay, { vm.toggleBackgroundPlay(); Unit })
+            }
+            Box(
+                Modifier.size(40.dp).clip(CircleShape).clickable(role = Role.Button) { action(); onUse() }.semantics { contentDescription = label },
+                contentAlignment = Alignment.Center,
+            ) { Icon(icon, null, Modifier.size(18.dp), tint = if (active) accent else idle) }
+        }
+    }
+}
+
+private data class Quad(val icon: ImageVector, val label: String, val active: Boolean, val action: () -> Unit)
+
 /**
- * The bottom section, built for vertical video: seek bar with times, then the three primary controls
- * (play/pause clearly largest), then a small row of lock, speed and fit/fill. Everything else is in the overflow menu.
+ * Progress bar with times, then exactly six controls in one row:
+ * Lock, Previous, Play/Pause, Next, Screen size, Popup. The middle three are larger. Nothing else goes here.
  */
 @Composable
 private fun BottomControls(
@@ -193,14 +290,14 @@ private fun BottomControls(
     onSeek: (Long) -> Unit,
     onScrubbing: (Boolean) -> Unit,
     onLock: () -> Unit,
-    onSpeed: () -> Unit,
-    onFit: () -> Unit,
+    onScreenSize: () -> Unit,
+    onPopup: () -> Unit,
 ) {
     val t = MoodyTheme.type
     val accent = MoodyTheme.colors.accent
-    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 8.dp)) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(bottom = 6.dp)) {
         SeekBar(st.positionMs, st.durationMs, onSeek, onScrubbing, Modifier.fillMaxWidth().systemGestureExclusion(), ab.first, ab.second)
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(formatDuration(st.positionMs).let { if (it == "--:--") "0:00" else it }, style = t.mono, color = OnVideo.text)
             Spacer(Modifier.weight(1f))
             Text(
@@ -209,33 +306,40 @@ private fun BottomControls(
                 modifier = Modifier.clip(Radii.sm).clickable(onClickLabel = "Show remaining time", onClick = onToggleTime).padding(horizontal = 4.dp, vertical = 2.dp),
             )
         }
-        Spacer(Modifier.height(4.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-            VideoIcon(MoodyIcons.Prev, "Previous", onPrev, size = 24.dp, enabled = canPrev)
-            Spacer(Modifier.width(28.dp))
-            val icon = when { st.ended -> MoodyIcons.Replay; st.playing -> MoodyIcons.Pause; else -> MoodyIcons.Play }
-            Box(
-                Modifier
-                    .size(64.dp)
-                    .clip(CircleShape)
-                    .clickable(role = Role.Button, onClick = onToggle)
-                    .semantics { contentDescription = when { st.ended -> "Replay"; st.playing -> "Pause"; else -> "Play" } },
-                contentAlignment = Alignment.Center,
-            ) { Icon(icon, null, Modifier.size(40.dp), tint = OnVideo.text) }
-            Spacer(Modifier.width(28.dp))
-            VideoIcon(MoodyIcons.Next, "Next", onNext, size = 24.dp, enabled = hasNext)
-        }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-            VideoIcon(MoodyIcons.Lock, "Lock controls", onLock, size = 20.dp, tint = OnVideo.text.copy(alpha = 0.85f))
-            SpeedButton(st.rate, onSpeed)
-            val filled = st.aspect == Aspect.FILL
-            VideoIcon(
-                if (filled) MoodyIcons.FitScreen else MoodyIcons.Fullscreen,
-                if (filled) "Fit to screen" else "Fill screen", onFit, size = 20.dp,
-                tint = if (filled) accent else OnVideo.text.copy(alpha = 0.85f),
-            )
+        androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val k = if (maxWidth < 340.dp) 0.88f else 1f
+            val small = 21.dp * k
+            val main = 26.dp * k
+            val play = 34.dp * k
+            val secondary = OnVideo.text.copy(alpha = 0.85f)
+            Row(Modifier.fillMaxWidth().height(56.dp), verticalAlignment = Alignment.CenterVertically) {
+                Slot { VideoIcon(MoodyIcons.Lock, "Lock controls", onLock, size = small, tint = secondary) }
+                Slot { VideoIcon(MoodyIcons.Prev, "Previous", onPrev, size = main, enabled = canPrev) }
+                Slot {
+                    val icon = when { st.ended -> MoodyIcons.Replay; st.playing -> MoodyIcons.Pause; else -> MoodyIcons.Play }
+                    Box(
+                        Modifier.size(56.dp).clip(CircleShape).clickable(role = Role.Button, onClick = onToggle)
+                            .semantics { contentDescription = when { st.ended -> "Replay"; st.playing -> "Pause"; else -> "Play" } },
+                        contentAlignment = Alignment.Center,
+                    ) { Icon(icon, null, Modifier.size(play), tint = OnVideo.text) }
+                }
+                Slot { VideoIcon(MoodyIcons.Next, "Next", onNext, size = main, enabled = hasNext) }
+                Slot {
+                    VideoIcon(
+                        if (st.aspect == Aspect.FIT) MoodyIcons.Fullscreen else MoodyIcons.FitScreen,
+                        "Screen size: ${st.aspect.label}", onScreenSize, size = small,
+                        tint = if (st.aspect == Aspect.FIT) secondary else accent,
+                    )
+                }
+                Slot { VideoIcon(MoodyIcons.Pip, "Popup window", onPopup, size = small, tint = secondary) }
+            }
         }
     }
+}
+
+@Composable
+private fun androidx.compose.foundation.layout.RowScope.Slot(content: @Composable () -> Unit) {
+    Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { content() }
 }
 
 @Composable

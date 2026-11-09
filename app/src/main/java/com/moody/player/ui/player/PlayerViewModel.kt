@@ -71,8 +71,12 @@ class PlayerViewModel @Inject constructor(
     val toasts: SharedFlow<String> = _toasts.asSharedFlow()
 
     /** "Resumed at 12:04" chip; null when hidden. */
-    private val _resumedAt = MutableStateFlow<Long?>(null)
-    val resumedAt: StateFlow<Long?> = _resumedAt.asStateFlow()
+    /** "Resumed at" chip for one specific video: (that video's uri, position). Null when hidden. */
+    private val _resumedAt = MutableStateFlow<Pair<Uri, Long>?>(null)
+    val resumedAt: StateFlow<Pair<Uri, Long>?> = _resumedAt.asStateFlow()
+
+    private val _shuffle = MutableStateFlow(false)
+    val shuffle: StateFlow<Boolean> = _shuffle.asStateFlow()
 
     private val _loop = MutableStateFlow(LoopMode.OFF)
     val loop: StateFlow<LoopMode> = _loop.asStateFlow()
@@ -116,6 +120,7 @@ class PlayerViewModel @Inject constructor(
 
     fun open(i: Int, fromStart: Boolean = false, decoder: Decoder? = null) = viewModelScope.launch {
         val entry = queue.getOrNull(i) ?: return@launch
+        dismissResume()
         savePosition()
         _index.value = i
         val s = settingsStore.settings.first()
@@ -129,19 +134,81 @@ class PlayerViewModel @Inject constructor(
             launch { delay(1200); if (f.audioTrack >= 0) engine.selectAudio(f.audioTrack); if (f.subTrack >= -1) engine.selectSub(f.subTrack) }
         }
         _ab.value = null to null
-        if (start > 0) showResumeChip(start)
+        if (start > 0 && saved != null) showResumeChip(entry.uri, start)
     }
 
-    private fun showResumeChip(at: Long) {
-        _resumedAt.value = at
+    private fun showResumeChip(uri: Uri, at: Long) {
+        _resumedAt.value = uri to at
         resumeChipJob?.cancel()
-        resumeChipJob = viewModelScope.launch { delay(6_000); _resumedAt.value = null }
+        resumeChipJob = viewModelScope.launch { delay(4_000); if (_resumedAt.value?.first == uri) _resumedAt.value = null }
     }
 
-    fun startOver() {
+    /** Hides the chip at once: on play/pause, seeking, Start over, or switching videos. */
+    fun dismissResume() {
+        resumeChipJob?.cancel()
         _resumedAt.value = null
-        engine.seekTo(0)
     }
+
+    /** Start over: back to 0 and forget this video's saved position. */
+    fun startOver() {
+        val uri = _resumedAt.value?.first ?: current?.uri
+        dismissResume()
+        engine.seekTo(0)
+        if (uri != null && !isVault) viewModelScope.launch { positions.clear(uri.toString()) }
+    }
+
+    fun toggleShuffle() {
+        _shuffle.value = !_shuffle.value
+        _toasts.tryEmit(if (_shuffle.value) "Shuffle on" else "Shuffle off")
+    }
+
+    fun toggleMute() {
+        val on = !engine.state.value.muted
+        engine.setMuted(on)
+        _toasts.tryEmit(if (on) "Muted" else "Sound on")
+    }
+
+    fun toggleBackgroundPlay() = viewModelScope.launch {
+        val on = !settings.value.backgroundPlay
+        settingsStore.update { it.copy(backgroundPlay = on) }
+        _toasts.tryEmit(if (on) "Background play on" else "Background play off")
+    }
+
+    /** A-B toggle: on marks A at the current time (a Set B chip then appears); off clears the loop. */
+    fun toggleAb() { if (_ab.value.first != null) clearAb() else markA() }
+
+    fun cycleLoop() = setLoop(LoopMode.entries[(_loop.value.ordinal + 1) % LoopMode.entries.size])
+
+    /** Saves the current frame to Pictures/Moody. */
+    fun screenshot() {
+        engine.snapshot { bmp ->
+            if (bmp == null) { _toasts.tryEmit("Couldn't take a screenshot"); return@snapshot }
+            viewModelScope.launch {
+                val ok = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { saveScreenshot(bmp) }
+                _toasts.tryEmit(if (ok) "Screenshot saved to Pictures/Moody" else "Couldn't save the screenshot")
+            }
+        }
+    }
+
+    private fun saveScreenshot(bmp: android.graphics.Bitmap): Boolean = runCatching {
+        val name = "Moody_${System.currentTimeMillis()}.png"
+        if (android.os.Build.VERSION.SDK_INT >= 29) {
+            val values = android.content.ContentValues().apply {
+                put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, name)
+                put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "image/png")
+                put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, "Pictures/Moody/")
+            }
+            val uri = context.contentResolver.insert(android.provider.MediaStore.Images.Media.getContentUri(android.provider.MediaStore.VOLUME_EXTERNAL_PRIMARY), values)!!
+            context.contentResolver.openOutputStream(uri)!!.use { bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+        } else {
+            @Suppress("DEPRECATION")
+            val dir = java.io.File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_PICTURES), "Moody").apply { mkdirs() }
+            val f = java.io.File(dir, name)
+            f.outputStream().use { bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+            android.media.MediaScannerConnection.scanFile(context, arrayOf(f.absolutePath), arrayOf("image/png"), null)
+        }
+        true
+    }.getOrDefault(false)
 
     /** A new video arrived while this screen is open (another app, or the library): play it here. */
     fun load(newUris: List<Uri>, index: Int, newTitles: List<String>?, vault: Boolean) {
@@ -152,7 +219,13 @@ class PlayerViewModel @Inject constructor(
         open(index.coerceIn(0, queue.lastIndex), fromStart = false)
     }
 
-    fun next() { if (hasNext) open(_index.value + 1) else if (_loop.value == LoopMode.FOLDER && queue.isNotEmpty()) open(0, fromStart = true) }
+    fun next() {
+        if (_shuffle.value && queue.size > 1) {
+            open((queue.indices - _index.value).random(), fromStart = true)
+            return
+        }
+        if (hasNext) open(_index.value + 1) else if (_loop.value == LoopMode.FOLDER && queue.isNotEmpty()) open(0, fromStart = true)
+    }
     fun prev() {
         if (engine.state.value.positionMs > 5_000 || !hasPrev) engine.seekTo(0) else open(_index.value - 1)
     }
@@ -179,7 +252,8 @@ class PlayerViewModel @Inject constructor(
         when (_loop.value) {
             LoopMode.ONE -> open(_index.value, fromStart = true)
             LoopMode.FOLDER -> if (hasNext) open(_index.value + 1, fromStart = true) else open(0, fromStart = true)
-            LoopMode.OFF -> if (hasNext) open(_index.value + 1, fromStart = true)
+            // Loop off: stop at the end and let the screen offer Replay (shuffle keeps going).
+            LoopMode.OFF -> if (_shuffle.value && queue.size > 1) next()
         }
     }
 

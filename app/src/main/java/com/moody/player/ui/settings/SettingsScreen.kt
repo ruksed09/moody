@@ -85,7 +85,7 @@ typealias UpdatesRow = @Composable () -> Unit
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit, onOpenVault: () -> Unit, updates: UpdatesRow) {
+fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit, onOpenVault: () -> Unit, updates: UpdatesRow, onShortcuts: () -> Unit = {}) {
     val s by vm.settings.collectAsStateWithLifecycle()
     val info by vm.vaultInfo.collectAsStateWithLifecycle()
     val unlocked by vm.lock.unlocked.collectAsStateWithLifecycle()
@@ -125,6 +125,7 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit, onOpenVault: () ->
         }
 
         item { Group("Player") }
+        item { Action("Customize player shortcuts", "${s.playerShortcuts.size} of 4 quick buttons above the video", MoodyIcons.Layers, onShortcuts) }
         item {
             Choice("Decoder", MoodyIcons.Decoder, "HW is smooth and light on battery. SW plays files the phone's chip can't.") {
                 Decoder.entries.forEach { d -> ChoiceChip(d.label, s.decoder == d, { vm.update { it.copy(decoder = d) } }) }

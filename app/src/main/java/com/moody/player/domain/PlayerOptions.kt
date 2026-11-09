@@ -11,7 +11,7 @@ enum class SubBg(val label: String) { SHADOW("Shadow"), SOFT("Soft"), SOLID("Sol
 enum class LoopMode(val label: String) { OFF("Off"), ONE("This video"), FOLDER("Folder") }
 
 enum class Aspect(val label: String, val vlcRatio: String?, val fill: Boolean = false) {
-    FIT("Fit", null), FILL("Fill", null, fill = true), STRETCH("Stretch", null), R16_9("16:9", "16:9"), R4_3("4:3", "4:3"), ORIGINAL("Original", null);
+    FIT("Fit", null), FILL("Crop", null, fill = true), STRETCH("Stretch", null), R16_9("16:9", "16:9"), R4_3("4:3", "4:3"), ORIGINAL("Original", null);
 
     fun next(): Aspect = entries[(ordinal + 1) % entries.size]
 }
