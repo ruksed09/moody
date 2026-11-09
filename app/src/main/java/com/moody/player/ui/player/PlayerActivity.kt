@@ -61,6 +61,7 @@ class PlayerActivity : ComponentActivity() {
     /** null = follow the video; otherwise the user's choice from the rotate button. */
     private var userOrientation: Int? = null
     private var sizedFor: Uri? = null
+    private var orientationBeforePip: Int? = null
 
     private val pipReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -93,6 +94,7 @@ class PlayerActivity : ComponentActivity() {
             LaunchedEffect(Unit) { vm.toasts.collect { toaster.show(it) } }
             val fontMode = vm.settings.collectAsStateWithLifecycle().value.fontMode
             MoodyTheme(ThemeMode.DARK, fontMode) {
+                androidx.compose.runtime.CompositionLocalProvider(com.moody.player.design.components.LocalToaster provides toaster) {
                 Box(Modifier.fillMaxSize()) {
                     PlayerScreen(
                         vm,
@@ -105,6 +107,7 @@ class PlayerActivity : ComponentActivity() {
                         inPip,
                     )
                     if (!inPip) ToastHost(toaster, Alignment.TopCenter, androidx.compose.foundation.layout.PaddingValues(top = 64.dp), onVideo = true)
+                }
                 }
             }
         }
@@ -233,6 +236,16 @@ class PlayerActivity : ComponentActivity() {
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         inPip = isInPictureInPictureMode
+        if (isInPictureInPictureMode) {
+            // The small window must not keep the phone in landscape: the screen behind it follows the user.
+            orientationBeforePip = requestedOrientation
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        } else {
+            orientationBeforePip?.let { requestedOrientation = it }
+            orientationBeforePip = null
+        }
+        // The surface was resized; a paused video would otherwise show black until the next frame.
+        vm.engine.redrawIfPaused()
         // Leaving PiP while not coming back to the foreground means the user closed the window.
         if (!isInPictureInPictureMode && !lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
             vm.engine.pause()

@@ -38,6 +38,7 @@ data class Settings(
     val decoder: Decoder = Decoder.HW,
     val doubleTapSeekSec: Int = 10,
     val gestures: Boolean = true,
+    val disabledGestures: Set<com.moody.player.domain.PlayerGesture> = emptySet(),
     val resume: Boolean = true,
     val perFileSettings: Boolean = false,
     val backgroundPlay: Boolean = true,
@@ -75,6 +76,7 @@ private object K {
     val decoder = stringPreferencesKey("decoder")
     val doubleTap = intPreferencesKey("double_tap_sec")
     val gestures = booleanPreferencesKey("gestures")
+    val gesturesOff = stringSetPreferencesKey("gestures_off")
     val resume = booleanPreferencesKey("resume")
     val perFile = booleanPreferencesKey("per_file")
     val bgPlay = booleanPreferencesKey("bg_play")
@@ -110,6 +112,7 @@ internal fun Preferences.toSettings(): Settings {
         decoder = enum(K.decoder, d.decoder),
         doubleTapSeekSec = this[K.doubleTap] ?: d.doubleTapSeekSec,
         gestures = this[K.gestures] ?: d.gestures,
+        disabledGestures = this[K.gesturesOff]?.let { com.moody.player.domain.decodeGestures(it) } ?: d.disabledGestures,
         resume = this[K.resume] ?: d.resume,
         perFileSettings = this[K.perFile] ?: d.perFileSettings,
         backgroundPlay = this[K.bgPlay] ?: d.backgroundPlay,
@@ -142,6 +145,7 @@ internal fun MutablePreferences.write(s: Settings) {
     this[K.decoder] = s.decoder.name
     this[K.doubleTap] = s.doubleTapSeekSec
     this[K.gestures] = s.gestures
+    this[K.gesturesOff] = com.moody.player.domain.encodeGestures(s.disabledGestures)
     this[K.resume] = s.resume
     this[K.perFile] = s.perFileSettings
     this[K.bgPlay] = s.backgroundPlay

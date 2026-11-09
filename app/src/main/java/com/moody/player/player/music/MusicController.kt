@@ -44,6 +44,8 @@ data class MusicState(
     /** Sleep timer end (epoch ms); null when off. */
     val sleepAt: Long? = null,
     val audioSessionId: Int = 0,
+    /** The user closed the mini-player; it stays hidden until something plays again. */
+    val dismissed: Boolean = false,
 )
 
 /** The app's handle on the music session. Every call runs on the main thread. */
@@ -92,7 +94,10 @@ class MusicController @Inject constructor(
     private val listener = object : Player.Listener {
         override fun onEvents(player: Player, events: Player.Events) {
             sync()
-            if (events.contains(Player.EVENT_IS_PLAYING_CHANGED) && player.isPlaying) coordinator.musicStarted()
+            if (events.contains(Player.EVENT_IS_PLAYING_CHANGED) && player.isPlaying) {
+                coordinator.musicStarted()
+                _state.update { it.copy(dismissed = false) }
+            }
         }
     }
 
@@ -160,6 +165,22 @@ class MusicController @Inject constructor(
 
     fun cycleRepeat() = withController { c ->
         c.repeatMode = when (c.repeatMode) { Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL; Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE; else -> Player.REPEAT_MODE_OFF }
+    }
+
+    /**
+     * Close from the mini-player: stop the sound and drop the notification (an idle session shows none),
+     * but keep the queue so the next play can pick it up. Not the same as pause.
+     */
+    fun close() {
+        _state.update { it.copy(dismissed = true, playing = false) }
+        sleepIn(null)
+        withController { c -> c.pause(); c.stop() }
+    }
+
+    /** Removes every queue entry for this file (used after the file is deleted). */
+    fun removeUri(uri: Uri) = withController { c ->
+        val id = uri.toString()
+        (c.mediaItemCount - 1 downTo 0).filter { c.getMediaItemAt(it).mediaId == id }.forEach { c.removeMediaItem(it) }
     }
 
     fun setShuffle(on: Boolean) = withController { it.shuffleModeEnabled = on }

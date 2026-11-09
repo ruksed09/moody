@@ -58,25 +58,28 @@ fun shortcutIcon(s: PlayerShortcut): ImageVector = when (s) {
     PlayerShortcut.SCREENSHOT -> MoodyIcons.Camera
     PlayerShortcut.AB_REPEAT -> MoodyIcons.AbRepeat
     PlayerShortcut.MUTE -> MoodyIcons.VolumeHigh
-    PlayerShortcut.BACKGROUND_PLAY -> MoodyIcons.Music
+    PlayerShortcut.ROTATE -> MoodyIcons.Rotate
 }
 
 /** Settings > Customize player shortcuts: pick, order and preview the quick buttons under the player's title bar. */
 @Composable
 fun ShortcutsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
     val s by vm.settings.collectAsStateWithLifecycle()
-    val selected = s.playerShortcuts
+    SettingsPage("Player shortcuts", onBack) {
+        item {
+            Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                ShortcutEditor(s.playerShortcuts) { list -> vm.update { it.copy(playerShortcuts = list) } }
+            }
+        }
+    }
+}
+
+/** Preview, selected list (drag to reorder, remove) and available list. Used in Settings and in the player sheet. */
+@Composable
+fun ShortcutEditor(selected: List<PlayerShortcut>, save: (List<PlayerShortcut>) -> Unit) {
     val c = MoodyTheme.colors
     val toaster = LocalToaster.current
-    fun save(list: List<PlayerShortcut>) = vm.update { it.copy(playerShortcuts = list) }
-
-    Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
-        Row(Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconAction(MoodyIcons.ArrowBack, "Back", onBack, tint = c.text, size = 22.dp)
-            Spacer(Modifier.width(4.dp))
-            Text("Player shortcuts", style = MoodyTheme.type.display, color = c.text)
-        }
-        Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
+    Column {
             Text("Quick buttons shown under the video's title bar. Up to $MAX_SHORTCUTS.", style = MoodyTheme.type.caption, color = c.text2)
             Spacer(Modifier.height(12.dp))
             Preview(selected)
@@ -106,8 +109,6 @@ fun ShortcutsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
                 "Lock, Previous, Play/Pause, Next, Screen size and Popup always stay in the bottom row. Audio and CC stay in the title bar.",
                 style = MoodyTheme.type.caption, color = c.text3,
             )
-            Spacer(Modifier.height(24.dp))
-        }
     }
 }
 

@@ -21,4 +21,9 @@ class ShortcutsTest {
         assertEquals(sel, decodeShortcuts("LOOP,MUTE,LOOP,BOGUS"))
         assertEquals(emptyList<PlayerShortcut>(), decodeShortcuts(""))
     }
+
+    @Test fun savedBackgroundPlayFromOlderVersionIsDropped() {
+        // 1.1.0 could save BACKGROUND_PLAY; it is now a Settings toggle, not a shortcut.
+        assertEquals(listOf(PlayerShortcut.LOOP, PlayerShortcut.ROTATE), decodeShortcuts("LOOP,BACKGROUND_PLAY,ROTATE"))
+    }
 }

@@ -32,11 +32,11 @@ import com.moody.player.design.components.ReelLine
 import com.moody.player.design.icons.MoodyIcons
 import com.moody.player.player.music.MusicState
 
-/** Docks above the bottom bar while something is queued. Tap opens Now Playing. */
+/** Docks above the bottom bar while something is queued. Tap opens Now Playing; X stops and hides it. */
 @Composable
-fun MiniPlayer(s: MusicState, onOpen: () -> Unit, onToggle: () -> Unit, onNext: () -> Unit) {
+fun MiniPlayer(s: MusicState, onOpen: () -> Unit, onToggle: () -> Unit, onNext: () -> Unit, onClose: () -> Unit) {
     val c = MoodyTheme.colors
-    AnimatedVisibility(s.current != null, enter = expandVertically(Motion.enter()) + fadeIn(Motion.enter()), exit = shrinkVertically(Motion.base()) + fadeOut(Motion.fast())) {
+    AnimatedVisibility(s.current != null && !s.dismissed, enter = expandVertically(Motion.enter()) + fadeIn(Motion.enter()), exit = shrinkVertically(Motion.base()) + fadeOut(Motion.fast())) {
         val item = s.current ?: return@AnimatedVisibility
         Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp).clip(Radii.lg).background(c.surface).border(1.dp, c.line, Radii.lg)) {
             Row(
@@ -51,6 +51,8 @@ fun MiniPlayer(s: MusicState, onOpen: () -> Unit, onToggle: () -> Unit, onNext: 
                 }
                 IconAction(if (s.playing) MoodyIcons.Pause else MoodyIcons.Play, if (s.playing) "Pause" else "Play", onToggle, tint = c.text)
                 IconAction(MoodyIcons.Next, "Next", onNext, tint = c.text2)
+                // Close stops the music and hides this bar; the queue is kept. Pause is the button on the left.
+                IconAction(MoodyIcons.Close, "Close player", onClose, tint = c.text3, size = 18.dp)
             }
             Box(Modifier.padding(horizontal = 12.dp)) {
                 ReelLine(if (s.durationMs > 0) s.positionMs / s.durationMs.toFloat() else 0f, height = 2.dp, track = c.line)

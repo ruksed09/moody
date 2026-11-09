@@ -63,12 +63,25 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.abs
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.systemGestures
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
+import com.moody.player.domain.PlayerGesture
+import com.moody.player.domain.TapZone
+import com.moody.player.domain.tapZone
 
 private enum class Drag { NONE, SEEK, BRIGHTNESS, VOLUME, PINCH }
 
+private const val DOUBLE_TAP_MS = 260L
+
 /**
  * MX-style gestures over the video:
- * tap toggles controls; double-tap left/right seeks (taps add up); long-press plays at 2x while held;
+ * tap toggles controls; double-tap left/right seeks (taps add up), double-tap the middle plays/pauses;
+ * long-press plays at 2x while held;
  * vertical swipe left = brightness, right = volume; horizontal swipe seeks with a preview; pinch switches Fit/Fill.
  */
 @Composable
@@ -88,7 +101,12 @@ fun GestureLayer(vm: PlayerViewModel, state: PlayerState, locked: Boolean, onTap
     var ping by remember { mutableStateOf<Pair<Boolean, Int>?>(null) } // (right side, seconds)
     var boosted by remember { mutableStateOf(false) }
     var lastTapAt by remember { mutableLongStateOf(0L) }
-    var lastTapRight by remember { mutableStateOf(false) }
+    var lastZone by remember { mutableStateOf(TapZone.CENTER) }
+    var flash by remember { mutableStateOf<ImageVector?>(null) }
+    var flashJob by remember { mutableStateOf<Job?>(null) }
+    val density = LocalDensity.current
+    val edges = WindowInsets.systemGestures
+    val layoutDir = LocalLayoutDirection.current
     var pendingTap by remember { mutableStateOf<Job?>(null) }
     var pingJob by remember { mutableStateOf<Job?>(null) }
     var brightness by remember { mutableFloatStateOf(-1f) }
@@ -105,13 +123,15 @@ fun GestureLayer(vm: PlayerViewModel, state: PlayerState, locked: Boolean, onTap
     }
 
     val gesturesOn = settings.gestures && !locked
+    val off = settings.disabledGestures
+    fun on(g: PlayerGesture) = gesturesOn && g !in off
     val stepSec = settings.doubleTapSeekSec
 
     Box(modifier) {
         Box(
             Modifier
                 .fillMaxSize()
-                .pointerInput(gesturesOn, stepSec) {
+                .pointerInput(gesturesOn, stepSec, off) {
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
                         val start = down.position
@@ -124,7 +144,13 @@ fun GestureLayer(vm: PlayerViewModel, state: PlayerState, locked: Boolean, onTap
                         var pinchStart = 0f
                         var pinchRatio = 1f
                         var longPress: Job? = null
-                        if (gesturesOn) {
+                        // Drags that start in the system gesture areas (back swipe edges, Home bar, status bar)
+                        // belong to Android, not the player.
+                        val inSystemEdge = with(density) {
+                            start.x < edges.getLeft(this, layoutDir) || start.x > w - edges.getRight(this, layoutDir) ||
+                                start.y > h - edges.getBottom(this) || start.y < edges.getTop(this)
+                        }
+                        if (on(PlayerGesture.HOLD_SPEED) && !inSystemEdge) {
                             longPress = scope.launch {
                                 delay(450)
                                 if (!moved && st.playing) {
@@ -140,7 +166,7 @@ fun GestureLayer(vm: PlayerViewModel, state: PlayerState, locked: Boolean, onTap
                             val pressed = event.changes.filter { it.pressed }
                             if (pressed.isEmpty()) break
                             if (!gesturesOn) continue
-                            if (pressed.size >= 2 && mode != Drag.SEEK) {
+                            if (pressed.size >= 2 && mode != Drag.SEEK && on(PlayerGesture.PINCH_ZOOM)) {
                                 val d = (pressed[0].position - pressed[1].position).getDistance()
                                 if (mode != Drag.PINCH) { mode = Drag.PINCH; pinchStart = d; moved = true; longPress?.cancel() }
                                 else if (pinchStart > 0f) pinchRatio = d / pinchStart
@@ -153,11 +179,12 @@ fun GestureLayer(vm: PlayerViewModel, state: PlayerState, locked: Boolean, onTap
                                 moved = true
                                 longPress?.cancel()
                                 mode = when {
-                                    abs(delta.x) > abs(delta.y) -> Drag.SEEK.also { startPos = st.positionMs }
-                                    start.x < w / 2 -> Drag.BRIGHTNESS.also { startLevel = currentBrightness() }
-                                    else -> Drag.VOLUME.also {
+                                    inSystemEdge -> Drag.NONE
+                                    abs(delta.x) > abs(delta.y) -> if (on(PlayerGesture.SWIPE_SEEK)) Drag.SEEK.also { startPos = st.positionMs } else Drag.NONE
+                                    start.x < w / 2 -> if (on(PlayerGesture.BRIGHTNESS)) Drag.BRIGHTNESS.also { startLevel = currentBrightness() } else Drag.NONE
+                                    else -> if (on(PlayerGesture.VOLUME)) Drag.VOLUME.also {
                                         startLevel = audio.getStreamVolume(AudioManager.STREAM_MUSIC) / audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC).toFloat()
-                                    }
+                                    } else Drag.NONE
                                 }
                             }
                             when (mode) {
@@ -199,23 +226,36 @@ fun GestureLayer(vm: PlayerViewModel, state: PlayerState, locked: Boolean, onTap
                             mode == Drag.BRIGHTNESS || mode == Drag.VOLUME -> scope.launch { delay(600); level = null }
                             !moved -> {
                                 val now = System.currentTimeMillis()
-                                val right = start.x > w / 2
-                                val centre = abs(start.x - w / 2) < w * 0.12f
-                                val quick = now - lastTapAt < 320 && right == lastTapRight
-                                val chaining = ping != null && ping!!.first == right && now - lastTapAt < 650
-                                if (gesturesOn && !centre && (quick || chaining)) {
+                                val zone = tapZone(start.x, w)
+                                val right = zone == TapZone.RIGHT
+                                val doubleOn = if (zone == TapZone.CENTER) on(PlayerGesture.DOUBLE_TAP_PLAY) else on(PlayerGesture.DOUBLE_TAP_SEEK)
+                                // A second tap in the same zone while the first is still waiting is a double-tap;
+                                // further taps on a side keep adding to the seek.
+                                val second = pendingTap?.isActive == true && zone == lastZone && now - lastTapAt < DOUBLE_TAP_MS
+                                val chaining = zone != TapZone.CENTER && ping?.first == right && now - lastTapAt < 650
+                                if (doubleOn && (second || chaining)) {
                                     pendingTap?.cancel()
-                                    val secs = (if (chaining) ping!!.second else 0) + stepSec
-                                    vm.engine.seekBy(if (right) stepSec * 1000L else -stepSec * 1000L)
-                                    ping = right to secs
-                                    pingJob?.cancel()
-                                    pingJob = scope.launch { delay(650); ping = null }
+                                    if (zone == TapZone.CENTER) {
+                                        vm.dismissResume()
+                                        val willPlay = !st.playing
+                                        vm.engine.toggle()
+                                        flash = if (willPlay) MoodyIcons.Play else MoodyIcons.Pause
+                                        flashJob?.cancel()
+                                        flashJob = scope.launch { delay(550); flash = null }
+                                    } else {
+                                        val secs = (if (chaining) ping!!.second else 0) + stepSec
+                                        vm.engine.seekBy(if (right) stepSec * 1000L else -stepSec * 1000L)
+                                        ping = right to secs
+                                        pingJob?.cancel()
+                                        pingJob = scope.launch { delay(650); ping = null }
+                                    }
                                     lastTapAt = now
                                 } else {
                                     lastTapAt = now
-                                    lastTapRight = right
+                                    lastZone = zone
                                     pendingTap?.cancel()
-                                    pendingTap = scope.launch { delay(if (gesturesOn && !centre) 260 else 0); tap() }
+                                    // Single tap waits out the double-tap window only where a double-tap is possible.
+                                    pendingTap = scope.launch { if (doubleOn) delay(DOUBLE_TAP_MS); tap() }
                                 }
                             }
                         }
@@ -243,6 +283,14 @@ fun GestureLayer(vm: PlayerViewModel, state: PlayerState, locked: Boolean, onTap
                 Icon(if (p?.first == true) MoodyIcons.SeekForward else MoodyIcons.SeekBack, null, Modifier.size(22.dp), tint = OnVideo.text)
                 Spacer(Modifier.height(4.dp))
                 Text("${if (p?.first == true) "+" else "-"}${p?.second ?: 0} s", style = MoodyTheme.type.mono, color = OnVideo.text)
+            }
+        }
+        AnimatedVisibility(
+            flash != null, Modifier.align(Alignment.Center),
+            enter = fadeIn(Motion.fast()) + scaleIn(initialScale = 0.8f), exit = fadeOut(Motion.base()) + scaleOut(targetScale = 1.1f),
+        ) {
+            Box(Modifier.size(64.dp).clip(CircleShape).background(OnVideo.ink), contentAlignment = Alignment.Center) {
+                Icon(flash ?: MoodyIcons.Play, null, Modifier.size(28.dp), tint = OnVideo.text)
             }
         }
         if (boosted) {

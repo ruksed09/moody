@@ -212,6 +212,7 @@ fun MusicContent(
                     full { Box(Modifier.padding(16.dp)) { SecondaryButton("New playlist", onNewPlaylist, icon = MoodyIcons.Plus) } }
                 }
             }
+            full { com.moody.player.ui.components.CreditFooter() }
         }
         CollapsingTopBar(bar, contentUnder = gridState.firstVisibleItemIndex > 0 || gridState.firstVisibleItemScrollOffset > 0, height = 56.dp) {
             Row(Modifier.fillMaxWidth().height(56.dp).padding(start = 16.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {

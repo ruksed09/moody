@@ -14,6 +14,7 @@ interface PositionDao {
     @Query("SELECT * FROM positions WHERE uri = :uri") suspend fun get(uri: String): PlaybackPosition?
     @Upsert suspend fun save(p: PlaybackPosition)
     @Query("DELETE FROM positions WHERE uri = :uri") suspend fun clear(uri: String)
+    @Query("DELETE FROM positions") suspend fun clearAll()
     /** Started but not finished, newest first: the "Continue watching" row. */
     @Query("SELECT * FROM positions WHERE watched = 0 AND positionMs > 5000 ORDER BY updatedAt DESC LIMIT :limit")
     fun inProgress(limit: Int = 12): Flow<List<PlaybackPosition>>
@@ -32,6 +33,7 @@ interface PlaylistDao {
     @Query("SELECT COALESCE(MAX(`order`), -1) FROM playlist_entries WHERE playlistId = :id") suspend fun maxOrder(id: Long): Int
     @Query("DELETE FROM playlist_entries WHERE playlistId = :id AND audioUri = :uri") suspend fun removeEntry(id: Long, uri: String)
     @Query("DELETE FROM playlist_entries WHERE playlistId = :id") suspend fun clearEntries(id: Long)
+    @Query("DELETE FROM playlist_entries WHERE audioUri = :uri") suspend fun removeEverywhere(uri: String)
 
     @Transaction suspend fun delete(id: Long) { clearEntries(id); deletePlaylist(id) }
 

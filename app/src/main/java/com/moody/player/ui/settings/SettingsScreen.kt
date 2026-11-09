@@ -1,5 +1,10 @@
 package com.moody.player.ui.settings
 
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings as SysSettings
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -8,22 +13,29 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -31,15 +43,20 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
+import coil.imageLoader
 import com.moody.player.BuildConfig
+import com.moody.player.data.db.PositionDao
+import com.moody.player.data.media.AccessLevel
 import com.moody.player.data.media.MediaRepository
 import com.moody.player.data.media.folderName
 import com.moody.player.data.prefs.Settings
@@ -57,15 +74,25 @@ import com.moody.player.design.components.QuietButton
 import com.moody.player.design.icons.MoodyIcons
 import com.moody.player.domain.Decoder
 import com.moody.player.domain.LayoutMode
+import com.moody.player.domain.MAX_SHORTCUTS
 import com.moody.player.domain.PinHasher
+import com.moody.player.domain.PlayerGesture
+import com.moody.player.domain.SEEK_STEPS
 import com.moody.player.domain.SubBg
 import com.moody.player.domain.SubSize
+import com.moody.player.domain.formatBytes
 import com.moody.player.ui.vault.Field
 import com.moody.player.ui.vault.RECOVERY_QUESTIONS
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 import javax.inject.Inject
 
 @HiltViewModel
@@ -73,174 +100,313 @@ class SettingsViewModel @Inject constructor(
     private val store: SettingsStore,
     val lock: VaultLock,
     private val media: MediaRepository,
+    private val positions: PositionDao,
+    @ApplicationContext private val context: Context,
 ) : ViewModel() {
     val settings = store.settings.stateIn(viewModelScope, SharingStarted.Eagerly, Settings())
     val vaultInfo = lock.info.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+    val access = media.access
+    private val _cacheBytes = MutableStateFlow<Long?>(null)
+    val cacheBytes = _cacheBytes.asStateFlow()
+
     fun update(t: (Settings) -> Settings) = viewModelScope.launch { store.update(t) }
     fun rescan() = viewModelScope.launch { media.rescan() }
+    fun refreshAccess() = media.refreshAccess()
+    fun clearHistory() = viewModelScope.launch { positions.clearAll() }
+
+    fun measureCache() = viewModelScope.launch {
+        _cacheBytes.value = withContext(Dispatchers.IO) { context.cacheDir.walkTopDown().filter { it.isFile }.sumOf { it.length() } }
+    }
+
+    /** Thumbnails, copied subtitle files and downloaded updates. All of it is rebuilt when needed. */
+    fun clearCache() = viewModelScope.launch {
+        withContext(Dispatchers.IO) {
+            context.imageLoader.diskCache?.clear()
+            listOf("subs", "updates").forEach { File(context.cacheDir, it).deleteRecursively() }
+        }
+        context.imageLoader.memoryCache?.clear()
+        measureCache()
+    }
 }
 
-/** Slot for the Updates group, filled by the update feature. */
+/** Slot for the Updates row, filled by the update feature. */
 typealias UpdatesRow = @Composable () -> Unit
 
-@OptIn(ExperimentalLayoutApi::class)
+/** Top-level categories. Each opens its own page; nothing opens as an overlapping dialog. */
+enum class SettingsSection(val id: String, val title: String, val summary: String, val icon: ImageVector) {
+    APPEARANCE("appearance", "Appearance", "Theme, font, library layout", MoodyIcons.Moon),
+    VIDEO("video", "Video player", "Shortcuts, gestures, picture-in-picture, subtitles", MoodyIcons.VideoTab),
+    MUSIC("music", "Music player", "Which audio files count as music", MoodyIcons.Music),
+    LIBRARY("library", "Library", "Scanning and hidden folders", MoodyIcons.Folder),
+    PLAYBACK("playback", "Playback", "Resume and watch history", MoodyIcons.Replay),
+    VAULT("vault", "Vault", "PIN, disguise and auto-lock", MoodyIcons.Lock),
+    STORAGE("storage", "Storage & permissions", "Media access and cache", MoodyIcons.Shield),
+    ADVANCED("advanced", "Advanced", "Decoder", MoodyIcons.Decoder),
+    ABOUT("about", "About", "Version, updates, privacy, licenses", MoodyIcons.Info),
+    ;
+
+    companion object { fun of(id: String?) = entries.firstOrNull { it.id == id } }
+}
+
+/**
+ * Shared frame for every Settings page: the header stays put, only the list below scrolls, and a hairline
+ * appears under the header once content has moved beneath it. The list state lives in this destination,
+ * so its scroll position survives opening a sub-page and coming back.
+ */
 @Composable
-fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit, onOpenVault: () -> Unit, updates: UpdatesRow, onShortcuts: () -> Unit = {}) {
+fun SettingsPage(title: String, onBack: () -> Unit, content: LazyListScope.() -> Unit) {
+    val c = MoodyTheme.colors
+    val list = rememberLazyListState()
+    val lineAlpha by animateFloatAsState(if (list.canScrollBackward) 1f else 0f, label = "header-line")
+    Column(Modifier.fillMaxSize()) {
+        Row(Modifier.statusBarsPadding().fillMaxWidth().height(52.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconAction(MoodyIcons.ArrowBack, "Back", onBack, tint = c.text, size = 22.dp)
+            Spacer(Modifier.width(4.dp))
+            Text(title, style = MoodyTheme.type.title, color = c.text, maxLines = 1)
+        }
+        Box(Modifier.fillMaxWidth().height(1.dp).alpha(lineAlpha).background(c.line))
+        LazyColumn(
+            Modifier.weight(1f).fillMaxWidth(),
+            state = list,
+            contentPadding = PaddingValues(bottom = 24.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()),
+            content = content,
+        )
+    }
+}
+
+/** Settings home: one row per category. */
+@Composable
+fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit, onSection: (SettingsSection) -> Unit) {
+    SettingsPage("Settings", onBack) {
+        SettingsSection.entries.forEach { sec ->
+            item(key = sec.id) { Action(sec.title, sec.summary, sec.icon) { onSection(sec) } }
+        }
+        item { com.moody.player.ui.components.CreditFooter() }
+    }
+}
+
+/** One category page. Changes apply as soon as they are made and are saved for the next launch. */
+@Composable
+fun SettingsSectionScreen(
+    section: SettingsSection,
+    vm: SettingsViewModel,
+    onBack: () -> Unit,
+    onOpenVault: () -> Unit,
+    onShortcuts: () -> Unit,
+    onGestures: () -> Unit,
+    onPermissions: () -> Unit,
+    updates: UpdatesRow,
+) {
     val s by vm.settings.collectAsStateWithLifecycle()
     val info by vm.vaultInfo.collectAsStateWithLifecycle()
     val unlocked by vm.lock.unlocked.collectAsStateWithLifecycle()
+    val access by vm.access.collectAsStateWithLifecycle()
+    val cache by vm.cacheBytes.collectAsStateWithLifecycle()
     val c = MoodyTheme.colors
     val toaster = LocalToaster.current
+    val context = LocalContext.current
     var dialog by remember { mutableStateOf<String?>(null) }
+    if (section == SettingsSection.STORAGE) LaunchedEffect(Unit) { vm.refreshAccess(); vm.measureCache() }
 
-    LazyColumn(Modifier.fillMaxSize()) {
-        item {
-            Row(Modifier.statusBarsPadding().fillMaxWidth().height(56.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                IconAction(MoodyIcons.ArrowBack, "Back", onBack, tint = c.text, size = 22.dp)
-                Spacer(Modifier.width(4.dp))
-                Text("Settings", style = MoodyTheme.type.display, color = c.text)
-            }
-        }
-
-        item { Group("Appearance") }
-        item {
-            Choice("Theme", MoodyIcons.Moon) {
-                listOf(ThemeMode.SYSTEM to "System", ThemeMode.LIGHT to "Light", ThemeMode.DARK to "Dark", ThemeMode.MIDNIGHT to "Midnight").forEach { (m, l) ->
-                    ChoiceChip(l, s.themeMode == m, { vm.update { it.copy(themeMode = m) } })
+    SettingsPage(section.title, onBack) {
+        when (section) {
+            SettingsSection.APPEARANCE -> {
+                item {
+                    Choice("Theme", MoodyIcons.Moon) {
+                        listOf(ThemeMode.SYSTEM to "System", ThemeMode.LIGHT to "Light", ThemeMode.DARK to "Dark", ThemeMode.MIDNIGHT to "Midnight").forEach { (m, l) ->
+                            ChoiceChip(l, s.themeMode == m, { vm.update { it.copy(themeMode = m) } })
+                        }
+                    }
                 }
-            }
-        }
-        item {
-            Choice("Font", null, "App font is Geist. System font follows your phone.", glyph = "Aa") {
-                ChoiceChip("App font", s.fontMode == FontMode.APP, { vm.update { it.copy(fontMode = FontMode.APP) } })
-                ChoiceChip("System font", s.fontMode == FontMode.SYSTEM, { vm.update { it.copy(fontMode = FontMode.SYSTEM) } })
-            }
-        }
-        item { Toggle("Background drawings", "The moon and horizon behind tab titles.", s.backgrounds, MoodyIcons.Image) { v -> vm.update { it.copy(backgrounds = v) } } }
-        item {
-            Choice("Videos show as", MoodyIcons.Grid) {
-                ChoiceChip("Grid", s.videoLayout == LayoutMode.GRID, { vm.update { it.copy(videoLayout = LayoutMode.GRID) } })
-                ChoiceChip("List", s.videoLayout == LayoutMode.LIST, { vm.update { it.copy(videoLayout = LayoutMode.LIST) } })
-            }
-        }
-
-        item { Group("Player") }
-        item { Action("Customize player shortcuts", "${s.playerShortcuts.size} of 4 quick buttons above the video", MoodyIcons.Layers, onShortcuts) }
-        item {
-            Choice("Decoder", MoodyIcons.Decoder, "HW is smooth and light on battery. SW plays files the phone's chip can't.") {
-                Decoder.entries.forEach { d -> ChoiceChip(d.label, s.decoder == d, { vm.update { it.copy(decoder = d) } }) }
-            }
-        }
-        item {
-            Choice("Double-tap jumps", MoodyIcons.Rotate) {
-                listOf(5, 10, 15, 30).forEach { n -> ChoiceChip("$n s", s.doubleTapSeekSec == n, { vm.update { it.copy(doubleTapSeekSec = n) } }) }
-            }
-        }
-        item { Toggle("Swipe gestures", "Control volume and brightness with vertical swipes.", s.gestures, MoodyIcons.Hand) { v -> vm.update { it.copy(gestures = v) } } }
-        item { Toggle("Resume where you left off", "Videos pick up from the last position.", s.resume, MoodyIcons.Replay) { v -> vm.update { it.copy(resume = v) } } }
-        item { Toggle("Remember speed and tracks per video", null, s.perFileSettings, MoodyIcons.Speed) { v -> vm.update { it.copy(perFileSettings = v) } } }
-        item { Toggle("Keep playing in the background", "Sound continues when you leave the player.", s.backgroundPlay, MoodyIcons.Audio) { v -> vm.update { it.copy(backgroundPlay = v) } } }
-        item { Toggle("Picture in picture on leave", "The video shrinks to a small window when you go home.", s.autoPip, MoodyIcons.Pip) { v -> vm.update { it.copy(autoPip = v) } } }
-        item {
-            Choice("Subtitle size", MoodyIcons.Subtitles) {
-                SubSize.entries.forEach { z -> ChoiceChip(z.label, s.subSize == z, { vm.update { it.copy(subSize = z) } }) }
-            }
-        }
-        item {
-            Choice("Subtitle background", null) {
-                SubBg.entries.forEach { b -> ChoiceChip(b.label, s.subBg == b, { vm.update { it.copy(subBg = b) } }) }
-            }
-        }
-
-        item { Group("Music") }
-        item {
-            Choice("Leave out clips shorter than", MoodyIcons.Music, "Hides ringtones and voice notes from Music") {
-                listOf(0 to "Keep all", 30 to "30 s", 60 to "1 min").forEach { (n, l) -> ChoiceChip(l, s.minSongSec == n, { vm.update { it.copy(minSongSec = n) } }) }
-            }
-        }
-
-        item { Group("Library") }
-        item { Action("Scan again", "Look for new videos and music now", MoodyIcons.Refresh) { vm.rescan(); toaster.show("Scanning") } }
-        if (s.hiddenFolders.isEmpty()) {
-            item { Note("Hidden folders show here. Hide one from its menu in Videos") }
-        } else {
-            item { Note("Hidden folders") }
-            s.hiddenFolders.sorted().forEach { path ->
-                item(key = path) {
-                    Row(Modifier.fillMaxWidth().height(52.dp).padding(start = 56.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(folderName(path), style = MoodyTheme.type.body, color = c.text, modifier = Modifier.weight(1f))
-                        QuietButton("Show again", { vm.update { it.copy(hiddenFolders = it.hiddenFolders - path) } }, color = c.accent)
+                item {
+                    Choice("Font", null, "App font is Geist. System font follows your phone.", glyph = "Aa") {
+                        ChoiceChip("App font", s.fontMode == FontMode.APP, { vm.update { it.copy(fontMode = FontMode.APP) } })
+                        ChoiceChip("System font", s.fontMode == FontMode.SYSTEM, { vm.update { it.copy(fontMode = FontMode.SYSTEM) } })
+                    }
+                }
+                item { Toggle("Background drawings", "The moon and horizon behind tab titles.", s.backgrounds, MoodyIcons.Image) { v -> vm.update { it.copy(backgrounds = v) } } }
+                item {
+                    Choice("Videos show as", MoodyIcons.Grid) {
+                        ChoiceChip("Grid", s.videoLayout == LayoutMode.GRID, { vm.update { it.copy(videoLayout = LayoutMode.GRID) } })
+                        ChoiceChip("List", s.videoLayout == LayoutMode.LIST, { vm.update { it.copy(videoLayout = LayoutMode.LIST) } })
                     }
                 }
             }
-        }
-
-        item { Group("Vault") }
-        item { Toggle("Disguise the vault", "Hides the Vault button. Open it by pressing and holding the Moody logo on Videos.", s.disguiseVault, MoodyIcons.EyeOff) { v -> vm.update { it.copy(disguiseVault = v) } } }
-        item {
-            Choice("Lock again after", MoodyIcons.Lock, "It also locks whenever you leave Moody") {
-                listOf(60 to "1 min", 120 to "2 min", 300 to "5 min", 600 to "10 min").forEach { (n, l) -> ChoiceChip(l, s.vaultAutoLockSec == n, { vm.update { it.copy(vaultAutoLockSec = n) } }) }
+            SettingsSection.VIDEO -> {
+                item { Label("Controls") }
+                item { Action("Customize player shortcuts", "${s.playerShortcuts.size} of $MAX_SHORTCUTS quick buttons under the title bar", MoodyIcons.Layers, onShortcuts) }
+                item {
+                    val offCount = s.disabledGestures.size
+                    Action("Gestures", if (!s.gestures) "Off" else if (offCount == 0) "All on · double-tap jumps ${s.doubleTapSeekSec} s" else "${PlayerGesture.entries.size - offCount} of ${PlayerGesture.entries.size} on", MoodyIcons.Hand, onGestures)
+                }
+                item { Label("Leaving the player") }
+                item { Toggle("Picture-in-picture on Home", "Going Home while a video plays shrinks it to a small window.", s.autoPip, MoodyIcons.Pip) { v -> vm.update { it.copy(autoPip = v) } } }
+                item { Toggle("Keep playing in the background", "Sound continues when picture-in-picture is off or unavailable.", s.backgroundPlay, MoodyIcons.Audio) { v -> vm.update { it.copy(backgroundPlay = v) } } }
+                item { Label("Subtitles") }
+                item {
+                    Choice("Subtitle size", MoodyIcons.Subtitles) {
+                        SubSize.entries.forEach { z -> ChoiceChip(z.label, s.subSize == z, { vm.update { it.copy(subSize = z) } }) }
+                    }
+                }
+                item {
+                    Choice("Subtitle background", null, glyph = "Bg") {
+                        SubBg.entries.forEach { b -> ChoiceChip(b.label, s.subBg == b, { vm.update { it.copy(subBg = b) } }) }
+                    }
+                }
+            }
+            SettingsSection.MUSIC -> {
+                item {
+                    Choice("Leave out clips shorter than", MoodyIcons.Music, "Hides ringtones and voice notes from Music.") {
+                        listOf(0 to "Keep all", 30 to "30 s", 60 to "1 min").forEach { (n, l) -> ChoiceChip(l, s.minSongSec == n, { vm.update { it.copy(minSongSec = n) } }) }
+                    }
+                }
+                item { Note("The mini-player has a close button: it stops the music and hides the bar. Your queue stays.") }
+            }
+            SettingsSection.LIBRARY -> {
+                item { Action("Scan again", "Look for new videos and music now", MoodyIcons.Refresh) { vm.rescan(); toaster.show("Scanning") } }
+                item { Label("Hidden folders") }
+                if (s.hiddenFolders.isEmpty()) {
+                    item { Note("None. Hide a folder from its menu in Videos.") }
+                } else {
+                    s.hiddenFolders.sorted().forEach { path ->
+                        item(key = path) {
+                            Row(Modifier.fillMaxWidth().height(48.dp).padding(start = 52.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text(folderName(path), style = MoodyTheme.type.body, color = c.text, modifier = Modifier.weight(1f), maxLines = 1)
+                                QuietButton("Show again", { vm.update { it.copy(hiddenFolders = it.hiddenFolders - path) } }, color = c.accent)
+                            }
+                        }
+                    }
+                }
+            }
+            SettingsSection.PLAYBACK -> {
+                item { Toggle("Resume where you left off", "Videos pick up from the last position.", s.resume, MoodyIcons.Replay) { v -> vm.update { it.copy(resume = v) } } }
+                item { Toggle("Remember speed and tracks per video", null, s.perFileSettings, MoodyIcons.Speed) { v -> vm.update { it.copy(perFileSettings = v) } } }
+                item { Action("Clear watch history", "Forget saved positions and empty Continue watching", MoodyIcons.Timer) { dialog = "history" } }
+            }
+            SettingsSection.VAULT -> {
+                item { Toggle("Disguise the vault", "Hides the Vault button. Open it by pressing and holding the Moody logo on Videos.", s.disguiseVault, MoodyIcons.EyeOff) { v -> vm.update { it.copy(disguiseVault = v) } } }
+                item {
+                    Choice("Lock again after", MoodyIcons.Lock, "It also locks whenever you leave Moody.") {
+                        listOf(60 to "1 min", 120 to "2 min", 300 to "5 min", 600 to "10 min").forEach { (n, l) -> ChoiceChip(l, s.vaultAutoLockSec == n, { vm.update { it.copy(vaultAutoLockSec = n) } }) }
+                    }
+                }
+                if (info?.setUp == true) {
+                    if (unlocked) {
+                        item { Action("Change PIN", null, MoodyIcons.Key) { dialog = "pin" } }
+                        item { Action("Change recovery question", info?.question, MoodyIcons.Shield) { dialog = "recovery" } }
+                    } else {
+                        item { Action("Unlock the vault to change its PIN", null, MoodyIcons.Key, onOpenVault) }
+                    }
+                } else {
+                    item { Action("Set up the vault", "Choose a PIN for hidden videos", MoodyIcons.Vault, onOpenVault) }
+                }
+            }
+            SettingsSection.STORAGE -> {
+                item {
+                    Action(
+                        "Media access",
+                        when (access) { AccessLevel.FULL -> "All videos and music"; AccessLevel.PARTIAL -> "Only the items you picked"; AccessLevel.NONE -> "Not allowed yet" },
+                        MoodyIcons.Folder, onPermissions,
+                    )
+                }
+                item { Action("App permissions", "Open Android settings for Moody", MoodyIcons.Shield) { context.openAppDetails() } }
+                item { Action("Clear cache", cache?.let { "${formatBytes(it)} of thumbnails and temporary files" } ?: "Measuring…", MoodyIcons.Refresh) { vm.clearCache(); toaster.show("Cache cleared") } }
+            }
+            SettingsSection.ADVANCED -> {
+                item {
+                    Choice("Decoder", MoodyIcons.Decoder, "Hardware is smooth and light on battery. Software plays files the phone's chip can't.") {
+                        Decoder.entries.forEach { d -> ChoiceChip(d.label, s.decoder == d, { vm.update { it.copy(decoder = d) } }) }
+                    }
+                }
+                item { Note("If a video stalls, Moody switches it to software decoding on its own.") }
+            }
+            SettingsSection.ABOUT -> {
+                item { Action("Moody ${BuildConfig.VERSION_NAME}", com.moody.player.ui.components.TAGLINE, MoodyIcons.Info, null) }
+                item { updates() }
+                item { Label("Privacy") }
+                item { Note("Moody plays files on this phone. The only network request it makes on its own is the update check to GitHub.") }
+                item { Label("Developer") }
+                item {
+                    Action("Developed by ${com.moody.player.ui.components.DEVELOPER_NAME}", "Telegram · @TheMaverickR", MoodyIcons.Captain) {
+                        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(com.moody.player.ui.components.DEVELOPER_URL)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                    }
+                }
+                item { Label("Licenses") }
+                item { Note("Video by libVLC (LGPL 2.1). Music by AndroidX Media3 (Apache 2.0). Type: Geist and Geist Mono (SIL OFL 1.1). Icons drawn after Lucide (ISC).") }
             }
         }
-        if (info?.setUp == true) {
-            if (unlocked) {
-                item { Action("Change PIN", null, MoodyIcons.Key) { dialog = "pin" } }
-                item { Action("Change recovery question", info?.question, MoodyIcons.Shield) { dialog = "recovery" } }
-            } else {
-                item { Action("Unlock the vault to change its PIN", null, MoodyIcons.Key, onOpenVault) }
-            }
-        } else {
-            item { Action("Set up the vault", "Choose a PIN for hidden videos", MoodyIcons.Vault, onOpenVault) }
-        }
-
-        item { Group("Updates") }
-        item { updates() }
-
-        item { Group("About") }
-        item { Note("Moody ${BuildConfig.VERSION_NAME}") }
-        item {
-            Note("Video by libVLC (LGPL 2.1). Music by AndroidX Media3 (Apache 2.0). Type: Geist and Geist Mono (SIL OFL 1.1). Icons drawn after Lucide (ISC).")
-        }
-        item { Spacer(Modifier.height(48.dp)) }
     }
 
     when (dialog) {
         "pin" -> ChangePinDialog(vm.lock, onDone = { dialog = null; if (it) toaster.show("PIN changed") })
         "recovery" -> ChangeRecoveryDialog(vm.lock, info?.question.orEmpty(), onDone = { dialog = null; if (it) toaster.show("Recovery question saved") })
+        "history" -> ConfirmDialog("Clear watch history?", "Saved positions are forgotten and Continue watching is emptied. Your files are not touched.", "Clear") { ok ->
+            dialog = null
+            if (ok) { vm.clearHistory(); toaster.show("Watch history cleared") }
+        }
+    }
+}
+
+/** Settings > Video player > Gestures: each gesture on its own, plus how far a double-tap jumps. */
+@Composable
+fun GesturesScreen(vm: SettingsViewModel, onBack: () -> Unit) {
+    val s by vm.settings.collectAsStateWithLifecycle()
+    SettingsPage("Gestures", onBack) {
+        item { Toggle("Gestures on the video", "Turn all of them off at once.", s.gestures, MoodyIcons.Hand) { v -> vm.update { it.copy(gestures = v) } } }
+        item {
+            Choice("Double-tap jumps", MoodyIcons.Replay) {
+                SEEK_STEPS.forEach { n -> ChoiceChip("$n s", s.doubleTapSeekSec == n, { vm.update { it.copy(doubleTapSeekSec = n) } }) }
+            }
+        }
+        item { Label("Gestures") }
+        PlayerGesture.entries.forEach { g ->
+            item(key = g.name) {
+                Box(Modifier.alpha(if (s.gestures) 1f else 0.45f)) {
+                    Toggle(g.label, g.detail, s.gestures && g !in s.disabledGestures, null) { v ->
+                        if (s.gestures) vm.update { it.copy(disabledGestures = if (v) it.disabledGestures - g else it.disabledGestures + g) }
+                    }
+                }
+            }
+        }
+        item { Note("A single tap shows or hides the controls. Gestures pause while the screen is locked, and swipes that start at the screen edges are left to Android.") }
+    }
+}
+
+private fun Context.openAppDetails() {
+    runCatching {
+        startActivity(Intent(SysSettings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 }
 
 @Composable
-private fun Group(title: String) {
-    Column(Modifier.padding(horizontal = 16.dp)) {
-        Text(title, style = MoodyTheme.type.heading, color = MoodyTheme.colors.accent, modifier = Modifier.padding(top = 18.dp, bottom = 10.dp))
-        Box(Modifier.fillMaxWidth().height(1.dp).background(MoodyTheme.colors.line))
-    }
+private fun Label(text: String) {
+    Text(text, style = MoodyTheme.type.label, color = MoodyTheme.colors.accent, modifier = Modifier.padding(start = 52.dp, end = 16.dp, top = 16.dp, bottom = 4.dp))
 }
 
 @Composable
 private fun Note(text: String) {
-    Text(text, style = MoodyTheme.type.caption, color = MoodyTheme.colors.text3, modifier = Modifier.padding(start = 56.dp, end = 16.dp, top = 8.dp, bottom = 8.dp))
+    Text(text, style = MoodyTheme.type.caption, color = MoodyTheme.colors.text3, modifier = Modifier.padding(start = 52.dp, end = 16.dp, top = 8.dp, bottom = 8.dp))
 }
 
+/** A compact row: plain icon, content, hairline divider aligned with the text. */
 @Composable
 private fun RowShell(icon: ImageVector?, onClick: (() -> Unit)?, glyph: String? = null, top: Boolean = false, content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit) {
     val c = MoodyTheme.colors
     Column(Modifier.fillMaxWidth().then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier)) {
         Row(
-            Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 16.dp, vertical = 12.dp),
+            Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(start = 16.dp, end = 12.dp, top = 10.dp, bottom = 10.dp),
             verticalAlignment = if (top) Alignment.Top else Alignment.CenterVertically,
         ) {
-            Box(Modifier.size(32.dp).background(c.surface, Radii.sm), contentAlignment = Alignment.Center) {
+            Box(Modifier.width(20.dp), contentAlignment = Alignment.Center) {
                 when {
-                    glyph != null -> Text(glyph, style = MoodyTheme.type.label, color = c.text)
-                    icon != null -> Icon(icon, null, Modifier.size(18.dp), tint = c.text)
+                    glyph != null -> Text(glyph, style = MoodyTheme.type.label, color = c.text2)
+                    icon != null -> Icon(icon, null, Modifier.size(20.dp), tint = c.text2)
                 }
             }
-            Spacer(Modifier.width(14.dp))
+            Spacer(Modifier.width(16.dp))
             content()
         }
-        Box(Modifier.padding(horizontal = 16.dp).fillMaxWidth().height(1.dp).background(c.line))
+        Box(Modifier.padding(start = 52.dp).fillMaxWidth().height(1.dp).background(c.line))
     }
 }
 
@@ -249,11 +415,11 @@ private fun Toggle(title: String, body: String?, checked: Boolean, icon: ImageVe
     val c = MoodyTheme.colors
     RowShell(icon, { onChange(!checked) }) {
         Column(Modifier.weight(1f).padding(end = 12.dp)) {
-            Text(title, style = MoodyTheme.type.heading, color = c.text)
+            Text(title, style = MoodyTheme.type.body, color = c.text)
             if (body != null) Text(body, style = MoodyTheme.type.caption, color = c.text2)
         }
         Switch(
-            checked, onChange, modifier = Modifier.scale(0.78f),
+            checked, onChange, modifier = Modifier.scale(0.74f),
             colors = SwitchDefaults.colors(checkedTrackColor = c.accentDeep, checkedThumbColor = androidx.compose.ui.graphics.Color.White, checkedBorderColor = c.accentDeep, uncheckedTrackColor = c.raised, uncheckedThumbColor = c.text3, uncheckedBorderColor = c.line2),
         )
     }
@@ -265,26 +431,25 @@ private fun Choice(title: String, icon: ImageVector?, body: String? = null, glyp
     val c = MoodyTheme.colors
     RowShell(icon, null, glyph, top = true) {
         Column(Modifier.weight(1f)) {
-            Text(title, style = MoodyTheme.type.heading, color = c.text)
+            Text(title, style = MoodyTheme.type.body, color = c.text)
             if (body != null) Text(body, style = MoodyTheme.type.caption, color = c.text2)
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(8.dp))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { chips() }
         }
     }
 }
 
 @Composable
-private fun Action(title: String, body: String?, icon: ImageVector, onClick: () -> Unit) {
+private fun Action(title: String, body: String?, icon: ImageVector, onClick: (() -> Unit)?) {
     val c = MoodyTheme.colors
     RowShell(icon, onClick) {
         Column(Modifier.weight(1f)) {
             Text(title, style = MoodyTheme.type.body, color = c.text)
             if (!body.isNullOrBlank()) Text(body, style = MoodyTheme.type.caption, color = c.text3)
         }
-        Icon(MoodyIcons.ChevronRight, null, Modifier.size(18.dp), tint = c.text3)
+        if (onClick != null) Icon(MoodyIcons.ChevronRight, null, Modifier.size(16.dp), tint = c.text3)
     }
 }
-
 @Composable
 private fun DialogFrame(title: String, content: @Composable () -> Unit) {
     val c = MoodyTheme.colors
@@ -337,6 +502,21 @@ private fun ChangeRecoveryDialog(lock: VaultLock, current: String, onDone: (Bool
                 QuietButton("Cancel", { onDone(false) })
                 Spacer(Modifier.width(8.dp))
                 PrimaryButton("Save", { scope.launch { lock.setRecovery(q, answer); onDone(true) } }, enabled = q.isNotBlank() && answer.trim().length >= 2)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ConfirmDialog(title: String, body: String, confirm: String, onDone: (Boolean) -> Unit) {
+    Dialog(onDismissRequest = { onDone(false) }) {
+        DialogFrame(title) {
+            Text(body, style = MoodyTheme.type.body, color = MoodyTheme.colors.text2)
+            Spacer(Modifier.height(24.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                QuietButton("Cancel", { onDone(false) })
+                Spacer(Modifier.width(8.dp))
+                PrimaryButton(confirm, { onDone(true) })
             }
         }
     }

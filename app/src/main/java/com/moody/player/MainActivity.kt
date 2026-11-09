@@ -103,7 +103,7 @@ class MainActivity : ComponentActivity() {
                         )
                     },
                     miniPlayer = { nav ->
-                        MiniPlayer(musicState, onOpen = { nav.navigate(Routes.NOW_PLAYING) { launchSingleTop = true } }, onToggle = music::toggle, onNext = music::next)
+                        MiniPlayer(musicState, onOpen = { nav.navigate(Routes.NOW_PLAYING) { launchSingleTop = true } }, onToggle = music::toggle, onNext = music::next, onClose = music::close)
                     },
                     extraRoutes = { nav ->
                         composable(Routes.ONBOARDING) {
@@ -117,12 +117,22 @@ class MainActivity : ComponentActivity() {
                             PermissionsScreen(onContinue = { media.refreshAccess(); nav.popBackStack() }, onBack = { nav.popBackStack() })
                         }
                         composable(Routes.SETTINGS) {
-                            SettingsScreen(
-                                hiltViewModel(), onBack = { nav.popBackStack() },
+                            SettingsScreen(hiltViewModel(), onBack = { nav.popBackStack() }, onSection = { nav.navigate(Routes.settingsSection(it.id)) { launchSingleTop = true } })
+                        }
+                        composable(Routes.SETTINGS_SECTION) { entry ->
+                            val section = com.moody.player.ui.settings.SettingsSection.of(entry.arguments?.getString("id"))
+                            if (section == null) { LaunchedEffect(Unit) { nav.popBackStack() }; return@composable }
+                            com.moody.player.ui.settings.SettingsSectionScreen(
+                                section, hiltViewModel(), onBack = { nav.popBackStack() },
                                 onOpenVault = { nav.navigate(Routes.VAULT) { launchSingleTop = true } },
+                                onShortcuts = { nav.navigate(Routes.SHORTCUTS) { launchSingleTop = true } },
+                                onGestures = { nav.navigate(Routes.GESTURES) { launchSingleTop = true } },
+                                onPermissions = { nav.navigate(Routes.PERMISSIONS) { launchSingleTop = true } },
                                 updates = { UpdateSettingsRow(updates, settings.lastUpdateCheck) { lifecycleScope.launch { updates.check(force = true) } } },
-                                onShortcuts = { nav.navigate(Routes.SHORTCUTS) },
                             )
+                        }
+                        composable(Routes.GESTURES) {
+                            com.moody.player.ui.settings.GesturesScreen(hiltViewModel(), onBack = { nav.popBackStack() })
                         }
                         composable(Routes.SHORTCUTS) {
                             com.moody.player.ui.settings.ShortcutsScreen(hiltViewModel(), onBack = { nav.popBackStack() })

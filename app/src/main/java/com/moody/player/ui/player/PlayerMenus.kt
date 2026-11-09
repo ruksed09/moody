@@ -47,6 +47,21 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalDensity
+import com.moody.player.ui.settings.ShortcutEditor
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.draw.scale
 import androidx.compose.foundation.layout.ColumnScope
@@ -83,56 +98,97 @@ enum class PlayerMenu(val title: String, val parent: PlayerMenu? = null) {
     LOOP("Loop", MORE),
     SLEEP("Sleep timer", MORE),
     ASPECT("Aspect ratio", MORE),
+    SHORTCUTS("Player shortcuts", MORE),
 }
 
 private val SPEEDS = listOf(0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f, 3f, 4f)
 private val SUB_COLORS = listOf(0xFFFFFAF2 to "Warm white", 0xFFFFE58A to "Yellow", 0xFFBFE9F2 to "Ice", 0xFFF2B8A0 to "Peach")
-private val SheetBg = Color(0xFA131118)
-private val CardBg = Color(0x0AFFFFFF)
+private val SheetBg = Color(0xFC0F0E13)
 
 fun decoderLabel(d: Decoder) = when (d) { Decoder.HW -> "Hardware"; Decoder.HW_PLUS -> "Hardware+"; Decoder.SW -> "Software" }
 
 /**
- * The one Playback sheet (owner's mockup): drag handle, header with a purple tile, grouped cards.
- * Sub-pages (Speed, Loop...) replace the content inside this same sheet; nothing stacks.
+ * The one Playback sheet: one dark surface, a subtle handle, a compact header and plain rows with dividers.
+ * It opens at a compact height, grows when dragged up (or when the list is pushed up), shrinks or closes
+ * when dragged down, and scrolls inside. Sub-pages (Speed, Loop...) replace the content in this same sheet.
  */
 @Composable
 fun PlayerMenus(menu: PlayerMenu, vm: PlayerViewModel, st: PlayerState, host: PlayerHost, onNavigate: (PlayerMenu) -> Unit, onDismiss: () -> Unit) {
     val c = MoodyTheme.colors
+    val density = LocalDensity.current
+    val scope = rememberCoroutineScope()
     BoxWithConstraints(
         Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.4f))
+            .background(Color.Black.copy(alpha = 0.35f))
             .clickable(remember { MutableInteractionSource() }, indication = null, onClick = onDismiss),
     ) {
         val narrow = maxWidth < 560.dp
+        val fullPx = with(density) { (maxHeight * if (narrow) 0.9f else 0.94f).toPx() }
+        val compactPx = with(density) { (maxHeight * if (narrow) 0.56f else 0.94f).toPx() }
+        val height = remember(compactPx) { Animatable(compactPx) }
+        var dragged by remember { mutableFloatStateOf(0f) }
+        fun settle(velocity: Float) {
+            val h = height.value
+            val close = (velocity > 1400f || dragged > compactPx * 0.3f) && h <= compactPx + 1f
+            dragged = 0f
+            if (close) { onDismiss(); return }
+            scope.launch {
+                val target = if (velocity < -900f || h > (compactPx + fullPx) / 2f) fullPx else compactPx
+                height.animateTo(target, tween(220))
+            }
+        }
+        val drag = rememberDraggableState { d ->
+            dragged += d
+            scope.launch { height.snapTo((height.value - d).coerceIn(compactPx, fullPx)) }
+        }
+        // Pushing the list upward while the sheet is compact expands it first, then the list scrolls.
+        val grow = remember(compactPx, fullPx) {
+            object : NestedScrollConnection {
+                override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                    if (available.y < 0 && height.value < fullPx) {
+                        val next = (height.value - available.y).coerceAtMost(fullPx)
+                        val used = next - height.value
+                        scope.launch { height.snapTo(next) }
+                        return Offset(0f, -used)
+                    }
+                    return Offset.Zero
+                }
+            }
+        }
+        val corner = if (narrow) 0.dp else 16.dp
+        val shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = corner, bottomEnd = corner)
         Column(
             Modifier
-                .align(if (narrow) Alignment.BottomCenter else Alignment.BottomEnd)
-                .windowInsetsPadding(WindowInsets.safeDrawing)
-                .padding(if (narrow) 8.dp else 16.dp)
-                .widthIn(max = if (narrow) 560.dp else 380.dp)
+                .align(if (narrow) Alignment.BottomCenter else Alignment.CenterEnd)
+                .then(if (narrow) Modifier else Modifier.windowInsetsPadding(WindowInsets.safeDrawing).padding(12.dp))
+                .widthIn(max = if (narrow) 600.dp else 360.dp)
                 .fillMaxWidth()
-                .heightIn(max = maxHeight * 0.86f)
-                .clip(Radii.xl)
+                .heightIn(max = with(density) { height.value.toDp() })
+                .clip(shape)
                 .background(SheetBg)
-                .border(1.dp, c.line2, Radii.xl)
                 .clickable(remember { MutableInteractionSource() }, indication = null) {},
         ) {
-            Box(Modifier.align(Alignment.CenterHorizontally).padding(top = 8.dp).width(36.dp).height(4.dp).clip(Radii.pill).background(c.line3))
-            Row(Modifier.fillMaxWidth().height(52.dp).padding(start = 12.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (menu.parent != null) {
-                    VideoIcon(MoodyIcons.ArrowBack, "Back", { onNavigate(menu.parent) }, size = 18.dp)
-                } else {
-                    Box(Modifier.size(32.dp).clip(Radii.md).background(c.accentWash).border(1.dp, c.accent.copy(alpha = 0.5f), Radii.md), contentAlignment = Alignment.Center) {
-                        Icon(MoodyIcons.Play, null, Modifier.size(14.dp), tint = c.accent)
-                    }
-                    Spacer(Modifier.width(12.dp))
+            Column(Modifier.fillMaxWidth().draggable(drag, Orientation.Vertical, onDragStopped = { v -> settle(v) })) {
+                Box(Modifier.align(Alignment.CenterHorizontally).padding(top = 6.dp).width(32.dp).height(3.dp).clip(Radii.pill).background(c.line2))
+                Row(
+                    Modifier.fillMaxWidth().height(44.dp).padding(start = if (menu.parent != null) 2.dp else 16.dp, end = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (menu.parent != null) VideoIcon(MoodyIcons.ArrowBack, "Back", { onNavigate(menu.parent) }, size = 18.dp, box = 40.dp)
+                    Text(menu.title, style = MoodyTheme.type.heading, color = c.text, modifier = Modifier.weight(1f))
+                    VideoIcon(MoodyIcons.Close, "Close", onDismiss, size = 18.dp, box = 40.dp)
                 }
-                Text(menu.title, style = MoodyTheme.type.title, color = c.text, modifier = Modifier.weight(1f))
-                VideoIcon(MoodyIcons.Close, "Close", onDismiss, size = 18.dp)
+                Box(Modifier.fillMaxWidth().height(1.dp).background(c.line))
             }
-            Column(Modifier.verticalScroll(rememberScrollState()).padding(start = 12.dp, end = 12.dp, bottom = 12.dp)) {
+            Column(
+                Modifier
+                    .nestedScroll(grow)
+                    .verticalScroll(rememberScrollState())
+                    .then(if (narrow) Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal)) else Modifier)
+                    .padding(horizontal = 4.dp)
+                    .padding(bottom = 8.dp),
+            ) {
                 when (menu) {
                     PlayerMenu.MORE -> MoreMenu(vm, st, host, onNavigate, onDismiss)
                     PlayerMenu.AUDIO -> AudioMenu(vm, st, onNavigate)
@@ -147,6 +203,12 @@ fun PlayerMenus(menu: PlayerMenu, vm: PlayerViewModel, st: PlayerState, host: Pl
                     PlayerMenu.LOOP -> LoopMenu(vm)
                     PlayerMenu.SLEEP -> SleepMenu(vm, onDismiss)
                     PlayerMenu.ASPECT -> AspectMenu(vm, st)
+                    PlayerMenu.SHORTCUTS -> {
+                        val settings by vm.settings.collectAsStateWithLifecycle()
+                        Column(Modifier.padding(horizontal = 12.dp)) {
+                            ShortcutEditor(settings.playerShortcuts, vm::setShortcuts)
+                        }
+                    }
                 }
             }
         }
@@ -155,21 +217,13 @@ fun PlayerMenus(menu: PlayerMenu, vm: PlayerViewModel, st: PlayerState, host: Pl
 
 @Composable
 private fun GroupLabel(text: String) {
-    Text(
-        text.uppercase(), style = MoodyTheme.type.caption.copy(letterSpacing = 0.08.em, fontWeight = FontWeight.SemiBold),
-        color = MoodyTheme.colors.text3, modifier = Modifier.padding(start = 6.dp, top = 14.dp, bottom = 8.dp),
-    )
+    Text(text, style = MoodyTheme.type.caption, color = MoodyTheme.colors.text3, modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 2.dp))
 }
 
 @Composable
-private fun Card(content: @Composable ColumnScope.() -> Unit) {
-    Column(Modifier.fillMaxWidth().clip(Radii.lg).background(CardBg).border(1.dp, MoodyTheme.colors.line, Radii.lg), content = content)
-}
+private fun SectionDivider() = Box(Modifier.padding(top = 6.dp).fillMaxWidth().height(1.dp).background(MoodyTheme.colors.line))
 
-@Composable
-private fun CardDivider() = Box(Modifier.padding(start = 52.dp, end = 12.dp).fillMaxWidth().height(1.dp).background(MoodyTheme.colors.line))
-
-/** A row in a card: purple icon, label, value, chevron, or a switch instead. */
+/** A plain row: small icon, label, value and chevron, or a switch. */
 @Composable
 private fun SheetRow(
     icon: ImageVector?, label: String, value: String? = null, glyph: String? = null,
@@ -177,24 +231,24 @@ private fun SheetRow(
 ) {
     val c = MoodyTheme.colors
     Row(
-        Modifier.fillMaxWidth().height(48.dp).clickable(role = if (switch != null) Role.Switch else Role.Button, onClick = onClick).padding(start = 14.dp, end = 10.dp),
+        Modifier.fillMaxWidth().height(44.dp).clip(Radii.md).clickable(role = if (switch != null) Role.Switch else Role.Button, onClick = onClick).padding(start = 12.dp, end = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.width(26.dp), contentAlignment = Alignment.Center) {
-            if (glyph != null) Text(glyph, style = MoodyTheme.type.label, color = c.accent)
-            else if (icon != null) Icon(icon, null, Modifier.size(20.dp), tint = c.accent)
+        Box(Modifier.width(22.dp), contentAlignment = Alignment.Center) {
+            if (glyph != null) Text(glyph, style = MoodyTheme.type.label, color = c.text2)
+            else if (icon != null) Icon(icon, null, Modifier.size(18.dp), tint = c.text2)
         }
         Spacer(Modifier.width(12.dp))
         Text(label, style = MoodyTheme.type.body, color = c.text, modifier = Modifier.weight(1f), maxLines = 1)
         if (switch != null) {
             Switch(
-                switch, { onClick() }, modifier = Modifier.scale(0.72f),
+                switch, { onClick() }, modifier = Modifier.scale(0.68f),
                 colors = SwitchDefaults.colors(checkedTrackColor = c.accentDeep, checkedThumbColor = Color.White, checkedBorderColor = c.accentDeep, uncheckedTrackColor = c.raised, uncheckedThumbColor = c.text3, uncheckedBorderColor = c.line2),
             )
         } else {
             if (value != null) Text(value, style = MoodyTheme.type.caption, color = c.text2, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 150.dp))
-            Spacer(Modifier.width(6.dp))
-            Icon(MoodyIcons.ChevronRight, null, Modifier.size(16.dp), tint = c.text3)
+            Spacer(Modifier.width(4.dp))
+            Icon(MoodyIcons.ChevronRight, null, Modifier.size(14.dp), tint = c.text3)
         }
     }
 }
@@ -238,38 +292,27 @@ private fun MoreMenu(vm: PlayerViewModel, st: PlayerState, host: PlayerHost, go:
     } ?: "Default"
     val subValue = subs.indexOfFirst { it.id == st.selectedSub }.takeIf { it >= 0 }?.let { i -> trackLabel(subs[i].name, i).name } ?: "Off"
 
+    val shortcutCount = vm.settings.collectAsStateWithLifecycle().value.playerShortcuts.size
+
     GroupLabel("Audio & display")
-    Card {
-        SheetRow(MoodyIcons.Speed, "Speed", speedValue(st.rate)) { go(PlayerMenu.SPEED) }
-        CardDivider()
-        SheetRow(MoodyIcons.Audio, "Audio", audioValue) { go(PlayerMenu.AUDIO) }
-        CardDivider()
-        SheetRow(MoodyIcons.Cc, "Subtitles", subValue) { go(PlayerMenu.SUBTITLES) }
-        CardDivider()
-        SheetRow(MoodyIcons.Equalizer, "Equalizer") { go(PlayerMenu.EQUALIZER) }
-    }
+    SheetRow(MoodyIcons.Speed, "Playback speed", speedValue(st.rate)) { go(PlayerMenu.SPEED) }
+    SheetRow(MoodyIcons.Audio, "Audio track", audioValue) { go(PlayerMenu.AUDIO) }
+    SheetRow(MoodyIcons.Cc, "Subtitles", subValue) { go(PlayerMenu.SUBTITLES) }
+    SheetRow(MoodyIcons.Equalizer, "Equalizer") { go(PlayerMenu.EQUALIZER) }
+    SectionDivider()
     GroupLabel("Playback")
-    Card {
-        SheetRow(null, "A-B repeat", glyph = "A-B", switch = ab.first != null) { vm.toggleAb() }
-        CardDivider()
-        SheetRow(MoodyIcons.Repeat, "Loop", loop.label) { go(PlayerMenu.LOOP) }
-        CardDivider()
-        SheetRow(MoodyIcons.Timer, "Sleep timer", when { sleep == null -> "Off"; sleep == -1L -> "End of video"; else -> "${((sleep!! - System.currentTimeMillis()) / 60_000) + 1} min" }) { go(PlayerMenu.SLEEP) }
-    }
+    SheetRow(null, "A-B repeat", glyph = "AB", switch = ab.first != null) { vm.toggleAb() }
+    SheetRow(MoodyIcons.Repeat, "Loop", loop.label) { go(PlayerMenu.LOOP) }
+    SheetRow(MoodyIcons.Timer, "Sleep timer", when { sleep == null -> "Off"; sleep == -1L -> "End of video"; else -> "${((sleep!! - System.currentTimeMillis()) / 60_000) + 1} min" }) { go(PlayerMenu.SLEEP) }
+    SectionDivider()
     GroupLabel("Video")
-    Card {
-        SheetRow(MoodyIcons.Aspect, "Aspect ratio", st.aspect.label) { go(PlayerMenu.ASPECT) }
-        CardDivider()
-        SheetRow(MoodyIcons.Rotate, "Rotate screen") { host.onRotate(); close() }
-        if (host.onPip != null) {
-            CardDivider()
-            SheetRow(MoodyIcons.Pip, "Picture in picture", switch = false) { close(); host.onPip.invoke() }
-        }
-    }
-    Spacer(Modifier.height(12.dp))
-    Card {
-        SheetRow(MoodyIcons.Decoder, "Decoder", decoderLabel(st.decoder)) { go(PlayerMenu.DECODER) }
-    }
+    SheetRow(MoodyIcons.Aspect, "Aspect ratio", st.aspect.label) { go(PlayerMenu.ASPECT) }
+    SheetRow(MoodyIcons.Rotate, "Rotate screen") { host.onRotate(); close() }
+    if (host.onPip != null) SheetRow(MoodyIcons.Pip, "Picture-in-picture", switch = false) { close(); host.onPip.invoke() }
+    SheetRow(MoodyIcons.Decoder, "Decoder", decoderLabel(st.decoder)) { go(PlayerMenu.DECODER) }
+    SectionDivider()
+    GroupLabel("Customization")
+    SheetRow(MoodyIcons.Settings, "Customize player shortcuts", if (shortcutCount == 0) "None" else "$shortcutCount on") { go(PlayerMenu.SHORTCUTS) }
 }
 
 @Composable

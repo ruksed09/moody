@@ -199,6 +199,11 @@ class VlcEngine @Inject constructor(@ApplicationContext private val context: Con
      * The screen is visible again: re-attach to the fresh surface. A paused video renders nothing until the
      * next frame, so a same-position seek redraws the current frame instead of leaving the screen black.
      */
+    /** Paused video draws nothing after a surface change; a same-position seek redraws the current frame. */
+    fun redrawIfPaused() {
+        main.postDelayed({ player?.let { if (!it.isPlaying && it.length > 0) it.time = it.time } }, 150)
+    }
+
     fun resumeViews() {
         val view = layout ?: return
         val mp = player ?: return

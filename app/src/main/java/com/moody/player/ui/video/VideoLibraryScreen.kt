@@ -221,6 +221,7 @@ fun VideoLibraryContent(
                         }
                     }
                 }
+                full { com.moody.player.ui.components.CreditFooter() }
             }
         }
 

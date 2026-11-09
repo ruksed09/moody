@@ -131,7 +131,7 @@ fun PlayerScreen(vm: PlayerViewModel, host: PlayerHost, inPip: Boolean) {
                         onCc = { tracks = TrackKind.SUBS; poke++ },
                         onMore = { menu = PlayerMenu.MORE; poke++ },
                     )
-                    ShortcutRow(vm, st, settings.playerShortcuts, ab, loop, shuffle, settings.backgroundPlay) { poke++ }
+                    ShortcutRow(vm, st, settings.playerShortcuts, ab, loop, shuffle, host.onRotate) { poke++ }
                     }
                     }
                     Spacer(Modifier.weight(1f))
@@ -244,7 +244,7 @@ private fun resolution(st: PlayerState): String? {
 @Composable
 private fun ShortcutRow(
     vm: PlayerViewModel, st: PlayerState, shortcuts: List<com.moody.player.domain.PlayerShortcut>,
-    ab: Pair<Long?, Long?>, loop: com.moody.player.domain.LoopMode, shuffle: Boolean, backgroundPlay: Boolean, onUse: () -> Unit,
+    ab: Pair<Long?, Long?>, loop: com.moody.player.domain.LoopMode, shuffle: Boolean, onRotate: () -> Unit, onUse: () -> Unit,
 ) {
     if (shortcuts.isEmpty()) return
     val accent = MoodyTheme.colors.accent
@@ -260,7 +260,7 @@ private fun ShortcutRow(
                 com.moody.player.domain.PlayerShortcut.SCREENSHOT -> Quad(MoodyIcons.Camera, "Screenshot", false, vm::screenshot)
                 com.moody.player.domain.PlayerShortcut.AB_REPEAT -> Quad(MoodyIcons.AbRepeat, "A-B repeat", ab.first != null, vm::toggleAb)
                 com.moody.player.domain.PlayerShortcut.MUTE -> Quad(if (st.muted) MoodyIcons.VolumeMute else MoodyIcons.VolumeHigh, if (st.muted) "Unmute" else "Mute", st.muted, vm::toggleMute)
-                com.moody.player.domain.PlayerShortcut.BACKGROUND_PLAY -> Quad(MoodyIcons.Music, "Background play", backgroundPlay, { vm.toggleBackgroundPlay(); Unit })
+                com.moody.player.domain.PlayerShortcut.ROTATE -> Quad(MoodyIcons.Rotate, "Rotate screen", false, onRotate)
             }
             Box(
                 Modifier.size(40.dp).clip(CircleShape).clickable(role = Role.Button) { action(); onUse() }.semantics { contentDescription = label },
@@ -306,40 +306,47 @@ private fun BottomControls(
                 modifier = Modifier.clip(Radii.sm).clickable(onClickLabel = "Show remaining time", onClick = onToggleTime).padding(horizontal = 4.dp, vertical = 2.dp),
             )
         }
+        // Three anchored groups, not six equal slots: Lock at the start, Previous/Play/Next at the exact
+        // centre with a fixed gap, Screen size + Popup at the end. Sizes step down on narrow screens so the
+        // centre group never meets the right group (checked at 320 dp).
         androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
-            val k = if (maxWidth < 340.dp) 0.88f else 1f
-            val small = 21.dp * k
-            val main = 26.dp * k
-            val play = 34.dp * k
+            val wide = maxWidth >= 340.dp
+            val btn = if (wide) 44.dp else 40.dp
+            val playBox = if (wide) 52.dp else 48.dp
+            val gap = if (wide) 4.dp else 0.dp
+            val small = if (wide) 21.dp else 19.dp
+            val main = if (wide) 26.dp else 24.dp
+            val play = if (wide) 32.dp else 30.dp
             val secondary = OnVideo.text.copy(alpha = 0.85f)
-            Row(Modifier.fillMaxWidth().height(56.dp), verticalAlignment = Alignment.CenterVertically) {
-                Slot { VideoIcon(MoodyIcons.Lock, "Lock controls", onLock, size = small, tint = secondary) }
-                Slot { VideoIcon(MoodyIcons.Prev, "Previous", onPrev, size = main, enabled = canPrev) }
-                Slot {
+            Box(Modifier.fillMaxWidth().height(56.dp)) {
+                Box(Modifier.align(Alignment.CenterStart)) {
+                    VideoIcon(MoodyIcons.Lock, "Lock controls", onLock, size = small, tint = secondary, box = btn)
+                }
+                Row(
+                    Modifier.align(Alignment.Center),
+                    horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(gap),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    VideoIcon(MoodyIcons.Prev, "Previous", onPrev, size = main, enabled = canPrev, box = btn)
                     val icon = when { st.ended -> MoodyIcons.Replay; st.playing -> MoodyIcons.Pause; else -> MoodyIcons.Play }
                     Box(
-                        Modifier.size(56.dp).clip(CircleShape).clickable(role = Role.Button, onClick = onToggle)
+                        Modifier.size(playBox).clip(CircleShape).clickable(role = Role.Button, onClick = onToggle)
                             .semantics { contentDescription = when { st.ended -> "Replay"; st.playing -> "Pause"; else -> "Play" } },
                         contentAlignment = Alignment.Center,
                     ) { Icon(icon, null, Modifier.size(play), tint = OnVideo.text) }
+                    VideoIcon(MoodyIcons.Next, "Next", onNext, size = main, enabled = hasNext, box = btn)
                 }
-                Slot { VideoIcon(MoodyIcons.Next, "Next", onNext, size = main, enabled = hasNext) }
-                Slot {
+                Row(Modifier.align(Alignment.CenterEnd), verticalAlignment = Alignment.CenterVertically) {
                     VideoIcon(
                         if (st.aspect == Aspect.FIT) MoodyIcons.Fullscreen else MoodyIcons.FitScreen,
                         "Screen size: ${st.aspect.label}", onScreenSize, size = small,
-                        tint = if (st.aspect == Aspect.FIT) secondary else accent,
+                        tint = if (st.aspect == Aspect.FIT) secondary else accent, box = btn,
                     )
+                    VideoIcon(MoodyIcons.Pip, "Popup window", onPopup, size = small, tint = secondary, box = btn)
                 }
-                Slot { VideoIcon(MoodyIcons.Pip, "Popup window", onPopup, size = small, tint = secondary) }
             }
         }
     }
-}
-
-@Composable
-private fun androidx.compose.foundation.layout.RowScope.Slot(content: @Composable () -> Unit) {
-    Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { content() }
 }
 
 @Composable
@@ -355,10 +362,10 @@ private fun SpeedButton(rate: Float, onClick: () -> Unit) {
 fun rateLabel(r: Float): String = (if (r % 1f == 0f) "%.0f" else if ((r * 10) % 1f == 0f) "%.1f" else "%.2f").format(r) + "×"
 
 @Composable
-fun VideoIcon(icon: ImageVector, label: String, onClick: () -> Unit, size: Dp = 22.dp, enabled: Boolean = true, tint: Color = OnVideo.text) {
+fun VideoIcon(icon: ImageVector, label: String, onClick: () -> Unit, size: Dp = 22.dp, enabled: Boolean = true, tint: Color = OnVideo.text, box: Dp = 44.dp) {
     Box(
         Modifier
-            .size(44.dp)
+            .size(box)
             .clip(CircleShape)
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .semantics { contentDescription = label },

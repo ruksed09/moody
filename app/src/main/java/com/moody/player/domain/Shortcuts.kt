@@ -7,7 +7,7 @@ enum class PlayerShortcut(val label: String) {
     SCREENSHOT("Screenshot"),
     AB_REPEAT("A–B repeat"),
     MUTE("Mute"),
-    BACKGROUND_PLAY("Background play"),
+    ROTATE("Rotate screen"),
 }
 
 /** At most this many shortcuts show, so the row never crowds the title. */

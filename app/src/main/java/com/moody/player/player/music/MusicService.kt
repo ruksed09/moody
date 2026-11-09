@@ -126,6 +126,8 @@ class MusicService : MediaSessionService() {
 
     override fun onCreate() {
         super.onCreate()
+        // Closing the mini-player stops the player; a stopped (idle) player must not keep a notification.
+        setShowNotificationForIdlePlayer(SHOW_NOTIFICATION_FOR_IDLE_PLAYER_NEVER)
         val player = ExoPlayer.Builder(this)
             .setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), true)
             .setHandleAudioBecomingNoisy(true)

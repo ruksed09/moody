@@ -147,6 +147,9 @@ fun SongActionsSheet(song: AudioItem, vm: MusicViewModel, onDismiss: () -> Unit,
     val favs by vm.favoriteSet.collectAsStateWithLifecycle()
     var picking by remember { mutableStateOf(false) }
     var creating by remember { mutableStateOf(false) }
+    var showInfo by remember { mutableStateOf(false) }
+    var confirmDelete by remember { mutableStateOf(false) }
+    val delete = rememberSongDelete { gone -> vm.forgetDeleted(gone); onDismiss() }
     val fav = song.uri.toString() in favs
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = c.surface) {
         Column(Modifier.padding(bottom = 24.dp)) {
@@ -158,7 +161,9 @@ fun SongActionsSheet(song: AudioItem, vm: MusicViewModel, onDismiss: () -> Unit,
                     Text(song.artist, style = MoodyTheme.type.caption, color = c.text3, maxLines = 1)
                 }
             }
-            if (!picking) {
+            if (showInfo) {
+                SongInfo(song)
+            } else if (!picking) {
                 SheetRow(MoodyIcons.Next, "Play next") { vm.music.playNext(listOf(song)); toaster.show("Plays next"); onDismiss() }
                 SheetRow(MoodyIcons.Queue, "Add to queue") { vm.music.addToQueue(listOf(song)); toaster.show("Added to queue"); onDismiss() }
                 SheetRow(MoodyIcons.Playlist, "Add to playlist") { picking = true }
@@ -166,6 +171,8 @@ fun SongActionsSheet(song: AudioItem, vm: MusicViewModel, onDismiss: () -> Unit,
                     vm.setFavorite(song, !fav); toaster.show(if (fav) "Removed from favourites" else "Added to favourites"); onDismiss()
                 }
                 playlistActions?.invoke()
+                SheetRow(MoodyIcons.Info, "Info") { showInfo = true }
+                SheetRow(MoodyIcons.Close, "Delete from phone") { confirmDelete = true }
             } else {
                 SheetRow(MoodyIcons.Plus, "New playlist") { creating = true }
                 s.playlists.forEach { p ->
@@ -174,6 +181,12 @@ fun SongActionsSheet(song: AudioItem, vm: MusicViewModel, onDismiss: () -> Unit,
             }
         }
     }
+    if (confirmDelete) com.moody.player.ui.video.ConfirmDialog(
+        title = "Delete this song?",
+        body = "“${song.title}” is removed from your phone, from Moody's playlists and from the queue. This can't be undone.",
+        confirm = "Delete",
+        onDismiss = { confirmDelete = false },
+    ) { confirmDelete = false; delete(song) }
     if (creating) NameDialog("New playlist", "", "Create", onDismiss = { creating = false }) { name ->
         vm.createPlaylist(name, listOf(song)); toaster.show("Added to $name"); creating = false; onDismiss()
     }

@@ -10,6 +10,8 @@ object Routes {
     const val VAULT = "vault"
     const val SETTINGS = "settings"
     const val SHORTCUTS = "settings/shortcuts"
+    const val GESTURES = "settings/gestures"
+    const val SETTINGS_SECTION = "settings/section/{id}"
     const val PLAYLIST = "playlist/{key}"
     const val NOW_PLAYING = "now-playing"
     const val ALBUM = "album/{key}"
@@ -19,6 +21,7 @@ object Routes {
     /** Empty paths (files at the storage root) travel as "~" so the route still matches. */
     fun folder(path: String) = "folder/${Uri.encode(path.ifEmpty { "~" })}"
     fun decodePath(arg: String?): String = Uri.decode(arg.orEmpty()).let { if (it == "~") "" else it }
+    fun settingsSection(id: String) = "settings/section/$id"
     fun playlist(id: Long) = "playlist/$id"
     fun album(id: Long) = "album/$id"
     fun artist(name: String) = "artist/${Uri.encode(name)}"

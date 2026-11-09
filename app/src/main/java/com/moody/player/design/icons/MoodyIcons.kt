@@ -105,6 +105,7 @@ object MoodyIcons {
     val Share by lazy { icon("share", "M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8", "M16 6l-4-4-4 4", "M12 2v13") }
     val Rename by lazy { icon("rename", "M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z", "M15 5l4 4") }
     val Delete by lazy { icon("delete", "M3 6h18", "M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6", "M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2") }
+    val Captain by lazy { icon("captain", "M4 11c0-3.3 3.6-6 8-6s8 2.7 8 6", "M4 11h16v3H4z", "M5.5 14c2 3 11 3 13 0", "M12 7.4a1.1 1.1 0 1 0 0 2.2a1.1 1.1 0 1 0 0-2.2z") }
     val Info by lazy { icon("info", CIRCLE10, "M12 16v-4M12 8h.01") }
     val Eye by lazy { icon("eye", "M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z", "M12 9a3 3 0 1 0 0 6a3 3 0 1 0 0-6z") }
     val EyeOff by lazy {

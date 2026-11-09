@@ -53,7 +53,7 @@ fun groupMusic(songs: List<AudioItem>): Triple<List<AlbumGroup>, List<ArtistGrou
 
 @HiltViewModel
 class MusicViewModel @Inject constructor(
-    media: MediaRepository,
+    private val media: MediaRepository,
     private val playlistDao: PlaylistDao,
     private val favoriteDao: FavoriteDao,
     val music: MusicController,
@@ -85,6 +85,15 @@ class MusicViewModel @Inject constructor(
         val id = playlistDao.create(Playlist(name = name.trim(), createdAt = System.currentTimeMillis()))
         if (songs.isNotEmpty()) playlistDao.append(id, songs.map { it.uri.toString() })
     }
+    /** A song's file was deleted: drop it from playlists, favourites and the queue, then refresh the library. */
+    fun forgetDeleted(song: AudioItem) = viewModelScope.launch {
+        val u = song.uri.toString()
+        playlistDao.removeEverywhere(u)
+        favoriteDao.remove(u)
+        music.removeUri(song.uri)
+        media.rescan()
+    }
+
     fun addToPlaylist(id: Long, songs: List<AudioItem>) = viewModelScope.launch { playlistDao.append(id, songs.map { it.uri.toString() }) }
     fun renamePlaylist(id: Long, name: String) = viewModelScope.launch { playlistDao.rename(id, name.trim()) }
     fun deletePlaylist(id: Long) = viewModelScope.launch { playlistDao.delete(id) }

@@ -140,7 +140,7 @@ class PlayerViewModel @Inject constructor(
     private fun showResumeChip(uri: Uri, at: Long) {
         _resumedAt.value = uri to at
         resumeChipJob?.cancel()
-        resumeChipJob = viewModelScope.launch { delay(4_000); if (_resumedAt.value?.first == uri) _resumedAt.value = null }
+        resumeChipJob = viewModelScope.launch { delay(6_000); if (_resumedAt.value?.first == uri) _resumedAt.value = null }
     }
 
     /** Hides the chip at once: on play/pause, seeking, Start over, or switching videos. */
@@ -162,17 +162,16 @@ class PlayerViewModel @Inject constructor(
         _toasts.tryEmit(if (_shuffle.value) "Shuffle on" else "Shuffle off")
     }
 
+    fun setShortcuts(list: List<com.moody.player.domain.PlayerShortcut>) = viewModelScope.launch {
+        settingsStore.update { it.copy(playerShortcuts = list) }
+    }
+
     fun toggleMute() {
         val on = !engine.state.value.muted
         engine.setMuted(on)
         _toasts.tryEmit(if (on) "Muted" else "Sound on")
     }
 
-    fun toggleBackgroundPlay() = viewModelScope.launch {
-        val on = !settings.value.backgroundPlay
-        settingsStore.update { it.copy(backgroundPlay = on) }
-        _toasts.tryEmit(if (on) "Background play on" else "Background play off")
-    }
 
     /** A-B toggle: on marks A at the current time (a Set B chip then appears); off clears the loop. */
     fun toggleAb() { if (_ab.value.first != null) clearAb() else markA() }
