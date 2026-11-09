@@ -19,6 +19,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.foundation.layout.fillMaxWidth
+import com.moody.player.ui.components.LocalBottomInset
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -83,16 +90,25 @@ fun MoodyRoot(settings: Settings, slots: AppSlots, toaster: Toaster = remember {
 private fun MainScreen(nav: NavHostController, slots: AppSlots) {
     var tab by rememberSaveable { mutableStateOf(MainTab.VIDEO) }
     val videoVm: VideoViewModel = hiltViewModel()
-    Column(Modifier.fillMaxSize()) {
-        Box(Modifier.weight(1f)) {
+    // Each tab keeps its own saved state (scroll position, sub-tab) while the other is showing.
+    val holder = rememberSaveableStateHolder()
+    val density = LocalDensity.current
+    var overlayPx by remember { mutableIntStateOf(0) }
+    val bottomInset = with(density) { overlayPx.toDp() }
+    Box(Modifier.fillMaxSize()) {
+        CompositionLocalProvider(LocalBottomInset provides bottomInset) {
             AnimatedContent(tab, transitionSpec = { fadeIn(Motion.base()) togetherWith fadeOut(Motion.fast()) }, label = "tab") { t ->
-                when (t) {
-                    MainTab.VIDEO -> VideoLibraryScreen(videoVm, slots.videoNav(nav))
-                    MainTab.MUSIC -> slots.music(nav)
+                holder.SaveableStateProvider(t.name) {
+                    when (t) {
+                        MainTab.VIDEO -> VideoLibraryScreen(videoVm, slots.videoNav(nav))
+                        MainTab.MUSIC -> slots.music(nav)
+                    }
                 }
             }
         }
-        slots.miniPlayer(nav)
-        MoodyBottomBar(tab, { tab = it })
+        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().onSizeChanged { overlayPx = it.height }) {
+            slots.miniPlayer(nav)
+            MoodyBottomBar(tab, { tab = it })
+        }
     }
 }

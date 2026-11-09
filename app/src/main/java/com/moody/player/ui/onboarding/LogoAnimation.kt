@@ -30,30 +30,31 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.moody.player.design.MoodyTheme
 import com.moody.player.design.components.Motion
-import com.moody.player.ui.components.drawMark
+import com.moody.player.ui.components.MoodyLogo
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.coroutineScope
 
 /**
- * The launch moment: the mark's outline is drawn like a reel being threaded (0-900 ms), the square fills
- * and the crescent-play glyph appears (800-1200 ms), then the wordmark rises in (1100-1600 ms).
+ * The launch moment: a soft purple glow rises, the logo scales up into place (0-900 ms),
+ * then the wordmark rises in (700-1300 ms).
  */
 @Composable
 fun LogoAnimation(onDone: () -> Unit) {
     val c = MoodyTheme.colors
-    val trace = remember { Animatable(0f) }
-    val fill = remember { Animatable(0f) }
-    val glyph = remember { Animatable(0f) }
+    val glow = remember { Animatable(0f) }
+    val logo = remember { Animatable(0f) }
     val word = remember { Animatable(0f) }
 
     LaunchedEffect(Unit) {
         coroutineScope {
-            val a = async { trace.animateTo(1f, tween(900, easing = Motion.Ease)) }
-            val b = async { delay(800); fill.animateTo(1f, tween(300, easing = LinearEasing)) }
-            val g = async { delay(900); glyph.animateTo(1f, tween(300, easing = Motion.Ease)) }
-            val w = async { delay(1100); word.animateTo(1f, tween(500, easing = Motion.Ease)) }
-            a.await(); b.await(); g.await(); w.await()
+            val g = async { glow.animateTo(1f, tween(1000, easing = Motion.Ease)) }
+            val l = async { delay(150); logo.animateTo(1f, tween(750, easing = Motion.Ease)) }
+            val w = async { delay(700); word.animateTo(1f, tween(600, easing = Motion.Ease)) }
+            g.await(); l.await(); w.await()
         }
         delay(450)
         onDone()
@@ -61,19 +62,22 @@ fun LogoAnimation(onDone: () -> Unit) {
 
     Box(Modifier.fillMaxSize().background(c.bg).semantics { contentDescription = "Moody" }, contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Canvas(Modifier.size(96.dp)) {
-                val s = size.minDimension
-                val inset = 2.dp.toPx()
-                val outline = Path().apply {
-                    addRoundRect(RoundRect(inset, inset, s - inset, s - inset, CornerRadius(s * 11 / 48f)))
+            Box(contentAlignment = Alignment.Center) {
+                Canvas(Modifier.size(220.dp)) {
+                    drawCircle(
+                        Brush.radialGradient(listOf(Color(0xFF8E4FE6).copy(alpha = 0.45f * glow.value), Color.Transparent)),
+                        radius = size.minDimension / 2,
+                    )
                 }
-                val measure = PathMeasure().apply { setPath(outline, false) }
-                val partial = Path()
-                measure.getSegment(0f, measure.length * trace.value, partial, true)
-                drawPath(partial, c.accent, style = Stroke(2.dp.toPx(), cap = StrokeCap.Round))
-                drawMark(c.accent, c.accentInk, fill.value, glyph.value)
+                MoodyLogo(
+                    Modifier.graphicsLayer {
+                        val s = 0.82f + 0.18f * logo.value
+                        scaleX = s; scaleY = s; alpha = logo.value
+                    },
+                    size = 112.dp,
+                )
             }
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(8.dp))
             Text(
                 "Moody",
                 style = MoodyTheme.type.hero,

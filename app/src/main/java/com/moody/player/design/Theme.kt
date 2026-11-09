@@ -42,7 +42,7 @@ private fun animated(target: MoodyColors): MoodyColors {
         line = a(target.line), line2 = a(target.line2), line3 = a(target.line3),
         text = a(target.text), text2 = a(target.text2), text3 = a(target.text3),
         accent = a(target.accent), accentHi = a(target.accentHi), accentInk = a(target.accentInk),
-        accentWash = a(target.accentWash), danger = a(target.danger),
+        accentWash = a(target.accentWash), accentDeep = a(target.accentDeep), danger = a(target.danger),
     )
 }
 

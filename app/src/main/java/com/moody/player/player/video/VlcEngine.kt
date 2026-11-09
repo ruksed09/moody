@@ -68,6 +68,20 @@ class VlcEngine @Inject constructor(@ApplicationContext private val context: Con
     private var triedSoftware = false
     private var lastOpen: Triple<Uri, Long, Decoder>? = null
 
+    /** libVLC stalls on some phones if playback starts before a video surface exists, so play waits for attach(). */
+    private var pendingPlay = false
+    /** Set once libVLC reports playback time; if it never does, the decoder is treated as stuck. */
+    private var sawTime = false
+    private val main = android.os.Handler(android.os.Looper.getMainLooper())
+    private val stallCheck = Runnable {
+        val st = _state.value
+        if (!sawTime && st.error == null && !userPaused && player != null) {
+            android.util.Log.w("Moody", "Playback stalled on ${st.decoder}; retrying")
+            onError()
+        }
+    }
+    private var userPaused = false
+
     // Audio focus: libVLC doesn't ask for it, so the engine does. Calls and other apps pause or duck the video.
     private val audio = context.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
     private var pausedByFocus = false
@@ -136,7 +150,7 @@ class VlcEngine @Inject constructor(@ApplicationContext private val context: Con
         "--freetype-background-color=0",
         "--sub-autodetect-fuzzy=3",
         "--network-caching=1500",
-    )
+    ).apply { if (com.moody.player.BuildConfig.DEBUG) add("-vv") }
 
     private fun ensure(s: SubStyle): MediaPlayer {
         val p = player
@@ -158,6 +172,7 @@ class VlcEngine @Inject constructor(@ApplicationContext private val context: Con
         player?.let { if (layout != null) it.detachViews(); it.attachViews(view, null, true, false) }
         layout = view
         applyAspect(_state.value.aspect)
+        if (pendingPlay) { pendingPlay = false; player?.play() }
     }
 
     fun detach(view: VLCVideoLayout) {
@@ -196,7 +211,11 @@ class VlcEngine @Inject constructor(@ApplicationContext private val context: Con
         val keep = _state.value
         _state.value = PlayerState(uri = uri, positionMs = startMs, buffering = true, rate = keep.rate, aspect = keep.aspect, decoder = decoder)
         mp.rate = keep.rate
-        mp.play()
+        sawTime = false
+        userPaused = false
+        main.removeCallbacks(stallCheck)
+        main.postDelayed(stallCheck, if (uri.scheme == "http" || uri.scheme == "https" || uri.scheme?.startsWith("rt") == true) 20_000L else 8_000L)
+        if (layout != null) mp.play() else pendingPlay = true
     }
 
     private fun onEvent(e: MediaPlayer.Event) {
@@ -209,7 +228,10 @@ class VlcEngine @Inject constructor(@ApplicationContext private val context: Con
             MediaPlayer.Event.Paused -> { setNoisy(false); if (!pausedByFocus) abandonFocus(); _state.update { it.copy(playing = false) } }
             MediaPlayer.Event.Stopped -> { setNoisy(false); abandonFocus(); _state.update { it.copy(playing = false) } }
             MediaPlayer.Event.Buffering -> _state.update { it.copy(buffering = e.buffering < 100f) }
-            MediaPlayer.Event.TimeChanged -> _state.update { it.copy(positionMs = e.timeChanged, buffering = false) }
+            MediaPlayer.Event.TimeChanged -> {
+                if (!sawTime) { sawTime = true; main.removeCallbacks(stallCheck) }
+                _state.update { it.copy(positionMs = e.timeChanged, buffering = false) }
+            }
             MediaPlayer.Event.LengthChanged -> _state.update { it.copy(durationMs = e.lengthChanged) }
             MediaPlayer.Event.EndReached -> {
                 _state.update { it.copy(playing = false, ended = true, positionMs = it.durationMs) }
@@ -246,12 +268,13 @@ class VlcEngine @Inject constructor(@ApplicationContext private val context: Con
     }
 
     fun play() {
+        userPaused = false
         val mp = player ?: return
         if (_state.value.ended) { mp.stop(); lastOpen?.let { open(it.first, 0, it.third, style ?: SubStyle()) }; return }
         mp.play()
     }
 
-    fun pause() { player?.pause() }
+    fun pause() { userPaused = true; pendingPlay = false; player?.pause() }
     fun toggle() { if (_state.value.playing) pause() else play() }
 
     fun seekTo(ms: Long) {
@@ -322,6 +345,8 @@ class VlcEngine @Inject constructor(@ApplicationContext private val context: Con
     fun stopIfCurrent(uri: Uri?) { if (uri == null || _state.value.uri == uri) stop() }
 
     fun stop() {
+        main.removeCallbacks(stallCheck)
+        pendingPlay = false
         player?.stop()
         fd?.close(); fd = null
         _state.update { it.copy(playing = false) }

@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -41,7 +42,7 @@ import java.io.File
  * Not a pixel-diff test: it fails only if a screen crashes while composing.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34], qualifiers = "w411dp-h891dp-xxhdpi")
+@Config(sdk = [34], qualifiers = "w360dp-h800dp-xxhdpi")
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class ScreenshotTest {
     @get:Rule val compose = createAndroidComposeRule<androidx.activity.ComponentActivity>()
@@ -51,9 +52,9 @@ class ScreenshotTest {
         compose.mainClock.autoAdvance = false
         compose.setContent {
             MoodyTheme(mode) {
-                Column(Modifier.fillMaxSize().background(MoodyTheme.colors.bg)) {
-                    Box(Modifier.weight(1f)) { content() }
-                    MoodyBottomBar(MainTab.VIDEO, {})
+                Box(Modifier.fillMaxSize().background(MoodyTheme.colors.bg)) {
+                    androidx.compose.runtime.CompositionLocalProvider(com.moody.player.ui.components.LocalBottomInset provides 84.dp) { content() }
+                    MoodyBottomBar(MainTab.VIDEO, {}, Modifier.align(androidx.compose.ui.Alignment.BottomCenter))
                 }
             }
         }
@@ -150,6 +151,11 @@ class ScreenshotTest {
     @Test fun permissionsDark() = bare("permissions-dark", ThemeMode.DARK) { com.moody.player.ui.onboarding.PermissionsScreen({}) }
     @Test fun logoMid() = bare("logo-mid", ThemeMode.DARK, 700) { com.moody.player.ui.onboarding.LogoAnimation {} }
     @Test fun logoEnd() = bare("logo-end", ThemeMode.DARK, 1_700) { com.moody.player.ui.onboarding.LogoAnimation {} }
+
+    @Config(qualifiers = "w320dp-h640dp-xhdpi")
+    @Test fun videoListSmallPhone() = shot("size-320-video-list", ThemeMode.DARK) { VideoLibraryContent(state(VideoView.ALL, LayoutMode.LIST), noop, nav) }
+    @Config(qualifiers = "w600dp-h960dp-xhdpi")
+    @Test fun videoGridLargeScreen() = shot("size-600-video-grid", ThemeMode.MIDNIGHT) { VideoLibraryContent(state(VideoView.ALL, LayoutMode.GRID), noop, nav) }
 
     @Test fun videoFoldersDark() = shot("video-folders-dark", ThemeMode.DARK) { VideoLibraryContent(state(VideoView.FOLDERS), noop, nav) }
     @Test fun videoFoldersLight() = shot("video-folders-light", ThemeMode.LIGHT) { VideoLibraryContent(state(VideoView.FOLDERS), noop, nav) }

@@ -30,7 +30,7 @@ data class Settings(
     // Appearance
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val fontMode: FontMode = FontMode.APP,
-    val backgrounds: Boolean = true,
+    val backgrounds: Boolean = false,
     val videoView: VideoView = VideoView.FOLDERS,
     val videoLayout: LayoutMode = LayoutMode.GRID,
     val sort: SortSpec = SortSpec(SortKey.DATE, ascending = false),

@@ -21,34 +21,38 @@ data class MoodyColors(
     val accentHi: Color,
     val accentInk: Color,
     val accentWash: Color,
+    /** Stronger accent for filled controls: switch tracks, active segments. */
+    val accentDeep: Color,
     val danger: Color,
     val isDark: Boolean,
 )
 
-private val Warm = Color(0xFFECD6BE)
+private val White = Color(0xFFFFFFFF)
 
+/** Dark: near-black, cool neutral surfaces, one purple accent (owner's mockup). */
 val DarkColors = MoodyColors(
-    bg = Color(0xFF13100E),
-    surface = Color(0xFF1A1613),
-    raised = Color(0xFF221D19),
-    line = Warm.copy(alpha = 0.085f),
-    line2 = Warm.copy(alpha = 0.16f),
-    line3 = Warm.copy(alpha = 0.30f),
-    text = Color(0xFFF1E9E0),
-    text2 = Color(0xFFB8AB9D),
-    text3 = Color(0xFF877B70),
-    accent = Color(0xFFE6A766),
-    accentHi = Color(0xFFEFB67C),
-    accentInk = Color(0xFF1B130B),
-    accentWash = Color(0xFFE6A766).copy(alpha = 0.12f),
-    danger = Color(0xFFE5806B),
+    bg = Color(0xFF0B0A0F),
+    surface = Color(0xFF141219),
+    raised = Color(0xFF1D1A23),
+    line = White.copy(alpha = 0.08f),
+    line2 = White.copy(alpha = 0.14f),
+    line3 = White.copy(alpha = 0.26f),
+    text = Color(0xFFF4F2F8),
+    text2 = Color(0xFFB3AEBC),
+    text3 = Color(0xFF8A8494),
+    accent = Color(0xFFA774F2),
+    accentHi = Color(0xFFBC94F6),
+    accentInk = Color(0xFF14091F),
+    accentWash = Color(0xFFA774F2).copy(alpha = 0.24f),
+    accentDeep = Color(0xFF7C3AED),
+    danger = Color(0xFFF07A8A),
     isDark = true,
 )
 
 val MidnightColors = DarkColors.copy(
     bg = Color(0xFF000000),
-    surface = Color(0xFF0E0B09),
-    raised = Color(0xFF181411),
+    surface = Color(0xFF0E0D12),
+    raised = Color(0xFF17151C),
 )
 
 private val Ink = Color(0xFF3A2A1C)
@@ -67,6 +71,7 @@ val LightColors = MoodyColors(
     accentHi = Color(0xFFA35E1F),
     accentInk = Color(0xFF1B130B),
     accentWash = Color(0xFFB86B25).copy(alpha = 0.12f),
+    accentDeep = Color(0xFFB86B25),
     danger = Color(0xFFB4442E),
     isDark = false,
 )
@@ -81,8 +86,8 @@ fun moodyColors(mode: ThemeMode, systemDark: Boolean): MoodyColors = when (mode)
 /** Fixed colours used on top of video, independent of theme. */
 object OnVideo {
     val text = Color(0xFFFBF5EE)
-    val ink = Color(0xE613100E)
-    val scrim = Color(0xD60C0907)
+    val ink = Color(0xE60B0A0F)
+    val scrim = Color(0xD608070B)
     val rail = Color(0x33FBF5EE)
     val buffered = Color(0x4DFBF5EE)
 }

@@ -42,6 +42,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.systemGestureExclusion
+import com.moody.player.domain.Aspect
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.moody.player.design.MoodyTheme
@@ -103,23 +105,24 @@ fun PlayerScreen(vm: PlayerViewModel, host: PlayerHost, inPip: Boolean) {
 
         AnimatedVisibility(controls && !locked, enter = fadeIn(Motion.base()), exit = fadeOut(Motion.base())) {
             Box(Modifier.fillMaxSize()) {
-                Box(Modifier.fillMaxWidth().height(140.dp).background(Brush.verticalGradient(listOf(Color(0xA60C0907), Color.Transparent))))
-                Box(Modifier.fillMaxWidth().height(200.dp).align(Alignment.BottomCenter).background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xD60C0907)))))
+                Box(Modifier.fillMaxWidth().height(140.dp).background(Brush.verticalGradient(listOf(Color(0xA608070B), Color.Transparent))))
+                Box(Modifier.fillMaxWidth().height(220.dp).align(Alignment.BottomCenter).background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xE008070B)))))
                 Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
                     TitleBar(vm.current?.title.orEmpty(), st, host.onBack) { menu = PlayerMenu.MORE; poke++ }
                     Spacer(Modifier.weight(1f))
-                    CenterControls(st, vm.hasPrev || st.positionMs > 5_000, vm.hasNext, { vm.prev(); poke++ }, { vm.engine.toggle(); poke++ }, { vm.next(); poke++ })
-                    Spacer(Modifier.weight(1f))
                     BottomControls(
                         st = st, showRemaining = showRemaining, ab = ab,
+                        canPrev = vm.hasPrev || st.positionMs > 5_000, hasNext = vm.hasNext,
+                        onPrev = { vm.prev(); poke++ }, onToggle = { vm.engine.toggle(); poke++ }, onNext = { vm.next(); poke++ },
                         onToggleTime = { showRemaining = !showRemaining; poke++ },
                         onSeek = { vm.engine.seekTo(it); poke++ },
                         onScrubbing = { scrubbing = it },
                         onLock = { locked = true; controls = false; vm.toast("Controls locked") },
-                        onMenu = { menu = it; poke++ },
-                        onPip = host.onPip,
-                        onRotate = { host.onRotate(); poke++ },
-                        onAspect = { val a = st.aspect.next(); vm.engine.setAspect(a); vm.toast(a.label); poke++ },
+                        onSpeed = { menu = PlayerMenu.SPEED; poke++ },
+                        onFit = {
+                            val a = if (st.aspect == Aspect.FILL) Aspect.FIT else Aspect.FILL
+                            vm.engine.setAspect(a); vm.toast(if (a == Aspect.FILL) "Fill screen" else "Fit to screen"); poke++
+                        },
                     )
                 }
             }
@@ -130,7 +133,7 @@ fun PlayerScreen(vm: PlayerViewModel, host: PlayerHost, inPip: Boolean) {
         }
 
         resumedAt?.let { at ->
-            ResumeChip(at, onStartOver = vm::startOver, modifier = Modifier.align(Alignment.BottomStart).windowInsetsPadding(WindowInsets.safeDrawing).padding(start = 16.dp, bottom = if (controls) 132.dp else 24.dp))
+            ResumeChip(at, onStartOver = vm::startOver, modifier = Modifier.align(Alignment.BottomStart).windowInsetsPadding(WindowInsets.safeDrawing).padding(start = 16.dp, bottom = if (controls) 188.dp else 24.dp))
         }
 
         st.error?.let { msg ->
@@ -145,7 +148,7 @@ fun PlayerScreen(vm: PlayerViewModel, host: PlayerHost, inPip: Boolean) {
             )
         }
 
-        menu?.let { m -> PlayerMenus(m, vm, st, onNavigate = { menu = it }, onDismiss = { menu = null }) }
+        menu?.let { m -> PlayerMenus(m, vm, st, host, onNavigate = { menu = it }, onDismiss = { menu = null }) }
     }
 }
 
@@ -172,61 +175,65 @@ private fun resolution(st: PlayerState): String? = when {
     else -> null
 }
 
-@Composable
-private fun CenterControls(st: PlayerState, canPrev: Boolean, hasNext: Boolean, onPrev: () -> Unit, onToggle: () -> Unit, onNext: () -> Unit) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-        VideoIcon(MoodyIcons.Prev, "Previous", onPrev, size = 28.dp, enabled = canPrev)
-        Spacer(Modifier.width(32.dp))
-        val icon = when { st.ended -> MoodyIcons.Replay; st.playing -> MoodyIcons.Pause; else -> MoodyIcons.Play }
-        Box(
-            Modifier
-                .size(72.dp)
-                .clip(CircleShape)
-                .background(OnVideo.ink)
-                .border(1.dp, OnVideo.text.copy(alpha = 0.22f), CircleShape)
-                .clickable(role = Role.Button, onClick = onToggle)
-                .semantics { contentDescription = if (st.playing) "Pause" else "Play" },
-            contentAlignment = Alignment.Center,
-        ) { Icon(icon, null, Modifier.size(30.dp), tint = OnVideo.text) }
-        Spacer(Modifier.width(32.dp))
-        VideoIcon(MoodyIcons.Next, "Next", onNext, size = 28.dp, enabled = hasNext)
-    }
-}
-
+/**
+ * The bottom section, built for vertical video: seek bar with times, then the three primary controls
+ * (play/pause clearly largest), then a small row of lock, speed and fit/fill. Everything else is in the overflow menu.
+ */
 @Composable
 private fun BottomControls(
     st: PlayerState,
     showRemaining: Boolean,
     ab: Pair<Long?, Long?>,
+    canPrev: Boolean,
+    hasNext: Boolean,
+    onPrev: () -> Unit,
+    onToggle: () -> Unit,
+    onNext: () -> Unit,
     onToggleTime: () -> Unit,
     onSeek: (Long) -> Unit,
     onScrubbing: (Boolean) -> Unit,
     onLock: () -> Unit,
-    onMenu: (PlayerMenu) -> Unit,
-    onPip: (() -> Unit)?,
-    onRotate: () -> Unit,
-    onAspect: () -> Unit,
+    onSpeed: () -> Unit,
+    onFit: () -> Unit,
 ) {
     val t = MoodyTheme.type
-    Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(bottom = 8.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(formatDuration(st.positionMs).let { if (it == "--:--") "0:00" else it }, style = t.mono, color = OnVideo.text, modifier = Modifier.padding(start = 4.dp, end = 12.dp))
-            SeekBar(st.positionMs, st.durationMs, onSeek, onScrubbing, Modifier.weight(1f), ab.first, ab.second)
+    val accent = MoodyTheme.colors.accent
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 8.dp)) {
+        SeekBar(st.positionMs, st.durationMs, onSeek, onScrubbing, Modifier.fillMaxWidth().systemGestureExclusion(), ab.first, ab.second)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(formatDuration(st.positionMs).let { if (it == "--:--") "0:00" else it }, style = t.mono, color = OnVideo.text)
+            Spacer(Modifier.weight(1f))
             Text(
                 if (showRemaining) "-" + formatDuration((st.durationMs - st.positionMs).coerceAtLeast(1000)) else formatDuration(st.durationMs),
                 style = t.mono, color = OnVideo.text.copy(alpha = 0.7f),
-                modifier = Modifier.clip(Radii.sm).clickable(onClick = onToggleTime).padding(start = 12.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
+                modifier = Modifier.clip(Radii.sm).clickable(onClickLabel = "Show remaining time", onClick = onToggleTime).padding(horizontal = 4.dp, vertical = 2.dp),
             )
         }
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            VideoIcon(MoodyIcons.Lock, "Lock controls", onLock)
-            VideoIcon(MoodyIcons.Aspect, "Aspect ratio: ${st.aspect.label}", onAspect)
-            VideoIcon(MoodyIcons.Rotate, "Rotate", onRotate)
-            Spacer(Modifier.weight(1f))
-            VideoIcon(MoodyIcons.Audio, "Audio track", { onMenu(PlayerMenu.AUDIO) })
-            VideoIcon(MoodyIcons.Subtitles, "Subtitles", { onMenu(PlayerMenu.SUBTITLES) })
-            SpeedButton(st.rate) { onMenu(PlayerMenu.SPEED) }
-            if (onPip != null) VideoIcon(MoodyIcons.Pip, "Picture in picture", onPip)
+        Spacer(Modifier.height(4.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+            VideoIcon(MoodyIcons.Prev, "Previous", onPrev, size = 24.dp, enabled = canPrev)
+            Spacer(Modifier.width(28.dp))
+            val icon = when { st.ended -> MoodyIcons.Replay; st.playing -> MoodyIcons.Pause; else -> MoodyIcons.Play }
+            Box(
+                Modifier
+                    .size(64.dp)
+                    .clip(CircleShape)
+                    .clickable(role = Role.Button, onClick = onToggle)
+                    .semantics { contentDescription = when { st.ended -> "Replay"; st.playing -> "Pause"; else -> "Play" } },
+                contentAlignment = Alignment.Center,
+            ) { Icon(icon, null, Modifier.size(40.dp), tint = OnVideo.text) }
+            Spacer(Modifier.width(28.dp))
+            VideoIcon(MoodyIcons.Next, "Next", onNext, size = 24.dp, enabled = hasNext)
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+            VideoIcon(MoodyIcons.Lock, "Lock controls", onLock, size = 20.dp, tint = OnVideo.text.copy(alpha = 0.85f))
+            SpeedButton(st.rate, onSpeed)
+            val filled = st.aspect == Aspect.FILL
+            VideoIcon(
+                if (filled) MoodyIcons.FitScreen else MoodyIcons.Fullscreen,
+                if (filled) "Fit to screen" else "Fill screen", onFit, size = 20.dp,
+                tint = if (filled) accent else OnVideo.text.copy(alpha = 0.85f),
+            )
         }
     }
 }
@@ -234,11 +241,10 @@ private fun BottomControls(
 @Composable
 private fun SpeedButton(rate: Float, onClick: () -> Unit) {
     Box(
-        Modifier.size(48.dp).clip(CircleShape).clickable(role = Role.Button, onClick = onClick).semantics { contentDescription = "Speed" },
+        Modifier.size(44.dp).clip(CircleShape).clickable(role = Role.Button, onClick = onClick).semantics { contentDescription = "Speed ${rateLabel(rate)}" },
         contentAlignment = Alignment.Center,
     ) {
-        if (rate == 1f) Icon(MoodyIcons.Speed, null, Modifier.size(22.dp), tint = OnVideo.text)
-        else Text(rateLabel(rate), style = MoodyTheme.type.mono, color = MoodyTheme.colors.accent)
+        Text(rateLabel(rate), style = MoodyTheme.type.label, color = if (rate == 1f) OnVideo.text.copy(alpha = 0.85f) else MoodyTheme.colors.accent)
     }
 }
 
@@ -248,7 +254,7 @@ fun rateLabel(r: Float): String = (if (r % 1f == 0f) "%.0f" else if ((r * 10) % 
 fun VideoIcon(icon: ImageVector, label: String, onClick: () -> Unit, size: Dp = 22.dp, enabled: Boolean = true, tint: Color = OnVideo.text) {
     Box(
         Modifier
-            .size(48.dp)
+            .size(44.dp)
             .clip(CircleShape)
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .semantics { contentDescription = label },
@@ -295,7 +301,7 @@ private fun ResumeChip(at: Long, onStartOver: () -> Unit, modifier: Modifier = M
 
 @Composable
 private fun ErrorSheet(message: String, canSoftware: Boolean, hasNext: Boolean, onRetry: () -> Unit, onSoftware: () -> Unit, onNext: () -> Unit, onBack: () -> Unit) {
-    Box(Modifier.fillMaxSize().background(Color(0xED0E0B09)).windowInsetsPadding(WindowInsets.safeDrawing).padding(24.dp), contentAlignment = Alignment.Center) {
+    Box(Modifier.fillMaxSize().background(Color(0xED0B0A0F)).windowInsetsPadding(WindowInsets.safeDrawing).padding(24.dp), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(400.dp)) {
             Text("Playback stopped", style = MoodyTheme.type.title, color = OnVideo.text)
             Spacer(Modifier.height(8.dp))

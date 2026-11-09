@@ -56,6 +56,20 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.lazy.grid.LazyGridState
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import com.moody.player.design.components.Motion
+import com.moody.player.ui.components.CollapsingTopBar
+import com.moody.player.ui.components.LocalBottomInset
+import com.moody.player.ui.components.MoodyLogo
+import com.moody.player.ui.components.rememberCollapsingBar
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.moody.player.data.media.AccessLevel
 import com.moody.player.data.media.VideoItem
@@ -78,7 +92,6 @@ import com.moody.player.domain.SortKey
 import com.moody.player.domain.SortSpec
 import com.moody.player.domain.VideoView
 import com.moody.player.domain.formatBytes
-import com.moody.player.ui.components.MoodyMark
 
 enum class SelectionAction { HIDE, SHARE, RENAME, DELETE, INFO }
 
@@ -106,18 +119,33 @@ interface VideoActions {
 @Composable
 fun VideoLibraryScreen(vm: VideoViewModel, nav: VideoNav, modifier: Modifier = Modifier) {
     val s by vm.state.collectAsStateWithLifecycle()
-    VideoLibraryContent(s, vm, nav, modifier)
+    // One remembered scroll position per view, so switching Folders / All videos (or tabs) keeps your place.
+    val folderState = rememberSaveable(saver = LazyGridState.Saver) { LazyGridState() }
+    val allState = rememberSaveable(saver = LazyGridState.Saver) { LazyGridState() }
+    VideoLibraryContent(s, vm, nav, modifier, if (s.view == VideoView.FOLDERS) folderState else allState)
 }
+
+private val BarHeight = 56.dp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun VideoLibraryContent(s: VideoUiState, vm: VideoActions, nav: VideoNav, modifier: Modifier = Modifier) {
+fun VideoLibraryContent(
+    s: VideoUiState,
+    vm: VideoActions,
+    nav: VideoNav,
+    modifier: Modifier = Modifier,
+    gridState: LazyGridState = rememberLazyGridState(),
+) {
     var searching by rememberSaveable { mutableStateOf(false) }
     var sortSheet by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf(setOf<String>()) }
     var hidingFolder by remember { mutableStateOf<com.moody.player.data.media.Folder?>(null) }
+    var actionsFor by remember { mutableStateOf<VideoItem?>(null) }
     val selecting = selected.isNotEmpty()
     val haptics = LocalHapticFeedback.current
+    val bar = rememberCollapsingBar(BarHeight, "video")
+    bar.pinned = selecting || searching
+    LaunchedEffect(bar.pinned) { if (bar.pinned) bar.show() }
 
     BackHandler(selecting || searching) {
         if (selecting) selected = emptySet() else { searching = false; vm.setQuery("") }
@@ -128,37 +156,37 @@ fun VideoLibraryContent(s: VideoUiState, vm: VideoActions, nav: VideoNav, modifi
         selected = if (k in selected) selected - k else selected + k
     }
     val selectedItems = s.all.filter { it.uri.toString() in selected }
+    val grid = s.layout == LayoutMode.GRID
+    val side = if (grid) 16.dp else 0.dp
+    val topPad = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + BarHeight + 1.dp
+    val bottomPad = LocalBottomInset.current + 24.dp
+    val ptr = rememberPullToRefreshState()
 
-    Box(modifier.fillMaxSize()) {
-        if (s.backgrounds) MoodBackdrop(BackdropKind.VIDEO, Modifier.align(Alignment.TopCenter))
-        PullToRefreshBox(isRefreshing = s.refreshing, onRefresh = { vm.refresh() }, modifier = Modifier.fillMaxSize()) {
-            val grid = s.layout == LayoutMode.GRID
+    Box(modifier.fillMaxSize().nestedScroll(bar.connection)) {
+        PullToRefreshBox(
+            isRefreshing = s.refreshing, onRefresh = { vm.refresh() }, state = ptr, modifier = Modifier.fillMaxSize(),
+            indicator = {
+                PullToRefreshDefaults.Indicator(
+                    state = ptr, isRefreshing = s.refreshing, modifier = Modifier.align(Alignment.TopCenter).padding(top = topPad),
+                    containerColor = MoodyTheme.colors.surface, color = MoodyTheme.colors.accent,
+                )
+            },
+        ) {
             LazyVerticalGrid(
+                state = gridState,
                 columns = if (grid) GridCells.Adaptive(160.dp) else GridCells.Fixed(1),
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(start = if (grid) 16.dp else 0.dp, end = if (grid) 16.dp else 0.dp, bottom = 24.dp),
+                contentPadding = PaddingValues(start = side, end = side, top = topPad, bottom = bottomPad),
                 horizontalArrangement = Arrangement.spacedBy(if (grid) 12.dp else 0.dp),
-                verticalArrangement = Arrangement.spacedBy(if (grid) 12.dp else 0.dp),
+                verticalArrangement = Arrangement.spacedBy(if (grid) 16.dp else 0.dp),
             ) {
                 full {
-                    Column(Modifier.statusBarsPadding().padding(horizontal = if (grid) 0.dp else 16.dp)) {
-                        AnimatedContent(selecting to searching, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "bar") { (sel, srch) ->
-                            when {
-                                sel -> SelectionBar(selectedItems.size, onClose = { selected = emptySet() }, onAll = { selected = s.shown.map { it.uri.toString() }.toSet() }) { a ->
-                                    nav.onSelection(a, selectedItems) { selected = emptySet() }
-                                }
-                                srch -> SearchBar(s.query, vm::setQuery) { searching = false; vm.setQuery("") }
-                                else -> TopRow(
-                                    onLogoLong = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); nav.openVault() },
-                                    onSearch = { searching = true },
-                                    onSort = { sortSheet = true },
-                                    onStream = nav.openStream,
-                                    onSettings = nav.openSettings,
-                                )
-                            }
+                    Box {
+                        if (s.backgrounds) MoodBackdrop(BackdropKind.VIDEO, Modifier.matchParentSize())
+                        Column(Modifier.padding(horizontal = if (grid) 0.dp else 16.dp)) {
+                            if (!searching) Header(s, onView = vm::setView, onVault = nav.openVault)
+                            if (s.access == AccessLevel.PARTIAL) PartialBanner(nav.requestAccess)
                         }
-                        if (!searching) Header(s, onView = vm::setView, onVault = nav.openVault)
-                        if (s.access == AccessLevel.PARTIAL) PartialBanner(nav.requestAccess)
                     }
                 }
                 when {
@@ -170,11 +198,11 @@ fun VideoLibraryContent(s: VideoUiState, vm: VideoActions, nav: VideoNav, modifi
                         EmptyState({ EmptyFilm() }, "No videos on this phone yet", "Videos you record, download or copy over show up here", actionLabel = "Scan again", onAction = { vm.refresh() })
                     }
                     searching && s.query.isNotBlank() && s.shown.isEmpty() -> full {
-                        Text("Nothing called “${s.query.trim()}”", style = MoodyTheme.type.body, color = MoodyTheme.colors.text2, modifier = Modifier.padding(16.dp))
+                        Text("Nothing called \u201c${s.query.trim()}\u201d", style = MoodyTheme.type.body, color = MoodyTheme.colors.text2, modifier = Modifier.padding(16.dp))
                     }
                     !searching && s.view == VideoView.FOLDERS -> {
                         continueRow(s, nav)
-                        full { SectionLabel("Folders", inset = if (grid) 0.dp else 16.dp) }
+                        full { SectionHeader("Folders", s.layout, vm::setLayout, inset = if (grid) 0.dp else 16.dp) }
                         items(s.folders, key = { it.path }) { f ->
                             val long = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); hidingFolder = f }
                             if (grid) FolderGridCard(f, { nav.openFolder(f.path) }, long)
@@ -183,23 +211,48 @@ fun VideoLibraryContent(s: VideoUiState, vm: VideoActions, nav: VideoNav, modifi
                     }
                     else -> {
                         if (!searching) continueRow(s, nav)
-                        if (!searching) full { SectionLabel("All videos", inset = if (grid) 0.dp else 16.dp) }
+                        if (!searching) full { SectionHeader("All videos", s.layout, vm::setLayout, inset = if (grid) 0.dp else 16.dp) }
                         items(s.shown, key = { it.uri.toString() }) { v ->
                             val onClick = { if (selecting) toggle(v) else nav.play(s.shown, s.shown.indexOf(v)) }
                             val onLong = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); toggle(v) }
                             val sel = v.uri.toString() in selected
                             if (grid) VideoGridCard(v, s.positions[v.uri.toString()], sel, onClick, onLong)
-                            else VideoListRow(v, s.positions[v.uri.toString()], sel, onClick, onLong)
+                            else VideoListRow(v, s.positions[v.uri.toString()], sel, onClick, onLong, onMore = { actionsFor = v })
                         }
+                    }
+                }
+            }
+        }
+
+        CollapsingTopBar(bar, contentUnder = gridState.firstVisibleItemIndex > 0 || gridState.firstVisibleItemScrollOffset > 0, height = BarHeight) {
+            AnimatedContent(selecting to searching, transitionSpec = { fadeIn(Motion.fast()) togetherWith fadeOut(Motion.fast()) }, label = "bar") { (sel, srch) ->
+                Box(Modifier.padding(horizontal = 8.dp)) {
+                    when {
+                        sel -> SelectionBar(selectedItems.size, onClose = { selected = emptySet() }, onAll = { selected = s.shown.map { it.uri.toString() }.toSet() }) { a ->
+                            nav.onSelection(a, selectedItems) { selected = emptySet() }
+                        }
+                        srch -> SearchBar(s.query, vm::setQuery) { searching = false; vm.setQuery("") }
+                        else -> TopRow(
+                            onLogoLong = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); nav.openVault() },
+                            onSearch = { searching = true },
+                            onSort = { sortSheet = true },
+                            onStream = nav.openStream,
+                            onSettings = nav.openSettings,
+                        )
                     }
                 }
             }
         }
     }
 
+    actionsFor?.let { v -> VideoActionsSheet(v, onDismiss = { actionsFor = null }) { a ->
+        actionsFor = null
+        if (a == null) nav.play(s.shown, s.shown.indexOf(v).coerceAtLeast(0)) else nav.onSelection(a, listOf(v)) {}
+    } }
+
     hidingFolder?.let { f ->
         ConfirmDialog(
-            "Hide “${f.name}” from Videos?",
+            "Hide \u201c${f.name}\u201d from Videos?",
             "Its videos stay on your phone. You can show the folder again in Settings, under Library.",
             "Hide folder", onDismiss = { hidingFolder = null }, destructive = false,
         ) { vm.hideFolder(f.path); hidingFolder = null }
@@ -235,48 +288,107 @@ private fun LazyGridScope.continueRow(s: VideoUiState, nav: VideoNav) {
     }
 }
 
+/** Logo and name, then search, play a link, sort, settings. Long-press the logo for the vault. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun TopRow(onLogoLong: () -> Unit, onSearch: () -> Unit, onSort: () -> Unit, onStream: () -> Unit, onSettings: () -> Unit) {
     val c = MoodyTheme.colors
-    Row(Modifier.fillMaxWidth().height(56.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().height(BarHeight), verticalAlignment = Alignment.CenterVertically) {
         Row(
             Modifier
                 .clip(Radii.md)
                 .combinedClickable(onClick = {}, onLongClick = onLogoLong)
-                .padding(vertical = 8.dp, horizontal = 4.dp)
+                .padding(vertical = 8.dp, horizontal = 8.dp)
                 .semantics { contentDescription = "Moody" },
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            MoodyMark(size = 24.dp)
+            MoodyLogo(size = 32.dp)
             Spacer(Modifier.width(10.dp))
-            Text("Moody", style = MoodyTheme.type.title, color = c.text)
+            Text("Moody", style = MoodyTheme.type.display, color = c.text)
         }
         Spacer(Modifier.weight(1f))
-        IconAction(MoodyIcons.Search, "Search", onSearch)
-        IconAction(MoodyIcons.Link, "Play a link", onStream)
-        IconAction(MoodyIcons.Sort, "Sort and view", onSort)
-        IconAction(MoodyIcons.Settings, "Settings", onSettings)
+        IconAction(MoodyIcons.Search, "Search", onSearch, tint = c.text, size = 20.dp)
+        IconAction(MoodyIcons.Link, "Play a link", onStream, tint = c.text, size = 20.dp)
+        IconAction(MoodyIcons.Sort, "Sort and view", onSort, tint = c.text, size = 20.dp)
+        IconAction(MoodyIcons.Settings, "Settings", onSettings, tint = c.text, size = 20.dp)
     }
 }
 
 @Composable
 private fun Header(s: VideoUiState, onView: (VideoView) -> Unit, onVault: () -> Unit) {
     val c = MoodyTheme.colors
-    Column(Modifier.padding(top = 20.dp, bottom = 4.dp)) {
-        Text("Videos", style = MoodyTheme.type.hero, color = c.text)
-        Spacer(Modifier.height(4.dp))
-        Text(
-            if (s.loading) "Looking through your phone" else "${s.all.size} ${if (s.all.size == 1) "video" else "videos"} · ${formatBytes(s.totalBytes)}",
-            style = MoodyTheme.type.mono, color = c.text3,
-        )
+    Column(Modifier.padding(top = 12.dp, bottom = 4.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            MoodyLogo(size = 48.dp)
+            Spacer(Modifier.width(14.dp))
+            Box(Modifier.width(1.dp).height(40.dp).background(c.line2))
+            Spacer(Modifier.width(14.dp))
+            Column {
+                Text("Videos", style = MoodyTheme.type.hero, color = c.text)
+                Text(
+                    if (s.loading) "Looking through your phone" else "${s.all.size} ${if (s.all.size == 1) "video" else "videos"}  \u00b7  ${formatBytes(s.totalBytes)}",
+                    style = MoodyTheme.type.caption, color = c.text2,
+                )
+            }
+        }
         Spacer(Modifier.height(16.dp))
+        androidx.compose.foundation.layout.BoxWithConstraints {
+        val narrow = maxWidth < 340.dp
         Row(verticalAlignment = Alignment.CenterVertically) {
             ChoiceChip("Folders", s.view == VideoView.FOLDERS, { onView(VideoView.FOLDERS) }, icon = MoodyIcons.Folder)
             Spacer(Modifier.width(8.dp))
             ChoiceChip("All videos", s.view == VideoView.ALL, { onView(VideoView.ALL) }, icon = MoodyIcons.Film)
             Spacer(Modifier.weight(1f))
-            if (!s.disguiseVault) ChoiceChip("Vault", false, onVault, icon = MoodyIcons.Vault)
+            if (!s.disguiseVault) ChoiceChip(if (narrow) "" else "Vault", false, onVault, Modifier.semantics { contentDescription = "Vault" }, icon = MoodyIcons.Vault)
+        }
+        }
+    }
+}
+
+/** Section title with the grid / list switch on the right, as in the mockup. */
+@Composable
+private fun SectionHeader(title: String, layout: LayoutMode, onLayout: (LayoutMode) -> Unit, inset: androidx.compose.ui.unit.Dp) {
+    val c = MoodyTheme.colors
+    Row(Modifier.fillMaxWidth().padding(start = inset, end = inset, top = 16.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(title, style = MoodyTheme.type.heading, color = c.text, modifier = Modifier.weight(1f))
+        Row(Modifier.height(30.dp).clip(Radii.pill).border(1.dp, c.line2, Radii.pill).padding(2.dp)) {
+            listOf(LayoutMode.GRID to MoodyIcons.Grid, LayoutMode.LIST to MoodyIcons.ListView).forEach { (m, icon) ->
+                val on = layout == m
+                Box(
+                    Modifier
+                        .width(36.dp).fillMaxHeight()
+                        .clip(Radii.pill)
+                        .background(if (on) c.accentWash else androidx.compose.ui.graphics.Color.Transparent)
+                        .clickable(role = Role.RadioButton, onClickLabel = if (m == LayoutMode.GRID) "Grid" else "List") { onLayout(m) },
+                    contentAlignment = Alignment.Center,
+                ) { Icon(icon, null, Modifier.size(16.dp), tint = if (on) c.accent else c.text2) }
+            }
+        }
+    }
+}
+
+/** Per-video menu from a row's three dots. Picking null means Play. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun VideoActionsSheet(v: VideoItem, onDismiss: () -> Unit, onPick: (SelectionAction?) -> Unit) {
+    val c = MoodyTheme.colors
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = c.surface) {
+        Column(Modifier.padding(bottom = 24.dp)) {
+            Text(v.title, style = MoodyTheme.type.heading, color = c.text, maxLines = 2, modifier = Modifier.padding(horizontal = 24.dp).padding(bottom = 12.dp))
+            listOf(
+                Triple(null, MoodyIcons.Play, "Play"),
+                Triple(SelectionAction.HIDE, MoodyIcons.EyeOff, "Hide in vault"),
+                Triple(SelectionAction.SHARE, MoodyIcons.Share, "Share"),
+                Triple(SelectionAction.RENAME, MoodyIcons.Rename, "Rename"),
+                Triple(SelectionAction.INFO, MoodyIcons.Info, "Details"),
+                Triple(SelectionAction.DELETE, MoodyIcons.Delete, "Delete"),
+            ).forEach { (a, icon, label) ->
+                Row(Modifier.fillMaxWidth().height(52.dp).clickable { onPick(a) }.padding(horizontal = 24.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(icon, null, Modifier.size(20.dp), tint = if (a == SelectionAction.DELETE) c.danger else c.text2)
+                    Spacer(Modifier.width(16.dp))
+                    Text(label, style = MoodyTheme.type.body, color = if (a == SelectionAction.DELETE) c.danger else c.text)
+                }
+            }
         }
     }
 }

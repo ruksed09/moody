@@ -1,6 +1,13 @@
 package com.moody.player.ui.components
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
+import com.moody.player.R
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -38,4 +45,18 @@ fun DrawScope.drawMark(fill: Color, ink: Color, square: Float, glyph: Float) {
         }
         drawPath(p, ink.copy(alpha = ink.alpha * glyph))
     }
+}
+
+/** The owner's logo artwork, cropped to its rounded tile (the source image has a black margin round the tile). */
+@Composable
+fun MoodyLogo(modifier: Modifier = Modifier, size: Dp = 40.dp) {
+    Image(
+        painter = painterResource(R.drawable.moody_logo),
+        contentDescription = null,
+        contentScale = ContentScale.Crop,
+        modifier = modifier
+            .size(size)
+            .clip(RoundedCornerShape(size * 0.24f))
+            .graphicsLayer { scaleX = 1.24f; scaleY = 1.24f },
+    )
 }

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Splash icon: the splash screen crops to a circle, so the tile is inset further. -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/moody_logo"
+    android:inset="18%" />

@@ -57,9 +57,9 @@ fun Thumb(
     Box(
         modifier
             .aspectRatio(16f / 9f)
-            .clip(Radii.md)
+            .clip(Radii.lg)
             .background(c.raised)
-            .then(if (selected) Modifier.border(2.dp, c.accent, Radii.md) else Modifier),
+            .then(if (selected) Modifier.border(2.dp, c.accent, Radii.lg) else Modifier),
     ) {
         Icon(MoodyIcons.Film, null, Modifier.align(Alignment.Center).size(22.dp), tint = c.text3.copy(alpha = 0.5f))
         AsyncImage(
@@ -69,17 +69,19 @@ fun Thumb(
             modifier = Modifier.fillMaxSize(),
         )
         if (showBadge && durationMs != null && durationMs > 0) {
-            Text(
-                formatDuration(durationMs),
-                style = MoodyTheme.type.monoSmall,
-                color = OnVideo.text,
-                modifier = Modifier
+            Row(
+                Modifier
                     .align(Alignment.BottomEnd)
                     .padding(6.dp)
-                    .clip(Radii.sm)
+                    .clip(Radii.pill)
                     .background(OnVideo.ink)
-                    .padding(horizontal = 6.dp, vertical = 2.dp),
-            )
+                    .padding(start = 5.dp, end = 7.dp, top = 2.dp, bottom = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(MoodyIcons.PlaySmall, null, Modifier.size(10.dp), tint = OnVideo.text)
+                Spacer(Modifier.width(3.dp))
+                Text(formatDuration(durationMs), style = MoodyTheme.type.monoSmall, color = OnVideo.text)
+            }
         }
         if (isNew && !selected) {
             Box(Modifier.align(Alignment.TopEnd).padding(8.dp).size(8.dp).clip(CircleShape).background(c.accent))
@@ -101,7 +103,7 @@ fun Thumb(
     }
 }
 
-private fun meta(v: VideoItem): String = listOfNotNull(v.resolutionLabel, v.extension.takeIf { it.isNotEmpty() }, formatBytes(v.sizeBytes)).joinToString(" · ")
+private fun meta(v: VideoItem): String = listOfNotNull(v.resolutionLabel, v.extension.takeIf { it.isNotEmpty() }, formatBytes(v.sizeBytes)).joinToString("  ·  ")
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -112,29 +114,30 @@ fun VideoGridCard(v: VideoItem, position: PlaybackPosition?, selected: Boolean, 
         Spacer(Modifier.height(8.dp))
         Text(v.title, style = MoodyTheme.type.bodyStrong, color = c.text, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 2.dp))
         Spacer(Modifier.height(2.dp))
-        Text(meta(v), style = MoodyTheme.type.monoSmall, color = c.text3, maxLines = 1, modifier = Modifier.padding(horizontal = 2.dp))
+        Text(meta(v), style = MoodyTheme.type.caption, color = c.text3, maxLines = 1, modifier = Modifier.padding(horizontal = 2.dp))
     }
 }
 
+/** Mockup row: wide thumbnail, two-line title, quiet meta, three-dot menu, hairline under the text column. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun VideoListRow(v: VideoItem, position: PlaybackPosition?, selected: Boolean, onClick: () -> Unit, onLongClick: () -> Unit, modifier: Modifier = Modifier) {
+fun VideoListRow(
+    v: VideoItem, position: PlaybackPosition?, selected: Boolean, onClick: () -> Unit, onLongClick: () -> Unit,
+    modifier: Modifier = Modifier, onMore: (() -> Unit)? = null,
+) {
     val c = MoodyTheme.colors
-    Row(
-        modifier
-            .fillMaxWidth()
-            .background(if (selected) c.accentWash else Color.Transparent)
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Thumb(v.uri, Modifier.width(128.dp), v.durationMs, position, isNew = position == null, selected = selected)
-        Spacer(Modifier.width(16.dp))
-        Column(Modifier.weight(1f)) {
-            Text(v.title, style = MoodyTheme.type.bodyStrong, color = c.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Spacer(Modifier.height(4.dp))
-            Text(meta(v), style = MoodyTheme.type.monoSmall, color = c.text3, maxLines = 1)
+    Box(modifier.fillMaxWidth().background(if (selected) c.accentWash else Color.Transparent).combinedClickable(onClick = onClick, onLongClick = onLongClick)) {
+        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 0.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Thumb(v.uri, Modifier.width(132.dp), v.durationMs, position, isNew = position == null, selected = selected)
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text(v.title, style = MoodyTheme.type.bodyStrong, color = c.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.height(4.dp))
+                Text(meta(v), style = MoodyTheme.type.caption, color = c.text3, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            if (onMore != null) com.moody.player.design.components.IconAction(MoodyIcons.More, "More for ${v.title}", onMore, tint = c.text, size = 18.dp)
         }
+        Box(Modifier.align(Alignment.BottomEnd).padding(end = 16.dp).fillMaxWidth().padding(start = 162.dp).height(1.dp).background(c.line))
     }
 }
 
@@ -151,7 +154,7 @@ fun FolderGridCard(f: Folder, onClick: () -> Unit, onLongClick: () -> Unit, modi
         Spacer(Modifier.height(8.dp))
         Text(f.name, style = MoodyTheme.type.bodyStrong, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 2.dp))
         Spacer(Modifier.height(2.dp))
-        Text(folderMeta(f), style = MoodyTheme.type.monoSmall, color = c.text3, maxLines = 1, modifier = Modifier.padding(horizontal = 2.dp))
+        Text(folderMeta(f), style = MoodyTheme.type.caption, color = c.text3, maxLines = 1, modifier = Modifier.padding(horizontal = 2.dp))
     }
 }
 
@@ -169,7 +172,7 @@ fun FolderListRow(f: Folder, onClick: () -> Unit, onLongClick: () -> Unit, modif
         Spacer(Modifier.width(16.dp))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(f.name, style = MoodyTheme.type.bodyStrong, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(folderMeta(f), style = MoodyTheme.type.monoSmall, color = c.text3)
+            Text(folderMeta(f), style = MoodyTheme.type.caption, color = c.text3)
         }
         Icon(MoodyIcons.ChevronRight, null, Modifier.size(18.dp), tint = c.text3)
     }

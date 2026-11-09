@@ -209,11 +209,11 @@ fun PrimaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifi
     Row(
         modifier
             .scale(pressScale(src))
-            .height(48.dp)
+            .height(40.dp)
             .clip(Radii.md)
             .background(if (enabled) c.accent else c.raised)
             .clickable(src, ripple(color = c.accentInk), enabled = enabled, role = Role.Button, onClick = onClick)
-            .padding(horizontal = 20.dp),
+            .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center,
     ) {
@@ -233,7 +233,7 @@ fun SecondaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modi
     Row(
         modifier
             .scale(pressScale(src))
-            .height(44.dp)
+            .height(38.dp)
             .clip(Radii.md)
             .border(BorderStroke(1.dp, c.line2), Radii.md)
             .clickable(src, ripple(), role = Role.Button, onClick = onClick)
@@ -258,7 +258,7 @@ fun QuietButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier
     ) { Text(text, style = MoodyTheme.type.label, color = color) }
 }
 
-/** 48 dp touch target around a 22 dp icon. */
+/** 40 dp touch target around the icon (compact, per the owner's mockups). */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun IconAction(
@@ -272,7 +272,7 @@ fun IconAction(
 ) {
     Box(
         modifier
-            .size(48.dp)
+            .size(40.dp)
             .clip(Radii.pill)
             .then(
                 if (onLongClick != null) Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
@@ -288,23 +288,25 @@ fun IconAction(
 
 /** Selectable option chip, as in the mockup's track desk: hairline, amber when selected. */
 @Composable
-fun ChoiceChip(text: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier, icon: ImageVector? = null) {
+fun ChoiceChip(text: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier, icon: ImageVector? = null, height: Dp = 32.dp) {
     val c = MoodyTheme.colors
     Row(
         modifier
-            .height(36.dp)
+            .height(height)
             .clip(Radii.pill)
             .background(if (selected) c.accentWash else Color.Transparent)
-            .border(1.dp, if (selected) c.accent.copy(alpha = 0.55f) else c.line2, Radii.pill)
+            .border(1.dp, if (selected) c.accent else c.line2, Radii.pill)
             .clickable(role = Role.RadioButton, onClick = onClick)
             .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (icon != null) {
             Icon(icon, null, Modifier.size(16.dp), tint = if (selected) c.accent else c.text2)
-            Spacer(Modifier.width(8.dp))
+            if (text.isNotEmpty()) Spacer(Modifier.width(6.dp))
         }
-        Text(text, style = MoodyTheme.type.label, color = if (selected) c.accent else c.text2)
+        if (text.isNotEmpty()) {
+            Text(text, style = MoodyTheme.type.label, color = if (selected) (if (c.isDark) c.text else c.accent) else c.text2, maxLines = 1, softWrap = false)
+        }
     }
 }
 

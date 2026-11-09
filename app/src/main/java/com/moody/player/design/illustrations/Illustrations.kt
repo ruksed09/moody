@@ -73,7 +73,7 @@ fun MoodBackdrop(kind: BackdropKind, modifier: Modifier = Modifier) {
         val line = c.text.copy(alpha = if (c.isDark) 0.08f else 0.10f)
 
         // Moon outline, right of the title, clear of the top bar.
-        drawPath(crescent(Offset(w * 0.86f, h * 0.56f), h * 0.10f, Offset(-h * 0.045f, -h * 0.028f)), c.accent.copy(alpha = 0.42f), style = hair)
+        drawPath(crescent(Offset(w * 0.88f, h * 0.20f), h * 0.10f, Offset(-h * 0.045f, -h * 0.028f)), c.accent.copy(alpha = 0.42f), style = hair)
 
         // Two horizon lines (open strokes, so no edge is drawn along the bottom).
         drawPath(hills(w, h * 0.70f, h, 0.4f, h * 0.05f), c.text.copy(alpha = 0.018f))
@@ -125,9 +125,9 @@ private fun DrawScope.soundLines(w: Float, h: Float, line: Color) {
 
 private class Pal(c: MoodyColors) {
     val frame = c.raised
-    val deep = if (c.isDark) Color(0xFF0D0B09) else Color(0xFFE6DACB)
-    val hillA = if (c.isDark) Color(0xFF2B241E) else Color(0xFFDCCDBB)
-    val hillB = if (c.isDark) Color(0xFF221C17) else Color(0xFFE7DBCC)
+    val deep = if (c.isDark) Color(0xFF08070B) else Color(0xFFE6DACB)
+    val hillA = if (c.isDark) Color(0xFF221F2A) else Color(0xFFDCCDBB)
+    val hillB = if (c.isDark) Color(0xFF1A1820) else Color(0xFFE7DBCC)
     val moon = c.accent
     val line = c.line2
     val ink = c.text3

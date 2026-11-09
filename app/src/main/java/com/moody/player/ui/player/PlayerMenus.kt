@@ -81,7 +81,7 @@ private val SUB_COLORS = listOf(0xFFFFFAF2 to "Warm white", 0xFFFFE58A to "Yello
 
 /** The menu panel from the mockup (`.pop`): anchored bottom-right on wide screens, a full sheet on narrow ones. */
 @Composable
-fun PlayerMenus(menu: PlayerMenu, vm: PlayerViewModel, st: PlayerState, onNavigate: (PlayerMenu) -> Unit, onDismiss: () -> Unit) {
+fun PlayerMenus(menu: PlayerMenu, vm: PlayerViewModel, st: PlayerState, host: PlayerHost, onNavigate: (PlayerMenu) -> Unit, onDismiss: () -> Unit) {
     val c = MoodyTheme.colors
     BoxWithConstraints(
         Modifier
@@ -99,7 +99,7 @@ fun PlayerMenus(menu: PlayerMenu, vm: PlayerViewModel, st: PlayerState, onNaviga
                 .fillMaxWidth()
                 .heightIn(max = maxHeight * 0.8f)
                 .clip(Radii.lg)
-                .background(Color(0xFA181411))
+                .background(Color(0xFA16141B))
                 .border(1.dp, c.line2, Radii.lg)
                 .clickable(remember { MutableInteractionSource() }, indication = null) {}
                 .padding(8.dp),
@@ -113,7 +113,7 @@ fun PlayerMenus(menu: PlayerMenu, vm: PlayerViewModel, st: PlayerState, onNaviga
             Box(Modifier.fillMaxWidth().height(1.dp).background(c.line))
             Column(Modifier.verticalScroll(rememberScrollState()).padding(vertical = 4.dp)) {
                 when (menu) {
-                    PlayerMenu.MORE -> MoreMenu(vm, st, onNavigate)
+                    PlayerMenu.MORE -> MoreMenu(vm, st, host, onNavigate, onDismiss)
                     PlayerMenu.AUDIO -> AudioMenu(vm, st, onNavigate)
                     PlayerMenu.SUBTITLES -> SubtitlesMenu(vm, st, onNavigate)
                     PlayerMenu.SUB_STYLE -> SubStyleMenu(vm)
@@ -170,7 +170,7 @@ private fun Note(text: String) = Text(text, style = MoodyTheme.type.caption, col
 private fun Divider() = Box(Modifier.padding(vertical = 4.dp, horizontal = 4.dp).fillMaxWidth().height(1.dp).background(MoodyTheme.colors.line))
 
 @Composable
-private fun MoreMenu(vm: PlayerViewModel, st: PlayerState, go: (PlayerMenu) -> Unit) {
+private fun MoreMenu(vm: PlayerViewModel, st: PlayerState, host: PlayerHost, go: (PlayerMenu) -> Unit, close: () -> Unit) {
     val loop by vm.loop.collectAsStateWithLifecycle()
     val ab by vm.ab.collectAsStateWithLifecycle()
     val sleep by vm.sleepAt.collectAsStateWithLifecycle()
@@ -182,6 +182,9 @@ private fun MoreMenu(vm: PlayerViewModel, st: PlayerState, go: (PlayerMenu) -> U
     NavRow(MoodyIcons.Decoder, "Decoder", st.decoder.label) { go(PlayerMenu.DECODER) }
     NavRow(MoodyIcons.AbRepeat, "A-B repeat", if (ab.first != null) "On" else "Off") { go(PlayerMenu.AB) }
     NavRow(MoodyIcons.Repeat, "Loop", loop.label) { go(PlayerMenu.LOOP) }
+    NavRow(MoodyIcons.Aspect, "Aspect ratio", st.aspect.label) { val a = st.aspect.next(); vm.engine.setAspect(a); vm.toast(a.label) }
+    NavRow(MoodyIcons.Rotate, "Rotate screen", null) { host.onRotate(); close() }
+    host.onPip?.let { pip -> NavRow(MoodyIcons.Pip, "Picture in picture", null) { close(); pip() } }
     NavRow(MoodyIcons.Timer, "Sleep timer", when { sleep == null -> "Off"; sleep == -1L -> "End of video"; else -> "${((sleep!! - System.currentTimeMillis()) / 60_000) + 1} min" }) { go(PlayerMenu.SLEEP) }
 }
 

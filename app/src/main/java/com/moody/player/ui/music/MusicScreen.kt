@@ -53,7 +53,16 @@ import com.moody.player.design.illustrations.BackdropKind
 import com.moody.player.design.illustrations.EmptyMusic
 import com.moody.player.design.illustrations.MoodBackdrop
 import com.moody.player.domain.formatDuration
-import com.moody.player.ui.components.MoodyMark
+import com.moody.player.ui.components.MoodyLogo
+import com.moody.player.ui.components.CollapsingTopBar
+import com.moody.player.ui.components.LocalBottomInset
+import com.moody.player.ui.components.rememberCollapsingBar
+import androidx.compose.foundation.lazy.grid.LazyGridState
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 
 /** Where the Music tab can go. */
 data class MusicNav(
@@ -103,30 +112,39 @@ fun MusicContent(
 ) {
     val c = MoodyTheme.colors
     val grid = tab == MusicTab.ALBUMS
-    Box(Modifier.fillMaxSize()) {
-        if (backgrounds) MoodBackdrop(BackdropKind.MUSIC, Modifier.align(Alignment.TopCenter))
+    // Each sub-tab remembers where you were.
+    val states = MusicTab.entries.associateWith { t -> rememberSaveable(t.name, saver = LazyGridState.Saver) { LazyGridState() } }
+    val gridState = states.getValue(tab)
+    val bar = rememberCollapsingBar(56.dp, "music")
+    val topPad = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 57.dp
+    Box(Modifier.fillMaxSize().nestedScroll(bar.connection)) {
         LazyVerticalGrid(
+            state = gridState,
             columns = if (grid) GridCells.Adaptive(150.dp) else GridCells.Fixed(1),
-            contentPadding = PaddingValues(bottom = 24.dp, start = if (grid) 16.dp else 0.dp, end = if (grid) 16.dp else 0.dp),
+            contentPadding = PaddingValues(top = topPad, bottom = LocalBottomInset.current + 24.dp, start = if (grid) 16.dp else 0.dp, end = if (grid) 16.dp else 0.dp),
             horizontalArrangement = Arrangement.spacedBy(if (grid) 12.dp else 0.dp),
             verticalArrangement = Arrangement.spacedBy(if (grid) 16.dp else 0.dp),
             modifier = Modifier.fillMaxSize(),
         ) {
             full {
-                Column(Modifier.statusBarsPadding().padding(horizontal = if (grid) 0.dp else 16.dp)) {
-                    Row(Modifier.fillMaxWidth().height(56.dp), verticalAlignment = Alignment.CenterVertically) {
-                        MoodyMark(Modifier.padding(start = 4.dp), size = 24.dp)
-                        Spacer(Modifier.width(10.dp))
-                        Text("Moody", style = MoodyTheme.type.title, color = c.text, modifier = Modifier.weight(1f))
-                        IconAction(MoodyIcons.Settings, "Settings", nav.openSettings)
+                Box {
+                if (backgrounds) MoodBackdrop(BackdropKind.MUSIC, Modifier.matchParentSize())
+                Column(Modifier.padding(horizontal = if (grid) 0.dp else 16.dp)) {
+                    Spacer(Modifier.height(12.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        MoodyLogo(size = 48.dp)
+                        Spacer(Modifier.width(14.dp))
+                        Box(Modifier.width(1.dp).height(40.dp).background(c.line2))
+                        Spacer(Modifier.width(14.dp))
+                        Column {
+                            Text("Music", style = MoodyTheme.type.hero, color = c.text)
+                            Text(
+                                if (s.loading) "Looking through your phone" else "${s.songs.size} songs  ·  ${s.albums.size} albums  ·  ${formatDuration(s.totalMs)}",
+                                style = MoodyTheme.type.caption, color = c.text2,
+                            )
+                        }
                     }
-                    Spacer(Modifier.height(20.dp))
-                    Text("Music", style = MoodyTheme.type.hero, color = c.text)
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        if (s.loading) "Looking through your phone" else "${s.songs.size} songs · ${s.albums.size} albums · ${formatDuration(s.totalMs)}",
-                        style = MoodyTheme.type.mono, color = c.text3,
-                    )
+                    Spacer(Modifier.height(8.dp))
                     Spacer(Modifier.height(16.dp))
                     if (s.songs.isNotEmpty()) {
                         PrimaryButton("Shuffle all", onShuffle, icon = MoodyIcons.Shuffle)
@@ -136,6 +154,7 @@ fun MusicContent(
                         items(MusicTab.entries) { t -> ChoiceChip(t.label, t == tab, { onTab(t) }) }
                     }
                     Spacer(Modifier.height(12.dp))
+                }
                 }
             }
             when {
@@ -192,6 +211,14 @@ fun MusicContent(
                     }
                     full { Box(Modifier.padding(16.dp)) { SecondaryButton("New playlist", onNewPlaylist, icon = MoodyIcons.Plus) } }
                 }
+            }
+        }
+        CollapsingTopBar(bar, contentUnder = gridState.firstVisibleItemIndex > 0 || gridState.firstVisibleItemScrollOffset > 0, height = 56.dp) {
+            Row(Modifier.fillMaxWidth().height(56.dp).padding(start = 16.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                MoodyLogo(size = 32.dp)
+                Spacer(Modifier.width(10.dp))
+                Text("Moody", style = MoodyTheme.type.display, color = c.text, modifier = Modifier.weight(1f))
+                IconAction(MoodyIcons.Settings, "Settings", nav.openSettings, tint = c.text, size = 20.dp)
             }
         }
     }
