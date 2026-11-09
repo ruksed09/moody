@@ -37,7 +37,10 @@ import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.moody.player.R
 import com.moody.player.design.MoodyTheme
@@ -116,8 +119,14 @@ class PlayerActivity : ComponentActivity() {
                     userOrientation = null
                     requestedOrientation = if (st.displayWidth > st.displayHeight) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
                 }
-                if (inPip) updatePip()
             }
+        }
+        // Keep the PiP params current (auto-enter needs to know the video is playing before Home is pressed).
+        lifecycleScope.launch {
+            vm.engine.state
+                .map { Triple(it.playing, it.displayWidth to it.displayHeight, it.videoWidth to it.videoHeight) }
+                .distinctUntilChanged()
+                .collect { updatePip() }
         }
     }
 
@@ -201,9 +210,18 @@ class PlayerActivity : ComponentActivity() {
         runCatching { enterPictureInPictureMode(pipParams()) }
     }
 
+    private fun shouldAutoPip() = supportsPip() && vm.settings.value.autoPip && vm.engine.state.value.playing && !vm.isVault
+
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        if (Build.VERSION.SDK_INT < 31 && vm.settings.value.autoPip && vm.engine.state.value.playing && !vm.isVault) enterPip()
+        // Android 12+ enters on its own through setAutoEnterEnabled; older versions (and OEM launchers that
+        // skip auto-enter) are covered here. Both Home gesture and the three-button Home send this hint.
+        if (!isInPictureInPictureMode && shouldAutoPip()) enterPip()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        vm.engine.resumeViews()
     }
 
     override fun onResume() {
@@ -215,6 +233,12 @@ class PlayerActivity : ComponentActivity() {
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         inPip = isInPictureInPictureMode
+        // Leaving PiP while not coming back to the foreground means the user closed the window.
+        if (!isInPictureInPictureMode && !lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+            vm.engine.pause()
+            vm.onPauseScreen()
+            finish()
+        }
     }
 
     override fun onPause() {
@@ -224,7 +248,8 @@ class PlayerActivity : ComponentActivity() {
 
     override fun onStop() {
         super.onStop()
-        if (isFinishing || inPip) return
+        if (isFinishing || isInPictureInPictureMode) return
+        vm.engine.suspendViews()
         val st = vm.engine.state.value
         if (vm.settings.value.backgroundPlay && st.playing && !vm.isVault) {
             // Android 12+ can refuse a foreground start once the app is in the background; pause rather than crash.

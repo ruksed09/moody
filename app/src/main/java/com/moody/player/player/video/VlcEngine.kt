@@ -69,6 +69,7 @@ class VlcEngine @Inject constructor(@ApplicationContext private val context: Con
     private var style: SubStyle? = null
     private var fd: ParcelFileDescriptor? = null
     private var layout: VLCVideoLayout? = null
+    private var viewsSuspended = false
     private var triedSoftware = false
     private var lastOpen: Triple<Uri, Long, Decoder>? = null
 
@@ -167,13 +168,14 @@ class VlcEngine @Inject constructor(@ApplicationContext private val context: Con
         libVlc = lib
         player = mp
         style = s
-        wasAttached?.let { mp.attachViews(it, null, true, false) }
+        if (!viewsSuspended) wasAttached?.let { mp.attachViews(it, null, true, false) }
         return mp
     }
 
     fun attach(view: VLCVideoLayout) {
         if (layout === view) return
-        player?.let { if (layout != null) it.detachViews(); it.attachViews(view, null, true, false) }
+        player?.let { if (layout != null && !viewsSuspended) it.detachViews(); it.attachViews(view, null, true, false) }
+        viewsSuspended = false
         layout = view
         applyAspect(_state.value.aspect)
         if (pendingPlay) { pendingPlay = false; player?.play() }
@@ -181,8 +183,30 @@ class VlcEngine @Inject constructor(@ApplicationContext private val context: Con
 
     fun detach(view: VLCVideoLayout) {
         if (layout !== view) return
-        player?.detachViews()
+        if (!viewsSuspended) player?.detachViews()
+        viewsSuspended = false
         layout = null
+    }
+
+    /** The screen went to the background (not PiP): let go of the surface so it can be rebuilt cleanly. */
+    fun suspendViews() {
+        if (layout == null || viewsSuspended) return
+        player?.detachViews()
+        viewsSuspended = true
+    }
+
+    /**
+     * The screen is visible again: re-attach to the fresh surface. A paused video renders nothing until the
+     * next frame, so a same-position seek redraws the current frame instead of leaving the screen black.
+     */
+    fun resumeViews() {
+        val view = layout ?: return
+        val mp = player ?: return
+        if (!viewsSuspended) return
+        viewsSuspended = false
+        mp.attachViews(view, null, true, false)
+        applyAspect(_state.value.aspect)
+        if (!mp.isPlaying && mp.length > 0) main.postDelayed({ player?.let { if (!it.isPlaying) it.time = it.time } }, 120)
     }
 
     fun open(uri: Uri, startMs: Long, decoder: Decoder, subStyle: SubStyle, extraSubtitle: Uri? = null) {
@@ -388,7 +412,7 @@ class VlcEngine @Inject constructor(@ApplicationContext private val context: Con
     private fun releasePlayer() {
         player?.let {
             it.setEventListener(null)
-            if (layout != null) it.detachViews()
+            if (layout != null && !viewsSuspended) it.detachViews()
             it.stop()
             it.release()
         }
