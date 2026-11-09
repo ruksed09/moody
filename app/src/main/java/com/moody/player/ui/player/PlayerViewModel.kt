@@ -3,6 +3,8 @@ package com.moody.player.ui.player
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -50,11 +52,16 @@ class PlayerViewModel @Inject constructor(
     private val settingsStore: SettingsStore,
     private val media: MediaRepository,
 ) : ViewModel() {
-    val isVault: Boolean = handle.get<Boolean>(EXTRA_VAULT) ?: false
+    /** Identifies this screen to the shared engine (see [VlcEngine.claim]). */
+    val token = Any()
+
+    var isVault: Boolean by androidx.compose.runtime.mutableStateOf(handle.get<Boolean>(EXTRA_VAULT) ?: false)
+        private set
     private val uris: List<Uri> = handle.get<ArrayList<Uri>>(EXTRA_QUEUE).orEmpty()
     private val titles: List<String> = handle.get<ArrayList<String>>(EXTRA_TITLES).orEmpty()
 
-    val queue: List<QueueEntry> = uris.mapIndexed { i, u -> QueueEntry(u, titles.getOrNull(i) ?: titleOf(u)) }
+    var queue: List<QueueEntry> by androidx.compose.runtime.mutableStateOf(uris.mapIndexed { i, u -> QueueEntry(u, titles.getOrNull(i) ?: titleOf(u)) })
+        private set
     private val _index = MutableStateFlow((handle.get<Int>(EXTRA_INDEX) ?: 0).coerceIn(0, (queue.size - 1).coerceAtLeast(0)))
     val index: StateFlow<Int> = _index.asStateFlow()
 
@@ -115,6 +122,7 @@ class PlayerViewModel @Inject constructor(
         val saved = if (isVault || fromStart || !s.resume) null else positions.get(entry.uri.toString())
         val start = saved?.let { resumePosition(it.positionMs, it.durationMs) } ?: 0L
         val perFile = if (s.perFileSettings && !isVault) fileSettings.get(entry.uri.toString()) else null
+        engine.claim(token)
         engine.open(entry.uri, start, decoder ?: s.decoder, SubStyle(s.subSize, s.subBg, s.subColor), sidecarSubtitle(entry.uri))
         perFile?.let { f ->
             if (f.speed != 1f) engine.setRate(f.speed)
@@ -135,6 +143,15 @@ class PlayerViewModel @Inject constructor(
         engine.seekTo(0)
     }
 
+    /** A new video arrived while this screen is open (another app, or the library): play it here. */
+    fun load(newUris: List<Uri>, index: Int, newTitles: List<String>?, vault: Boolean) {
+        if (newUris.isEmpty()) return
+        viewModelScope.launch { savePosition() }
+        isVault = vault
+        queue = newUris.mapIndexed { i, u -> QueueEntry(u, newTitles?.getOrNull(i) ?: titleOf(u)) }
+        open(index.coerceIn(0, queue.lastIndex), fromStart = false)
+    }
+
     fun next() { if (hasNext) open(_index.value + 1) else if (_loop.value == LoopMode.FOLDER && queue.isNotEmpty()) open(0, fromStart = true) }
     fun prev() {
         if (engine.state.value.positionMs > 5_000 || !hasPrev) engine.seekTo(0) else open(_index.value - 1)
@@ -147,6 +164,7 @@ class PlayerViewModel @Inject constructor(
         val entry = current ?: return@launch
         val pos = engine.state.value.positionMs
         val s = settingsStore.settings.first()
+        engine.claim(token)
         engine.open(entry.uri, pos, decoder ?: engine.state.value.decoder, SubStyle(s.subSize, s.subBg, s.subColor), sidecarSubtitle(entry.uri))
     }
 
@@ -252,7 +270,7 @@ class PlayerViewModel @Inject constructor(
 
     override fun onCleared() {
         // The engine outlives this screen only when the background service has taken it.
-        if (!VideoBackgroundState.active) engine.stopIfCurrent(current?.uri)
+        if (!VideoBackgroundState.active) engine.stopIfOwner(token)
     }
 
     companion object {

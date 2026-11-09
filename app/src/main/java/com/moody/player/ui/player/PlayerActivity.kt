@@ -129,10 +129,16 @@ class PlayerActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        // A new file while playing: restart with the new queue.
+        // A new video while this screen is open: load it here instead of restarting the activity,
+        // so no closing screen can stop the playback that replaced it.
         adoptViewIntent(intent)
-        finish()
-        startActivity(intent.setClass(this, PlayerActivity::class.java))
+        setIntent(intent)
+        @Suppress("DEPRECATION")
+        val uris = intent.getParcelableArrayListExtra<Uri>(PlayerViewModel.EXTRA_QUEUE).orEmpty()
+        val vault = intent.getBooleanExtra(PlayerViewModel.EXTRA_VAULT, false)
+        if (vault) window.addFlags(WindowManager.LayoutParams.FLAG_SECURE) else window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        sizedFor = null
+        vm.load(uris, intent.getIntExtra(PlayerViewModel.EXTRA_INDEX, 0), intent.getStringArrayListExtra(PlayerViewModel.EXTRA_TITLES), vault)
     }
 
     private fun hideSystemBars() {
@@ -225,7 +231,7 @@ class PlayerActivity : ComponentActivity() {
 
     override fun onDestroy() {
         runCatching { unregisterReceiver(pipReceiver) }
-        if (isFinishing && !VideoBackgroundService.running) vm.engine.stopIfCurrent(vm.current?.uri)
+        if (isFinishing && !VideoBackgroundService.running) vm.engine.stopIfOwner(vm.token)
         super.onDestroy()
     }
 

@@ -341,8 +341,12 @@ class VlcEngine @Inject constructor(@ApplicationContext private val context: Con
         return FloatArray(MediaPlayer.Equalizer.getBandCount()) { eq.getAmp(it) }
     }
 
-    /** Stops only if [uri] is still what's loaded, so a closing screen can't stop the video that replaced it. */
-    fun stopIfCurrent(uri: Uri?) { if (uri == null || _state.value.uri == uri) stop() }
+    /** The player screen currently driving the engine. A closing screen may only stop playback it still owns. */
+    @Volatile private var owner: Any? = null
+
+    fun claim(token: Any) { owner = token }
+
+    fun stopIfOwner(token: Any) { if (owner === token) stop() }
 
     fun stop() {
         main.removeCallbacks(stallCheck)

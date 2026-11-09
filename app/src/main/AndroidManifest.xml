@@ -55,7 +55,7 @@
             android:theme="@style/Theme.Moody.Player"
             android:launchMode="singleTask"
             android:taskAffinity="com.moody.player.player"
-            android:excludeFromRecents="false"
+            android:autoRemoveFromRecents="true"
             android:supportsPictureInPicture="true"
             android:resizeableActivity="true"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|navigation|uiMode">
