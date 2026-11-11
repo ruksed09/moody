@@ -221,7 +221,7 @@ fun NowPlayingScreen(vm: NowPlayingViewModel, onClose: () -> Unit, onEqualizer: 
                         onMissing = { cover = false; tint = null },
                     )
                 }
-                if (discAlpha > 0f) SpinningDisc(s.playing, Modifier.size(side * 0.92f).graphicsLayer { alpha = discAlpha })
+                if (discAlpha > 0f) Disc(null, side * 0.92f, Modifier.graphicsLayer { alpha = discAlpha }, spinning = s.playing)
             }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {

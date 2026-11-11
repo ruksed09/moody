@@ -80,6 +80,7 @@ class MainActivity : ComponentActivity() {
             val settings = current ?: return@setContent
             val start = remember { if (settings.onboarded) Routes.MAIN else Routes.ONBOARDING }
             val musicState by music.state.collectAsStateWithLifecycle()
+            com.moody.player.ui.music.DriveDiscClock(musicState.playing)
             MoodyRoot(
                 settings,
                 AppSlots(

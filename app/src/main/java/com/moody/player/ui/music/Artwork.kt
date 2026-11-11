@@ -31,7 +31,7 @@ import com.moody.player.design.icons.MoodyIcons
  * a tinted square with a record icon, tone picked from the album name so albums stay recognisable.
  */
 @Composable
-fun Artwork(item: AudioItem?, modifier: Modifier = Modifier, shape: Shape = Radii.md, iconSize: Dp = 20.dp, onLoaded: ((android.graphics.drawable.Drawable) -> Unit)? = null, onMissing: (() -> Unit)? = null) {
+fun Artwork(item: AudioItem?, modifier: Modifier = Modifier, shape: Shape = Radii.md, iconSize: Dp = 20.dp, onLoaded: ((android.graphics.drawable.Drawable) -> Unit)? = null, onMissing: (() -> Unit)? = null, requestPx: Int = 512) {
     val c = MoodyTheme.colors
     var failed by remember(item?.uri, item?.cover) { mutableStateOf(false) }
     val tones = listOf(c.raised, c.surface, c.accentWash, c.line2)
@@ -41,7 +41,7 @@ fun Artwork(item: AudioItem?, modifier: Modifier = Modifier, shape: Shape = Radi
         Icon(MoodyIcons.Album, null, Modifier.size(iconSize), tint = c.text3)
         if (item != null && !failed) {
             AsyncImage(
-                model = ImageRequest.Builder(LocalContext.current).data(item.cover?.let { java.io.File(it) } ?: item.uri).size(512).allowHardware(onLoaded == null).build(),
+                model = ImageRequest.Builder(LocalContext.current).data(item.cover?.let { java.io.File(it) } ?: item.uri).size(requestPx).allowHardware(onLoaded == null).build(),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
@@ -53,7 +53,7 @@ fun Artwork(item: AudioItem?, modifier: Modifier = Modifier, shape: Shape = Radi
 }
 
 @Composable
-fun ArtworkSquare(item: AudioItem?, size: Dp, modifier: Modifier = Modifier) = Artwork(item, modifier.size(size))
+fun ArtworkSquare(item: AudioItem?, size: Dp, modifier: Modifier = Modifier) = Artwork(item, modifier.size(size), requestPx = coverRequestPx(size))
 
 @Composable
 fun ArtworkFill(item: AudioItem?, modifier: Modifier = Modifier) = Artwork(item, modifier.fillMaxWidth())
