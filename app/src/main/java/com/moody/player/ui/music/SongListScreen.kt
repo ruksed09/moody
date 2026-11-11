@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -81,7 +82,7 @@ fun SongListScreen(vm: MusicViewModel, kind: SongListKind, key: String, onBack: 
     LazyColumn(Modifier.fillMaxSize()) {
         item {
             Column(Modifier.statusBarsPadding().padding(horizontal = 16.dp)) {
-                Row(Modifier.fillMaxWidth().height(56.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().height(48.dp), verticalAlignment = Alignment.CenterVertically) {
                     IconAction(MoodyIcons.ArrowBack, "Back", onBack, tint = c.text)
                     Spacer(Modifier.weight(1f))
                     if (editable) {
@@ -90,8 +91,8 @@ fun SongListScreen(vm: MusicViewModel, kind: SongListKind, key: String, onBack: 
                     }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (kind == SongListKind.ALBUM) {
-                        ArtworkSquare(songs.firstOrNull(), 112.dp)
+                    if (songs.isNotEmpty()) {
+                        Disc(songs.first(), 96.dp)
                         Spacer(Modifier.width(16.dp))
                     }
                     Column(Modifier.weight(1f)) {
@@ -115,7 +116,8 @@ fun SongListScreen(vm: MusicViewModel, kind: SongListKind, key: String, onBack: 
             EmptyState({ EmptyMusic() }, if (kind == SongListKind.PLAYLIST) "Nothing here yet" else "No songs", if (playlistId == FAVOURITES_ID) "Tap the heart on a song to keep it here" else if (kind == SongListKind.PLAYLIST) "Add songs from their menu, under Add to playlist" else "These songs were moved or deleted")
         }
         itemsIndexed(songs, key = { i, it -> "$i-${it.uri}" }) { i, song ->
-            SongRow(song, song.uri.toString() == playing.current?.uri?.toString(), { vm.music.playQueue(songs, i) }, { actionsFor = song }, leadingIndex = if (kind == SongListKind.ALBUM) (song.trackNo.takeIf { it > 0 } ?: (i + 1)) else null)
+            val current = song.uri.toString() == playing.current?.uri?.toString()
+            SongRow(song, current, { vm.music.playQueue(songs, i) }, { actionsFor = song }, spinning = current && playing.playing, leadingIndex = if (kind == SongListKind.ALBUM) (song.trackNo.takeIf { it > 0 } ?: (i + 1)) else null)
         }
     }
 
@@ -161,7 +163,7 @@ fun SongActionsSheet(song: AudioItem, vm: MusicViewModel, onDismiss: () -> Unit,
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = c.surface) {
         Column(Modifier.padding(bottom = 24.dp)) {
             Row(Modifier.padding(horizontal = 24.dp).padding(bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                ArtworkSquare(song, 48.dp)
+                Disc(song, 44.dp, behind = c.surface)
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
                     Text(song.title, style = MoodyTheme.type.heading, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
