@@ -73,7 +73,7 @@ class MusicController @Inject constructor(
     init {
         coordinator.pauseMusic = { scope.launch { controller?.pause() } }
         // Edited song details show up in the mini-player and Now Playing straight away.
-        scope.launch { media.audio.collect { if (controller != null) sync() } }
+        scope.launch { media.audio.collect { if (controller != null) { refreshSessionDetails(); sync() } } }
     }
 
     fun connect() {
@@ -116,6 +116,25 @@ class MusicController @Inject constructor(
             uri = item.uriOrNull ?: Uri.EMPTY, id = 0, title = m.title?.toString() ?: "Unknown", artist = m.artist?.toString() ?: "Unknown artist",
             album = m.albumTitle?.toString() ?: "", albumId = 0, durationMs = 0, relativePath = "", mime = "audio/*", trackNo = 0, fileName = "", dateAdded = 0,
         )
+    }
+
+    /**
+     * After a song is edited in Moody (title, artist, album or cover), the queued items still carry the old
+     * details, so Android's media controls would show them. Swap in the new details; playback carries on.
+     */
+    private fun refreshSessionDetails() {
+        val c = controller ?: return
+        if (!c.isCommandAvailable(Player.COMMAND_CHANGE_MEDIA_ITEMS)) return
+        val songs = media.audio.value ?: return
+        val byUri = songs.associateBy { it.uri.toString() }
+        for (i in 0 until c.mediaItemCount) {
+            val old = c.getMediaItemAt(i)
+            val song = byUri[old.mediaId] ?: continue
+            val fresh = song.toMediaItem()
+            val a = old.mediaMetadata; val b = fresh.mediaMetadata
+            if (a.title == b.title && a.artist == b.artist && a.albumTitle == b.albumTitle && a.artworkUri == b.artworkUri) continue
+            runCatching { c.replaceMediaItem(i, fresh) }
+        }
     }
 
     private fun sync() {
