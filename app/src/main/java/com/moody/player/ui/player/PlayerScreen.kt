@@ -1,5 +1,11 @@
 package com.moody.player.ui.player
 
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.role
+import kotlinx.coroutines.launch
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -174,6 +180,8 @@ fun PlayerScreen(vm: PlayerViewModel, host: PlayerHost, inPip: Boolean) {
                         onSeek = { vm.dismissResume(); vm.engine.seekTo(it); poke++ },
                         onScrubbing = { scrubbing = it; if (it) vm.dismissResume() },
                         onLock = { locked = true; controls = false; vm.toast("Controls locked") },
+                        seekWhenLocked = settings.seekBarWhenLocked,
+                        onSeekWhenLocked = { v -> vm.updateSubLook { it.copy(seekBarWhenLocked = v) }; vm.toast(if (v) "Seek bar stays while locked" else "Seek bar hides while locked"); poke++ },
                         onScreenSize = {
                             val order = listOf(Aspect.FIT, Aspect.FILL, Aspect.STRETCH)
                             val a = order[(order.indexOf(st.aspect).coerceAtLeast(0) + 1) % order.size]
@@ -186,6 +194,7 @@ fun PlayerScreen(vm: PlayerViewModel, host: PlayerHost, inPip: Boolean) {
         }
 
         if (locked) {
+            if (settings.seekBarWhenLocked) LockedProgress(st, Modifier.align(Alignment.BottomCenter))
             LockedOverlay(controls) { locked = false; controls = true; vm.toast("Controls unlocked") }
         }
 
@@ -325,6 +334,8 @@ private fun BottomControls(
     onLock: () -> Unit,
     onScreenSize: () -> Unit,
     onPopup: () -> Unit,
+    seekWhenLocked: Boolean = false,
+    onSeekWhenLocked: (Boolean) -> Unit = {},
 ) {
     val t = MoodyTheme.type
     val accent = MoodyTheme.colors.accent
@@ -353,7 +364,7 @@ private fun BottomControls(
             val secondary = OnVideo.text.copy(alpha = 0.85f)
             Box(Modifier.fillMaxWidth().height(56.dp)) {
                 Box(Modifier.align(Alignment.CenterStart)) {
-                    VideoIcon(MoodyIcons.Lock, "Lock controls", onLock, size = small, tint = secondary, box = btn)
+                    LockButton(onLock, seekWhenLocked, onSeekWhenLocked, size = small, tint = secondary, box = btn)
                 }
                 Row(
                     Modifier.align(Alignment.Center),
@@ -477,4 +488,88 @@ fun OverlayButton(text: String, onClick: () -> Unit, primary: Boolean = false) {
             .padding(horizontal = 16.dp),
         contentAlignment = Alignment.Center,
     ) { Text(text, style = MoodyTheme.type.label, color = if (primary) c.accentInk else OnVideo.text) }
+}
+
+/**
+ * The lock button. A tap locks. Holding it 2.5 s (a ring starts filling after 0.4 s, then a tick) opens a
+ * small choice: hide or show the seek bar while locked. The same choice is in Settings.
+ */
+@Composable
+private fun LockButton(onLock: () -> Unit, seekWhenLocked: Boolean, onChoose: (Boolean) -> Unit, size: Dp, tint: Color, box: Dp) {
+    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val ring = remember { androidx.compose.animation.core.Animatable(0f) }
+    var held by remember { mutableStateOf(false) }
+    var choose by remember { mutableStateOf(false) }
+    Box {
+        Box(
+            Modifier
+                .size(box)
+                .clip(CircleShape)
+                .semantics {
+                    contentDescription = "Lock controls"
+                    role = Role.Button
+                    customActions = listOf(androidx.compose.ui.semantics.CustomAccessibilityAction("Seek bar while locked") { choose = true; true })
+                }
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onPress = {
+                            held = false
+                            val job = scope.launch {
+                                delay(400)
+                                ring.snapTo(0f)
+                                ring.animateTo(1f, androidx.compose.animation.core.tween(2_100, easing = androidx.compose.animation.core.LinearEasing))
+                                held = true
+                                haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                                choose = true
+                            }
+                            tryAwaitRelease()
+                            job.cancel()
+                            scope.launch { ring.animateTo(0f, androidx.compose.animation.core.tween(150)) }
+                        },
+                        onTap = { if (!held) onLock() },
+                    )
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            if (ring.value > 0f) androidx.compose.foundation.Canvas(Modifier.size(box - 8.dp)) {
+                val w = 2.dp.toPx()
+                drawArc(
+                    Color(0xFF4FD1C5), -90f, 360f * ring.value, useCenter = false,
+                    topLeft = androidx.compose.ui.geometry.Offset(w / 2, w / 2),
+                    size = androidx.compose.ui.geometry.Size(this.size.width - w, this.size.height - w),
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(w, cap = androidx.compose.ui.graphics.StrokeCap.Round),
+                )
+            }
+            Icon(MoodyIcons.Lock, null, Modifier.size(size), tint = tint)
+        }
+        androidx.compose.material3.DropdownMenu(choose, onDismissRequest = { choose = false }, containerColor = OnVideo.ink) {
+            Text(
+                "While locked", style = MoodyTheme.type.caption, color = OnVideo.text.copy(alpha = 0.6f),
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+            )
+            listOf(false to "Hide seek bar", true to "Show seek bar").forEach { (v, label) ->
+                androidx.compose.material3.DropdownMenuItem(
+                    text = { Text(label, style = MoodyTheme.type.body, color = OnVideo.text) },
+                    trailingIcon = { if (v == seekWhenLocked) Icon(MoodyIcons.Check, null, Modifier.size(18.dp), tint = MoodyTheme.colors.accent) },
+                    onClick = { choose = false; if (v != seekWhenLocked) onChoose(v) },
+                )
+            }
+        }
+    }
+}
+
+/** While locked: a thin progress line with the time, for looking only (it can't be touched). */
+@Composable
+private fun LockedProgress(st: PlayerState, modifier: Modifier = Modifier) {
+    val frac = if (st.durationMs > 0) (st.positionMs.toFloat() / st.durationMs).coerceIn(0f, 1f) else 0f
+    Column(modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = 16.dp).padding(bottom = 10.dp)) {
+        Text(
+            "${formatDuration(st.positionMs).let { if (it == "--:--") "0:00" else it }} / ${formatDuration(st.durationMs)}",
+            style = MoodyTheme.type.mono, color = OnVideo.text.copy(alpha = 0.8f), modifier = Modifier.align(Alignment.End).padding(bottom = 4.dp),
+        )
+        Box(Modifier.fillMaxWidth().height(3.dp).clip(Radii.pill).background(OnVideo.rail)) {
+            Box(Modifier.fillMaxWidth(frac).fillMaxHeight().background(MoodyTheme.colors.accent))
+        }
+    }
 }
