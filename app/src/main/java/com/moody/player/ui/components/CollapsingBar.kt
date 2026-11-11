@@ -67,7 +67,7 @@ class CollapsingBarState(val heightPx: Float, initialOffset: Float, private val 
 }
 
 @Composable
-fun rememberCollapsingBar(height: Dp = 64.dp, key: Any? = Unit): CollapsingBarState {
+fun rememberCollapsingBar(height: Dp = 48.dp, key: Any? = Unit): CollapsingBarState {
     val px = with(LocalDensity.current) { height.toPx() }
     val keyboard = LocalSoftwareKeyboardController.current
     val focus = LocalFocusManager.current
@@ -79,7 +79,7 @@ fun rememberCollapsingBar(height: Dp = 64.dp, key: Any? = Unit): CollapsingBarSt
 
 /** Draws the bar: opaque page colour so content scrolls beneath it, a hairline once content is under it. */
 @Composable
-fun CollapsingTopBar(state: CollapsingBarState, contentUnder: Boolean, height: Dp = 64.dp, content: @Composable () -> Unit) {
+fun CollapsingTopBar(state: CollapsingBarState, contentUnder: Boolean, height: Dp = 48.dp, content: @Composable () -> Unit) {
     val c = MoodyTheme.colors
     Column(
         Modifier

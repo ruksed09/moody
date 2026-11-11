@@ -126,7 +126,7 @@ fun VideoLibraryScreen(vm: VideoViewModel, nav: VideoNav, modifier: Modifier = M
     VideoLibraryContent(s, vm, nav, modifier, if (s.view == VideoView.FOLDERS) folderState else allState)
 }
 
-private val BarHeight = 56.dp
+private val BarHeight = 48.dp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -307,10 +307,10 @@ private fun LazyGridScope.continueRow(s: VideoUiState, nav: VideoNav) {
 private fun TopRow(onLogoLong: () -> Unit, onSearch: () -> Unit, onSort: () -> Unit, onStream: () -> Unit, onSettings: () -> Unit) {
     val c = MoodyTheme.colors
     com.moody.player.ui.components.AppTopBar(BarHeight, Modifier.padding(horizontal = 0.dp), onLogoLong = onLogoLong) {
-        IconAction(MoodyIcons.Search, "Search", onSearch, tint = c.text, size = 20.dp)
-        IconAction(MoodyIcons.Link, "Play a link", onStream, tint = c.text, size = 20.dp)
-        IconAction(MoodyIcons.Sort, "Sort and view", onSort, tint = c.text, size = 20.dp)
-        IconAction(MoodyIcons.Settings, "Settings", onSettings, tint = c.text, size = 20.dp)
+        IconAction(MoodyIcons.Search, "Search", onSearch, tint = c.text)
+        IconAction(MoodyIcons.Link, "Play a link", onStream, tint = c.text)
+        IconAction(MoodyIcons.Sort, "Sort and view", onSort, tint = c.text)
+        IconAction(MoodyIcons.Settings, "Settings", onSettings, tint = c.text)
     }
 }
 
@@ -319,7 +319,7 @@ private fun Header(s: VideoUiState, onView: (VideoView) -> Unit, onVault: () -> 
     val c = MoodyTheme.colors
     Column(Modifier.padding(top = 12.dp, bottom = 4.dp)) {
         com.moody.player.ui.components.SectionTitle(
-            MoodyIcons.Film, "Videos",
+            "Videos",
             if (s.loading) "Looking through your phone" else "${s.all.size} ${if (s.all.size == 1) "video" else "videos"}  \u00b7  ${formatBytes(s.totalBytes)}",
         )
         Spacer(Modifier.height(16.dp))

@@ -121,8 +121,8 @@ fun MusicContent(
     // Each sub-tab remembers where you were.
     val states = MusicTab.entries.associateWith { t -> rememberSaveable(t.name, saver = LazyGridState.Saver) { LazyGridState() } }
     val gridState = states.getValue(tab)
-    val bar = rememberCollapsingBar(56.dp, "music")
-    val topPad = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 57.dp
+    val bar = rememberCollapsingBar(48.dp, "music")
+    val topPad = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 49.dp
     Box(Modifier.fillMaxSize().nestedScroll(bar.connection)) {
         LazyVerticalGrid(
             state = gridState,
@@ -138,7 +138,7 @@ fun MusicContent(
                 Column(Modifier.padding(horizontal = if (grid) 0.dp else 16.dp)) {
                     Spacer(Modifier.height(12.dp))
                     com.moody.player.ui.components.SectionTitle(
-                        MoodyIcons.Music, "Music",
+                        "Music",
                         if (s.loading) "Looking through your phone" else "${s.songs.size} ${if (s.songs.size == 1) "song" else "songs"}  ·  ${s.albums.size} ${if (s.albums.size == 1) "album" else "albums"}  ·  ${formatDuration(s.totalMs)}",
                     )
                     Spacer(Modifier.height(16.dp))
@@ -217,10 +217,10 @@ fun MusicContent(
             }
             full { com.moody.player.ui.components.CreditFooter() }
         }
-        CollapsingTopBar(bar, contentUnder = gridState.firstVisibleItemIndex > 0 || gridState.firstVisibleItemScrollOffset > 0, height = 56.dp) {
-            com.moody.player.ui.components.AppTopBar(56.dp) {
-                IconAction(MoodyIcons.Chart, "Your stats", nav.openStats, tint = c.text, size = 20.dp)
-                IconAction(MoodyIcons.Settings, "Settings", nav.openSettings, tint = c.text, size = 20.dp)
+        CollapsingTopBar(bar, contentUnder = gridState.firstVisibleItemIndex > 0 || gridState.firstVisibleItemScrollOffset > 0, height = 48.dp) {
+            com.moody.player.ui.components.AppTopBar(48.dp) {
+                IconAction(MoodyIcons.Chart, "Your stats", nav.openStats, tint = c.text)
+                IconAction(MoodyIcons.Settings, "Settings", nav.openSettings, tint = c.text)
             }
         }
     }

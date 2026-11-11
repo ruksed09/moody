@@ -28,14 +28,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.moody.player.design.MoodyTheme
-import com.moody.player.design.Radii
 import com.moody.player.design.components.Motion
 import com.moody.player.design.icons.MoodyIcons
 
@@ -45,35 +43,36 @@ enum class MainTab(val label: String, val icon: ImageVector) {
 }
 
 /** Height of the pill itself; screens add the bottom margin and system navigation inset on top. */
-val NavPillHeight = 44.dp
+val NavPillHeight = 40.dp
 val NavPillMargin = 8.dp
+private val NavPillWidth = 224.dp
 
 /**
- * Floating navigation pill (owner's mockup): outlined, a divider between the two tabs,
- * the active tab in the accent with a short underline that slides between them.
+ * Floating navigation pill, centred: a raised segment slides under the active tab. The active icon
+ * takes the accent; everything else stays muted.
  */
 @Composable
 fun MoodyBottomBar(current: MainTab, onSelect: (MainTab) -> Unit, modifier: Modifier = Modifier) {
     val c = MoodyTheme.colors
-    val shape = RoundedCornerShape(22.dp)
-    Box(modifier.fillMaxWidth().navigationBarsPadding().padding(start = 16.dp, end = 16.dp, bottom = NavPillMargin)) {
+    val shape = RoundedCornerShape(20.dp)
+    Box(modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = NavPillMargin), contentAlignment = Alignment.Center) {
         BoxWithConstraints(
             Modifier
-                .fillMaxWidth()
+                .width(NavPillWidth)
                 .height(NavPillHeight)
                 .background(c.surface, shape)
                 .border(1.dp, c.line2, shape)
-                .clip(shape),
+                .clip(shape)
+                .padding(4.dp),
         ) {
             val half = maxWidth / 2
-            val lineW = 96.dp.coerceAtMost(half - 24.dp)
-            val x by animateDpAsState(half * current.ordinal + (half - lineW) / 2, Motion.base(), label = "tab-line")
-            Box(Modifier.align(Alignment.BottomStart).offset(x = x).width(lineW).height(2.dp).clip(Radii.pill).background(c.accent))
-            Box(Modifier.align(Alignment.Center).width(1.dp).height(20.dp).background(c.line2))
+            val x by animateDpAsState(half * current.ordinal, Motion.base(), label = "tab-seg")
+            Box(Modifier.offset(x = x).width(half).fillMaxHeight().clip(RoundedCornerShape(16.dp)).background(c.raised))
             Row(Modifier.fillMaxWidth().fillMaxHeight()) {
                 MainTab.entries.forEach { tab ->
                     val active = tab == current
-                    val tint by animateColorAsState(if (active) c.accent else c.text, Motion.base(), label = "tab-tint")
+                    val icon by animateColorAsState(if (active) c.accent else c.text3, Motion.base(), label = "tab-icon")
+                    val label by animateColorAsState(if (active) c.text else c.text3, Motion.base(), label = "tab-label")
                     Row(
                         Modifier
                             .weight(1f)
@@ -83,9 +82,9 @@ fun MoodyBottomBar(current: MainTab, onSelect: (MainTab) -> Unit, modifier: Modi
                         horizontalArrangement = Arrangement.Center,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Icon(tab.icon, null, Modifier.size(18.dp), tint = tint)
-                        Spacer(Modifier.width(8.dp))
-                        Text(tab.label, style = MoodyTheme.type.label, color = tint)
+                        Icon(tab.icon, null, Modifier.size(18.dp), tint = icon)
+                        Spacer(Modifier.width(6.dp))
+                        Text(tab.label, style = MoodyTheme.type.label, color = label)
                     }
                 }
             }

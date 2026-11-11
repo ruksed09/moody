@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -69,10 +70,10 @@ fun MoodyRoot(settings: Settings, slots: AppSlots, toaster: Toaster = remember {
                 NavHost(
                     nav,
                     startDestination = slots.startRoute,
-                    enterTransition = { fadeIn(Motion.enter()) + slideInHorizontally(Motion.enter()) { it / 12 } },
+                    enterTransition = { fadeIn(Motion.enter()) + slideInHorizontally(Motion.enter()) { it / 10 } },
                     exitTransition = { fadeOut(Motion.fast()) },
-                    popEnterTransition = { fadeIn(Motion.enter()) },
-                    popExitTransition = { fadeOut(Motion.fast()) + slideOutHorizontally(Motion.fast()) { it / 12 } },
+                    popEnterTransition = { fadeIn(Motion.enter()) + slideInHorizontally(Motion.enter()) { -it / 10 } },
+                    popExitTransition = { fadeOut(Motion.fast()) + slideOutHorizontally(Motion.fast()) { it / 10 } },
                 ) {
                     composable(Routes.MAIN) { MainScreen(nav, slots) }
                     composable(Routes.FOLDER, arguments = listOf(navArgument("path") { type = NavType.StringType })) { entry ->
@@ -100,7 +101,13 @@ private fun MainScreen(nav: NavHostController, slots: AppSlots) {
     val bottomInset = with(density) { overlayPx.toDp() }
     Box(Modifier.fillMaxSize()) {
         CompositionLocalProvider(LocalBottomInset provides bottomInset) {
-            AnimatedContent(tab, transitionSpec = { fadeIn(Motion.base()) togetherWith fadeOut(Motion.fast()) }, label = "tab") { t ->
+            val shift = with(density) { 24.dp.roundToPx() }
+            AnimatedContent(tab, transitionSpec = {
+                // A short slide toward the tab you picked, so the switch reads as sideways.
+                val dir = if (targetState.ordinal > initialState.ordinal) 1 else -1
+                (fadeIn(Motion.base()) + slideInHorizontally(Motion.base()) { dir * shift }) togetherWith
+                    (fadeOut(Motion.fast()) + slideOutHorizontally(Motion.fast()) { -dir * shift })
+            }, label = "tab") { t ->
                 holder.SaveableStateProvider(t.name) {
                     when (t) {
                         MainTab.VIDEO -> VideoLibraryScreen(videoVm, slots.videoNav(nav))
