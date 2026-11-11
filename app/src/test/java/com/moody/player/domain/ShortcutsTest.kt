@@ -8,9 +8,10 @@ class ShortcutsTest {
 
     @Test fun add_appends() = assertEquals(listOf(PlayerShortcut.LOOP, PlayerShortcut.MUTE, PlayerShortcut.SCREENSHOT), addShortcut(sel, PlayerShortcut.SCREENSHOT))
     @Test fun add_ignoresDuplicates() = assertEquals(sel, addShortcut(sel, PlayerShortcut.LOOP))
-    @Test fun add_respectsLimit() {
-        val full = PlayerShortcut.entries.take(MAX_SHORTCUTS)
-        assertEquals(full, addShortcut(full, PlayerShortcut.entries.last()))
+    @Test fun add_allowsEveryShortcut() {
+        val all = PlayerShortcut.entries.fold(emptyList<PlayerShortcut>()) { acc, s -> addShortcut(acc, s) }
+        assertEquals(PlayerShortcut.entries.toList(), all)
+        assertEquals(PlayerShortcut.entries.toList(), decodeShortcuts(encodeShortcuts(all)))
     }
     @Test fun remove_drops() = assertEquals(listOf(PlayerShortcut.MUTE), removeShortcut(sel, PlayerShortcut.LOOP))
     @Test fun move_reorders() = assertEquals(listOf(PlayerShortcut.MUTE, PlayerShortcut.LOOP), moveShortcut(sel, 0, 1))

@@ -34,11 +34,16 @@ class MediaRepository @Inject constructor(
     @ApplicationContext private val context: Context,
     private val settings: SettingsStore,
     private val vaultDao: VaultDao,
+    private val songEdits: SongEdits,
     @AppScope private val scope: CoroutineScope,
 ) {
     private val scanner = MediaScanner(context)
     private val _videos = MutableStateFlow<List<VideoItem>?>(null)
     private val _audio = MutableStateFlow<List<AudioItem>?>(null)
+    /** Songs as the files describe them, before Moody's own edits. */
+    @Volatile private var rawAudio: List<AudioItem>? = null
+    private val _edits = MutableStateFlow<Map<String, SongEdit>>(emptyMap())
+    val edits: StateFlow<Map<String, SongEdit>> = _edits.asStateFlow()
     private val _access = MutableStateFlow(accessLevel(context))
     private val _scanning = MutableStateFlow(false)
     val videos: StateFlow<List<VideoItem>?> = _videos.asStateFlow()
@@ -59,6 +64,23 @@ class MediaRepository @Inject constructor(
         @OptIn(FlowPreview::class)
         scope.launch { changes.debounce(500).collect { rescan() } }
         scope.launch { settings.settings.map { it.minSongSec }.distinctUntilChanged().collect { rescan() } }
+        scope.launch { songEdits.all.collect { e -> synchronized(this@MediaRepository) { _edits.value = e; publishAudio() } } }
+    }
+
+    @Synchronized private fun publishAudio() {
+        val raw = rawAudio ?: return
+        val e = _edits.value
+        _audio.value = if (e.isEmpty()) raw else raw.map { it.withEdit(e[it.uri.toString()]) }
+    }
+
+    /** The song as its file describes it, ignoring edits. */
+    fun originalSong(uri: Uri): AudioItem? = rawAudio?.firstOrNull { it.uri == uri }
+
+    /** Saves Moody-only details for a song; null restores the file's own. */
+    suspend fun editSong(uri: Uri, edit: SongEdit?) {
+        val old = _edits.value[uri.toString()]?.cover
+        songEdits.set(uri.toString(), edit)
+        if (old != null && old != edit?.cover) withContext(Dispatchers.IO) { deleteCover(context, old) }
     }
 
     fun refreshAccess() {
@@ -74,7 +96,8 @@ class MediaRepository @Inject constructor(
             val vaulted = vaultDao.sourceUris().first().toSet()
             withContext(Dispatchers.IO) {
                 _videos.value = if (_access.value == AccessLevel.NONE) emptyList() else scanner.videos().filter { it.uri.toString() !in vaulted }
-                _audio.value = if (hasAudioAccess(context)) scanner.audio(minSong) else emptyList()
+                rawAudio = if (hasAudioAccess(context)) scanner.audio(minSong) else emptyList()
+                publishAudio()
             }
         } finally {
             _scanning.value = false

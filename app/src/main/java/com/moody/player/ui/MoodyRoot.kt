@@ -54,8 +54,8 @@ data class AppSlots(
     val miniPlayer: @Composable (NavHostController) -> Unit = {},
     val extraRoutes: androidx.navigation.NavGraphBuilder.(NavHostController) -> Unit = {},
     val startRoute: String = Routes.MAIN,
-    /** Drawn above every screen, e.g. the update popup. */
-    val overlay: @Composable () -> Unit = {},
+    /** Drawn above every screen, e.g. the update popup. Always composed, once. */
+    val overlay: @Composable (NavHostController) -> Unit = {},
 )
 
 @Composable
@@ -79,7 +79,7 @@ fun MoodyRoot(settings: Settings, slots: AppSlots, toaster: Toaster = remember {
                     }
                     slots.extraRoutes(this, nav)
                 }
-                slots.overlay()
+                slots.overlay(nav)
                 ToastHost(toaster)
             }
         }

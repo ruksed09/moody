@@ -85,6 +85,10 @@ class MusicViewModel @Inject constructor(
         val id = playlistDao.create(Playlist(name = name.trim(), createdAt = System.currentTimeMillis()))
         if (songs.isNotEmpty()) playlistDao.append(id, songs.map { it.uri.toString() })
     }
+    val edits = media.edits
+    fun originalSong(song: AudioItem): AudioItem = media.originalSong(song.uri) ?: song
+    fun editSong(song: AudioItem, edit: com.moody.player.data.media.SongEdit?) = viewModelScope.launch { media.editSong(song.uri, edit) }
+
     /** A song's file was deleted: drop it from playlists, favourites and the queue, then refresh the library. */
     fun forgetDeleted(song: AudioItem) = viewModelScope.launch {
         val u = song.uri.toString()

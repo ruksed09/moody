@@ -67,6 +67,8 @@ class MusicController @Inject constructor(
 
     init {
         coordinator.pauseMusic = { scope.launch { controller?.pause() } }
+        // Edited song details show up in the mini-player and Now Playing straight away.
+        scope.launch { media.audio.collect { if (controller != null) sync() } }
     }
 
     fun connect() {
@@ -168,13 +170,25 @@ class MusicController @Inject constructor(
     }
 
     /**
-     * Close from the mini-player: stop the sound and drop the notification (an idle session shows none),
-     * but keep the queue so the next play can pick it up. Not the same as pause.
+     * Close from the mini-player: stop the sound, save the queue, and shut the music service down so
+     * nothing keeps running in the background. The next play starts it again with the saved queue.
      */
     fun close() {
         _state.update { it.copy(dismissed = true, playing = false) }
         sleepIn(null)
-        withController { c -> c.pause(); c.stop() }
+        pendingActions.clear()
+        val c = controller ?: return
+        c.pause()
+        val f = c.sendCustomCommand(androidx.media3.session.SessionCommand(CMD_SHUTDOWN, android.os.Bundle.EMPTY), android.os.Bundle.EMPTY)
+        f.addListener({ disconnect() }, ContextCompat.getMainExecutor(context))
+    }
+
+    /** Lets go of the session; the service ends once nothing holds it. */
+    private fun disconnect() {
+        ticker?.cancel()
+        controller?.let { it.removeListener(listener); it.release() }
+        controller = null
+        _state.update { it.copy(connected = false, playing = false, buffering = false) }
     }
 
     /** Removes every queue entry for this file (used after the file is deleted). */

@@ -56,7 +56,7 @@ fun FolderScreen(path: String, vm: VideoViewModel, nav: VideoNav, onBack: () -> 
     val grid = s.layout == LayoutMode.GRID
 
     LazyVerticalGrid(
-        columns = if (grid) GridCells.Adaptive(160.dp) else GridCells.Fixed(1),
+        columns = if (grid) com.moody.player.ui.components.MediaGridCells() else GridCells.Fixed(1),
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = if (grid) 16.dp else 0.dp, vertical = 0.dp),
         horizontalArrangement = Arrangement.spacedBy(if (grid) 12.dp else 0.dp),

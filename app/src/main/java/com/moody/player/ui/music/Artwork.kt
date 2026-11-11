@@ -31,9 +31,9 @@ import com.moody.player.design.icons.MoodyIcons
  * a tinted square with a record icon, tone picked from the album name so albums stay recognisable.
  */
 @Composable
-fun Artwork(item: AudioItem?, modifier: Modifier = Modifier, shape: Shape = Radii.md, iconSize: Dp = 20.dp, onLoaded: ((android.graphics.drawable.Drawable) -> Unit)? = null) {
+fun Artwork(item: AudioItem?, modifier: Modifier = Modifier, shape: Shape = Radii.md, iconSize: Dp = 20.dp, onLoaded: ((android.graphics.drawable.Drawable) -> Unit)? = null, onMissing: (() -> Unit)? = null) {
     val c = MoodyTheme.colors
-    var failed by remember(item?.uri) { mutableStateOf(false) }
+    var failed by remember(item?.uri, item?.cover) { mutableStateOf(false) }
     val tones = listOf(c.raised, c.surface, c.accentWash, c.line2)
     val tone = tones[((item?.album?.hashCode() ?: 0) and 0x7fffffff) % tones.size]
     Box(modifier.clip(shape).background(c.raised), contentAlignment = Alignment.Center) {
@@ -41,11 +41,11 @@ fun Artwork(item: AudioItem?, modifier: Modifier = Modifier, shape: Shape = Radi
         Icon(MoodyIcons.Album, null, Modifier.size(iconSize), tint = c.text3)
         if (item != null && !failed) {
             AsyncImage(
-                model = ImageRequest.Builder(LocalContext.current).data(item.uri).size(512).allowHardware(onLoaded == null).build(),
+                model = ImageRequest.Builder(LocalContext.current).data(item.cover?.let { java.io.File(it) } ?: item.uri).size(512).allowHardware(onLoaded == null).build(),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
-                onError = { failed = true },
+                onError = { failed = true; onMissing?.invoke() },
                 onSuccess = { s -> onLoaded?.invoke(s.result.drawable) },
             )
         }

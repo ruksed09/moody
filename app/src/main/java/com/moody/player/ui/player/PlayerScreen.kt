@@ -6,6 +6,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -249,7 +250,7 @@ private fun ShortcutRow(
     if (shortcuts.isEmpty()) return
     val accent = MoodyTheme.colors.accent
     val idle = OnVideo.text.copy(alpha = 0.9f)
-    Row(Modifier.padding(start = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.padding(start = 8.dp).horizontalScroll(androidx.compose.foundation.rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
         shortcuts.forEach { sc ->
             val (icon, label, active, action) = when (sc) {
                 com.moody.player.domain.PlayerShortcut.LOOP -> Quad(

@@ -3,6 +3,9 @@ package com.moody.player.ui.music
 import android.graphics.drawable.BitmapDrawable
 import android.os.Build
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import com.moody.player.design.components.ActionChip
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -86,7 +89,13 @@ import javax.inject.Inject
 import kotlin.math.roundToInt
 
 @HiltViewModel
-class NowPlayingViewModel @Inject constructor(val music: MusicController, private val favorites: FavoriteDao) : ViewModel() {
+class NowPlayingViewModel @Inject constructor(
+    val music: MusicController,
+    private val favorites: FavoriteDao,
+    private val media: com.moody.player.data.media.MediaRepository,
+) : ViewModel() {
+    fun originalSong(song: com.moody.player.data.media.AudioItem) = media.originalSong(song.uri) ?: song
+    fun editSong(song: com.moody.player.data.media.AudioItem, edit: com.moody.player.data.media.SongEdit?) = viewModelScope.launch { media.editSong(song.uri, edit) }
     val state = music.state
     val favoriteUris = favorites.all().map { l -> l.map { it.audioUri }.toSet() }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
     fun toggleFavorite(uri: String, on: Boolean) = viewModelScope.launch { if (on) favorites.add(Favorite(uri)) else favorites.remove(uri) }
@@ -102,6 +111,7 @@ fun NowPlayingScreen(vm: NowPlayingViewModel, onClose: () -> Unit, onEqualizer: 
     val wash by animateColorAsState(tint ?: c.raised, Motion.enter(), label = "wash")
     var queueOpen by remember { mutableStateOf(false) }
     var extrasOpen by remember { mutableStateOf<String?>(null) }
+    var infoOpen by remember { mutableStateOf(false) }
     val item = s.current
 
     Box(Modifier.fillMaxSize().background(c.bg)) {
@@ -117,22 +127,36 @@ fun NowPlayingScreen(vm: NowPlayingViewModel, onClose: () -> Unit, onEqualizer: 
                 Text("Now playing", style = MoodyTheme.type.label, color = c.text2, modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                 IconAction(MoodyIcons.Queue, "Queue", { queueOpen = true }, tint = c.text)
             }
-            BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                val side = minOf(maxWidth, maxHeight - 8.dp).coerceAtMost(420.dp)
-                Artwork(
-                    item,
-                    Modifier.size(side).shadow(24.dp, Radii.xl, ambientColor = Color.Black, spotColor = Color.Black),
-                    shape = Radii.xl, iconSize = 56.dp,
-                    onLoaded = { d ->
-                        val bmp = (d as? BitmapDrawable)?.bitmap ?: return@Artwork
-                        Palette.from(bmp).maximumColorCount(12).generate { p ->
-                            val sw = p?.dominantSwatch ?: p?.vibrantSwatch
-                            tint = sw?.let { Color(it.rgb) }
-                        }
-                    },
-                )
+            // Speed, sleep and equalizer sit right under the header, where they are easy to reach and read.
+            Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)) {
+                ActionChip(if (s.speed == 1f) "Speed" else rateLabel(s.speed), { extrasOpen = "speed" }, icon = MoodyIcons.Speed, active = s.speed != 1f)
+                ActionChip(s.sleepAt?.let { "${((it - System.currentTimeMillis()) / 60_000) + 1} min" } ?: "Sleep", { extrasOpen = "sleep" }, icon = MoodyIcons.Timer, active = s.sleepAt != null)
+                ActionChip("Equalizer", onEqualizer, icon = MoodyIcons.Equalizer)
             }
-            Spacer(Modifier.height(24.dp))
+            BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().padding(vertical = 20.dp), contentAlignment = Alignment.Center) {
+                val side = minOf(maxWidth, maxHeight).coerceAtMost(420.dp)
+                // null while loading, true with a cover, false when the song has none (then a disc turns).
+                var cover by remember(item?.uri, item?.cover) { mutableStateOf<Boolean?>(null) }
+                val coverAlpha by animateFloatAsState(if (cover == true) 1f else 0f, Motion.enter(), label = "cover")
+                val discAlpha by animateFloatAsState(if (cover == false || item == null) 1f else 0f, Motion.enter(), label = "disc")
+                if (cover != false && item != null) {
+                    Artwork(
+                        item,
+                        Modifier.size(side).graphicsLayer { alpha = coverAlpha }.shadow(24.dp, Radii.xl, ambientColor = Color.Black, spotColor = Color.Black),
+                        shape = Radii.xl, iconSize = 0.dp,
+                        onLoaded = { d ->
+                            cover = true
+                            val bmp = (d as? BitmapDrawable)?.bitmap ?: return@Artwork
+                            Palette.from(bmp).maximumColorCount(12).generate { p ->
+                                val sw = p?.dominantSwatch ?: p?.vibrantSwatch
+                                tint = sw?.let { Color(it.rgb) }
+                            }
+                        },
+                        onMissing = { cover = false; tint = null },
+                    )
+                }
+                if (discAlpha > 0f) SpinningDisc(s.playing, Modifier.size(side * 0.92f).graphicsLayer { alpha = discAlpha })
+            }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(item?.title ?: "Nothing playing", style = MoodyTheme.type.display, color = c.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -140,6 +164,7 @@ fun NowPlayingScreen(vm: NowPlayingViewModel, onClose: () -> Unit, onEqualizer: 
                     Text(listOfNotNull(item?.artist, item?.album?.takeIf { it.isNotBlank() }).joinToString(" · "), style = MoodyTheme.type.body, color = c.text2, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 if (item != null) {
+                    IconAction(MoodyIcons.Info, "Song info", { infoOpen = true }, tint = c.text2)
                     val fav = item.uri.toString() in favs
                     IconAction(if (fav) MoodyIcons.HeartFilled else MoodyIcons.Heart, if (fav) "Remove from favourites" else "Add to favourites", {
                         vm.toggleFavorite(item.uri.toString(), !fav)
@@ -158,8 +183,12 @@ fun NowPlayingScreen(vm: NowPlayingViewModel, onClose: () -> Unit, onEqualizer: 
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 IconAction(MoodyIcons.Shuffle, if (s.shuffle) "Shuffle on" else "Shuffle off", { vm.music.setShuffle(!s.shuffle); toaster.show(if (s.shuffle) "Shuffle off" else "Shuffle on") }, tint = if (s.shuffle) c.accent else c.text2)
                 IconAction(MoodyIcons.Prev, "Previous", vm.music::prev, tint = c.text, size = 28.dp)
+                val playSrc = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                val playPressed by playSrc.collectIsPressedAsState()
+                val playScale by animateFloatAsState(if (playPressed) 0.94f else 1f, Motion.fast(), label = "play")
                 Box(
-                    Modifier.size(72.dp).clip(CircleShape).background(c.accent).clickable(role = Role.Button, onClick = vm.music::toggle)
+                    Modifier.size(72.dp).graphicsLayer { scaleX = playScale; scaleY = playScale }.clip(CircleShape).background(c.accent)
+                        .clickable(playSrc, androidx.compose.material3.ripple(color = c.accentInk), role = Role.Button, onClick = vm.music::toggle)
                         .semantics { contentDescription = if (s.playing) "Pause" else "Play" },
                     contentAlignment = Alignment.Center,
                 ) { Icon(if (s.playing) MoodyIcons.Pause else MoodyIcons.Play, null, Modifier.size(30.dp), tint = c.accentInk) }
@@ -171,31 +200,13 @@ fun NowPlayingScreen(vm: NowPlayingViewModel, onClose: () -> Unit, onEqualizer: 
                     tint = if (s.repeat != RepeatMode.OFF) c.accent else c.text2,
                 )
             }
-            Spacer(Modifier.height(8.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                SmallAction(MoodyIcons.Speed, if (s.speed == 1f) "Speed" else rateLabel(s.speed)) { extrasOpen = "speed" }
-                SmallAction(MoodyIcons.Timer, s.sleepAt?.let { "${((it - System.currentTimeMillis()) / 60_000) + 1} min" } ?: "Sleep") { extrasOpen = "sleep" }
-                SmallAction(MoodyIcons.Equalizer, "Equalizer", onEqualizer)
-            }
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(28.dp))
         }
     }
 
+    if (infoOpen && item != null) SongInfoDialog(item, vm.originalSong(item), onSave = { vm.editSong(item, it) }, onDismiss = { infoOpen = false })
     if (queueOpen) QueueSheet(s, vm.music, onDismiss = { queueOpen = false })
     extrasOpen?.let { which -> ExtrasSheet(which, s, vm.music, onDismiss = { extrasOpen = null }) }
-}
-
-@Composable
-private fun SmallAction(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit) {
-    val c = MoodyTheme.colors
-    Row(
-        Modifier.height(44.dp).clip(Radii.pill).clickable(role = Role.Button, onClick = onClick).padding(horizontal = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(icon, null, Modifier.size(18.dp), tint = c.text2)
-        Spacer(Modifier.width(8.dp))
-        Text(label, style = MoodyTheme.type.label, color = c.text2)
-    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)

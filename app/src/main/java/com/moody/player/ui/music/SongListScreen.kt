@@ -151,6 +151,12 @@ fun SongActionsSheet(song: AudioItem, vm: MusicViewModel, onDismiss: () -> Unit,
     var confirmDelete by remember { mutableStateOf(false) }
     val delete = rememberSongDelete { gone -> vm.forgetDeleted(gone); onDismiss() }
     val fav = song.uri.toString() in favs
+    // Info is a centred modal, not part of the sheet: the sheet steps aside while it shows.
+    if (showInfo) {
+        val live = s.songs.firstOrNull { it.uri == song.uri } ?: song
+        SongInfoDialog(live, vm.originalSong(live), onSave = { vm.editSong(live, it) }, onDismiss = onDismiss)
+        return
+    }
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = c.surface) {
         Column(Modifier.padding(bottom = 24.dp)) {
             Row(Modifier.padding(horizontal = 24.dp).padding(bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -161,9 +167,7 @@ fun SongActionsSheet(song: AudioItem, vm: MusicViewModel, onDismiss: () -> Unit,
                     Text(song.artist, style = MoodyTheme.type.caption, color = c.text3, maxLines = 1)
                 }
             }
-            if (showInfo) {
-                SongInfo(song)
-            } else if (!picking) {
+            if (!picking) {
                 SheetRow(MoodyIcons.Next, "Play next") { vm.music.playNext(listOf(song)); toaster.show("Plays next"); onDismiss() }
                 SheetRow(MoodyIcons.Queue, "Add to queue") { vm.music.addToQueue(listOf(song)); toaster.show("Added to queue"); onDismiss() }
                 SheetRow(MoodyIcons.Playlist, "Add to playlist") { picking = true }

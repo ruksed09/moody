@@ -66,7 +66,14 @@ object MoodyIcons {
     }
     val Lock by lazy { icon("lock", "M7 11V7a5 5 0 0 1 10 0v4", LOCK_BODY) }
     val Unlock by lazy { icon("unlock", "M7 11V7a5 5 0 0 1 9.9-1", LOCK_BODY) }
-    val Rotate by lazy { icon("rotate", "M21 12a9 9 0 1 1-2.64-6.36L21 8", "M21 3v5h-5") }
+    val Rotate by lazy {
+        icon(
+            "rotate-screen",
+            "M4.6 9.5L9.5 4.6L19.4 14.5L14.5 19.4Z", "M11.8 6.9L12.9 8",
+            "M15 2.8a9.5 9.5 0 0 1 6.2 6.2", "M21.4 5.6v3.6h-3.6",
+            "M9 21.2A9.5 9.5 0 0 1 2.8 15", "M2.6 18.4v-3.6h3.6",
+        )
+    }
     val Aspect by lazy { icon("aspect", "M5 6h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z", "M7 12V9h3M17 12v3h-3") }
     val Speed by lazy { icon("speed", "M12 14l4-4", "M3.34 19a10 10 0 1 1 17.32 0") }
     val Equalizer by lazy { icon("eq", "M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M2 14h4M10 8h4M18 16h4") }

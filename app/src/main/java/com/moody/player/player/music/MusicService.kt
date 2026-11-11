@@ -75,9 +75,43 @@ class MusicService : MediaSessionService() {
     private lateinit var exo: ExoPlayer
     private var vlc: VlcAudioPlayer? = null
 
+    /** Songs Media3 cut short this session (see [checkTruncated]); they always go to libVLC. */
+    private val forceVlc = mutableSetOf<String>()
+
     /** Items sent from a controller may arrive without their uri; the media id is the uri. */
     private fun resolve(items: List<MediaItem>): List<MediaItem> = items.map {
-        if (it.localConfiguration != null) it else it.buildUpon().setUri(Uri.parse(it.mediaId)).build()
+        val withUri = if (it.localConfiguration != null) it else it.buildUpon().setUri(Uri.parse(it.mediaId)).build()
+        if (withUri.mediaId in forceVlc) withUri.withVlc() else withUri
+    }
+
+    private fun MediaItem.withVlc(): MediaItem = buildUpon().setMediaMetadata(
+        mediaMetadata.buildUpon().setExtras(Bundle(mediaMetadata.extras ?: Bundle.EMPTY).apply { putBoolean(EXTRA_VLC, true) }).build(),
+    ).build()
+
+    /**
+     * Some MP3s (call recordings especially) carry a header that states a far shorter length than the
+     * file has; Media3 believes it and ends the song early. When Media3's length is well under the
+     * library's, the queue moves to libVLC at the same spot, and VLC plays the whole file.
+     */
+    private fun checkTruncated() {
+        val s = session ?: return
+        if (s.player !== exo) return
+        val item = exo.currentMediaItem ?: return
+        if (item.mediaId in forceVlc) return
+        val d = exo.duration
+        if (d <= 0) return
+        val expected = media.audio.value?.firstOrNull { it.uri.toString() == item.mediaId }?.durationMs ?: return
+        if (expected - d < 10_000 || d > expected * 0.9) return
+        forceVlc += item.mediaId
+        val items = (0 until exo.mediaItemCount).map { exo.getMediaItemAt(it) }.map { if (it.mediaId in forceVlc) it.withVlc() else it }
+        val index = exo.currentMediaItemIndex
+        val pos = exo.currentPosition
+        val play = exo.playWhenReady
+        pickPlayer(items)
+        val target = s.player
+        target.setMediaItems(items, index, pos)
+        target.prepare()
+        target.playWhenReady = play
     }
 
     /** Media3 plays most files; a queue holding anything it can't decode goes to libVLC as a whole. */
@@ -102,6 +136,7 @@ class MusicService : MediaSessionService() {
                     MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon()
                         .add(SessionCommand(CMD_EQ_GET, Bundle.EMPTY))
                         .add(SessionCommand(CMD_EQ_SET, Bundle.EMPTY))
+                        .add(SessionCommand(CMD_SHUTDOWN, Bundle.EMPTY))
                         .build(),
                 )
                 .build()
@@ -118,6 +153,7 @@ class MusicService : MediaSessionService() {
         }
 
         override fun onCustomCommand(session: MediaSession, controller: MediaSession.ControllerInfo, customCommand: SessionCommand, args: Bundle): ListenableFuture<SessionResult> {
+            if (customCommand.customAction == CMD_SHUTDOWN) return shutDown()
             val fx = effects ?: return Futures.immediateFuture(SessionResult(SessionError.ERROR_NOT_SUPPORTED))
             if (customCommand.customAction == CMD_EQ_SET) fx.apply(args.getInt(ARG_PRESET, -1), args.getBoolean(ARG_BASS, false))
             return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS, fx.describe()))
@@ -143,6 +179,9 @@ class MusicService : MediaSessionService() {
         player.addListener(object : Player.Listener {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) { scope.launch { save(player) } }
             override fun onIsPlayingChanged(isPlaying: Boolean) { scope.launch { save(player) } }
+            override fun onEvents(p: Player, events: Player.Events) {
+                if (events.containsAny(Player.EVENT_TIMELINE_CHANGED, Player.EVENT_MEDIA_ITEM_TRANSITION, Player.EVENT_PLAYBACK_STATE_CHANGED)) scope.launch(Dispatchers.Main) { checkTruncated() }
+            }
         })
         saver = scope.launch {
             while (isActive) { delay(10_000); if (player.isPlaying) save(player) }
@@ -173,8 +212,29 @@ class MusicService : MediaSessionService() {
         val index = (prefs[KEY_INDEX] ?: 0).coerceIn(0, items.lastIndex)
         pickPlayer(items)
         val target = session?.player ?: p
+        // Something may have been queued while the saved queue was loading; that wins.
+        if (target.mediaItemCount > 0 || exo.mediaItemCount > 0 || (vlc?.mediaItemCount ?: 0) > 0) return
         target.setMediaItems(items, index, prefs[KEY_POS] ?: 0L)
         target.prepare()
+    }
+
+    /**
+     * Close from the app: save the queue, stop, and end this service so nothing stays alive in the background.
+     * The reply waits for the save, so the controller unbinding can't cut it short.
+     */
+    private fun shutDown(): ListenableFuture<SessionResult> {
+        val done = com.google.common.util.concurrent.SettableFuture.create<SessionResult>()
+        val p = session?.player
+        scope.launch {
+            if (p != null) {
+                p.pause()
+                runCatching { save(p) }
+                p.stop()
+            }
+            done.set(SessionResult(SessionResult.RESULT_SUCCESS))
+            stopSelf()
+        }
+        return done
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
@@ -200,6 +260,7 @@ val MediaItem.uriOrNull: Uri? get() = localConfiguration?.uri ?: runCatching { U
 
 const val CMD_EQ_GET = "moody.eq.get"
 const val CMD_EQ_SET = "moody.eq.set"
+const val CMD_SHUTDOWN = "moody.shutdown"
 const val ARG_PRESET = "preset"
 const val ARG_BASS = "bass"
 const val ARG_PRESETS = "presets"

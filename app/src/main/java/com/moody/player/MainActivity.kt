@@ -58,6 +58,8 @@ class MainActivity : ComponentActivity() {
 
     /** Bumped when a notification asks to open Now Playing. */
     private var openNowPlaying by mutableIntStateOf(0)
+    /** The last request already acted on, so a screen coming back never replays it. */
+    private var handledNowPlaying = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val splash = installSplashScreen()
@@ -66,8 +68,12 @@ class MainActivity : ComponentActivity() {
         splash.setKeepOnScreenCondition { firstSettings == null }
         lifecycleScope.launch { firstSettings = settingsStore.settings.first() }
         enableEdgeToEdge()
-        if (intent?.getBooleanExtra(EXTRA_OPEN_NOW_PLAYING, false) == true) openNowPlaying++
-        handleAudioView(intent)
+        // A recreated activity (rotation, theme, Recents) still carries its first intent: act on it only once.
+        val fresh = savedInstanceState == null && ((intent?.flags ?: 0) and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) == 0
+        if (fresh) {
+            if (intent?.getBooleanExtra(EXTRA_OPEN_NOW_PLAYING, false) == true) openNowPlaying++
+            handleAudioView(intent)
+        }
         lifecycleScope.launch { vault.recoverInterruptedMoves() }
         setContent {
             val current by settingsStore.settings.collectAsStateWithLifecycle(null)
@@ -78,7 +84,6 @@ class MainActivity : ComponentActivity() {
                 settings,
                 AppSlots(
                     videoNav = { nav ->
-                        LaunchedEffect(openNowPlaying) { if (openNowPlaying > 0) nav.navigate(Routes.NOW_PLAYING) { launchSingleTop = true } }
                         rememberVideoNav(
                             nav,
                             onHide = rememberHideFlow(onNeedsSetup = { nav.navigate(Routes.VAULT) { launchSingleTop = true } }),
@@ -157,7 +162,14 @@ class MainActivity : ComponentActivity() {
                         }
                     },
                     startRoute = start,
-                    overlay = {
+                    overlay = { nav ->
+                        // One-shot: open Now Playing for each new request, never again on recomposition.
+                        LaunchedEffect(openNowPlaying) {
+                            if (openNowPlaying > handledNowPlaying && settings.onboarded) {
+                                handledNowPlaying = openNowPlaying
+                                nav.navigate(Routes.NOW_PLAYING) { launchSingleTop = true }
+                            }
+                        }
                         if (settings.onboarded) {
                             LaunchedEffect(Unit) { updates.check(force = false) }
                             UpdateDialogHost(updates)
@@ -191,7 +203,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
-        music.connect()
+        // After Close the music service is shut down; it starts again only when something is played.
+        if (!music.state.value.dismissed) music.connect()
     }
 
     override fun onResume() {

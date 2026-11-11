@@ -45,7 +45,6 @@ import com.moody.player.design.Radii
 import com.moody.player.design.components.IconAction
 import com.moody.player.design.components.LocalToaster
 import com.moody.player.design.icons.MoodyIcons
-import com.moody.player.domain.MAX_SHORTCUTS
 import com.moody.player.domain.PlayerShortcut
 import com.moody.player.domain.addShortcut
 import com.moody.player.domain.moveShortcut
@@ -80,7 +79,7 @@ fun ShortcutEditor(selected: List<PlayerShortcut>, save: (List<PlayerShortcut>) 
     val c = MoodyTheme.colors
     val toaster = LocalToaster.current
     Column {
-            Text("Quick buttons shown under the video's title bar. Up to $MAX_SHORTCUTS.", style = MoodyTheme.type.caption, color = c.text2)
+            Text("Quick buttons shown under the video's title bar. Add as many as you like.", style = MoodyTheme.type.caption, color = c.text2)
             Spacer(Modifier.height(12.dp))
             Preview(selected)
 
@@ -94,14 +93,11 @@ fun ShortcutEditor(selected: List<PlayerShortcut>, save: (List<PlayerShortcut>) 
             val available = PlayerShortcut.entries.filter { it !in selected }
             if (available.isEmpty()) Text("All shortcuts are in use.", style = MoodyTheme.type.caption, color = c.text3, modifier = Modifier.padding(vertical = 8.dp))
             available.forEach { sc ->
-                val full = selected.size >= MAX_SHORTCUTS
                 Row(Modifier.fillMaxWidth().height(52.dp), verticalAlignment = Alignment.CenterVertically) {
                     ShortcutTile(sc)
                     Spacer(Modifier.width(12.dp))
                     Text(sc.label, style = MoodyTheme.type.body, color = c.text, modifier = Modifier.weight(1f))
-                    IconAction(MoodyIcons.Plus, "Add ${sc.label}", {
-                        if (full) toaster.show("Up to $MAX_SHORTCUTS shortcuts. Remove one first.") else save(addShortcut(selected, sc))
-                    }, tint = if (full) c.text3 else c.accent, size = 20.dp)
+                    IconAction(MoodyIcons.Plus, "Add ${sc.label}", { save(addShortcut(selected, sc)) }, tint = c.accent, size = 20.dp)
                 }
             }
             Spacer(Modifier.height(16.dp))

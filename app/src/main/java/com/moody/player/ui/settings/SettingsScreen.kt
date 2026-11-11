@@ -74,7 +74,6 @@ import com.moody.player.design.components.QuietButton
 import com.moody.player.design.icons.MoodyIcons
 import com.moody.player.domain.Decoder
 import com.moody.player.domain.LayoutMode
-import com.moody.player.domain.MAX_SHORTCUTS
 import com.moody.player.domain.PinHasher
 import com.moody.player.domain.PlayerGesture
 import com.moody.player.domain.SEEK_STEPS
@@ -234,7 +233,7 @@ fun SettingsSectionScreen(
             }
             SettingsSection.VIDEO -> {
                 item { Label("Controls") }
-                item { Action("Customize player shortcuts", "${s.playerShortcuts.size} of $MAX_SHORTCUTS quick buttons under the title bar", MoodyIcons.Layers, onShortcuts) }
+                item { Action("Customize player shortcuts", "${s.playerShortcuts.size} quick ${if (s.playerShortcuts.size == 1) "button" else "buttons"} under the title bar", MoodyIcons.Layers, onShortcuts) }
                 item {
                     val offCount = s.disabledGestures.size
                     Action("Gestures", if (!s.gestures) "Off" else if (offCount == 0) "All on · double-tap jumps ${s.doubleTapSeekSec} s" else "${PlayerGesture.entries.size - offCount} of ${PlayerGesture.entries.size} on", MoodyIcons.Hand, onGestures)

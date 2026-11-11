@@ -43,6 +43,9 @@ import com.moody.player.data.media.AudioItem
 import com.moody.player.design.MoodyTheme
 import com.moody.player.design.Radii
 import com.moody.player.design.components.ChoiceChip
+import com.moody.player.design.components.ActionChip
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import com.moody.player.design.components.EmptyState
 import com.moody.player.design.components.IconAction
 import com.moody.player.design.components.PrimaryButton
@@ -120,7 +123,7 @@ fun MusicContent(
     Box(Modifier.fillMaxSize().nestedScroll(bar.connection)) {
         LazyVerticalGrid(
             state = gridState,
-            columns = if (grid) GridCells.Adaptive(150.dp) else GridCells.Fixed(1),
+            columns = if (grid) com.moody.player.ui.components.MediaGridCells() else GridCells.Fixed(1),
             contentPadding = PaddingValues(top = topPad, bottom = LocalBottomInset.current + 24.dp, start = if (grid) 16.dp else 0.dp, end = if (grid) 16.dp else 0.dp),
             horizontalArrangement = Arrangement.spacedBy(if (grid) 12.dp else 0.dp),
             verticalArrangement = Arrangement.spacedBy(if (grid) 16.dp else 0.dp),
@@ -136,21 +139,24 @@ fun MusicContent(
                         Spacer(Modifier.width(14.dp))
                         Box(Modifier.width(1.dp).height(40.dp).background(c.line2))
                         Spacer(Modifier.width(14.dp))
-                        Column {
+                        Column(Modifier.weight(1f)) {
                             Text("Music", style = MoodyTheme.type.hero, color = c.text)
                             Text(
-                                if (s.loading) "Looking through your phone" else "${s.songs.size} songs  ·  ${s.albums.size} albums  ·  ${formatDuration(s.totalMs)}",
+                                if (s.loading) "Looking through your phone" else "${s.songs.size} ${if (s.songs.size == 1) "song" else "songs"}  ·  ${s.albums.size} ${if (s.albums.size == 1) "album" else "albums"}  ·  ${formatDuration(s.totalMs)}",
                                 style = MoodyTheme.type.caption, color = c.text2,
                             )
                         }
                     }
-                    Spacer(Modifier.height(8.dp))
                     Spacer(Modifier.height(16.dp))
-                    if (s.songs.isNotEmpty()) {
-                        PrimaryButton("Shuffle all", onShuffle, icon = MoodyIcons.Shuffle)
-                        Spacer(Modifier.height(16.dp))
-                    }
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(end = 16.dp)) {
+                    // Shuffle leads the chip row as an action (outlined, with its icon, like Folders on the Videos tab);
+                    // a hairline separates it from the tabs, which are choices.
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(end = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        if (s.songs.isNotEmpty()) {
+                            item {
+                                ActionChip("Shuffle", onShuffle, Modifier.semantics { contentDescription = "Shuffle all songs" }, icon = MoodyIcons.Shuffle)
+                            }
+                            item { Box(Modifier.width(1.dp).height(20.dp).background(c.line2)) }
+                        }
                         items(MusicTab.entries) { t -> ChoiceChip(t.label, t == tab, { onTab(t) }) }
                     }
                     Spacer(Modifier.height(12.dp))

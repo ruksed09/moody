@@ -41,6 +41,8 @@ data class AudioItem(
     val trackNo: Int,
     val fileName: String,
     val dateAdded: Long,
+    /** A cover picked in Moody (absolute path of Moody's own copy); null uses the file's art. */
+    val cover: String? = null,
 ) {
     val folder: String get() = folderName(relativePath)
 }

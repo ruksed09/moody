@@ -310,6 +310,42 @@ fun ChoiceChip(text: String, selected: Boolean, onClick: () -> Unit, modifier: M
     }
 }
 
+/**
+ * A compact action in the chip shape (Shuffle, Speed, Sleep). Hairline when idle; amber wash when
+ * [active] or [emphasis]. Presses scale down a touch like the other buttons.
+ */
+@Composable
+fun ActionChip(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    icon: ImageVector? = null,
+    active: Boolean = false,
+    emphasis: Boolean = false,
+    height: Dp = 32.dp,
+) {
+    val c = MoodyTheme.colors
+    val src = remember { MutableInteractionSource() }
+    val lit = active || emphasis
+    Row(
+        modifier
+            .scale(pressScale(src))
+            .height(height)
+            .clip(Radii.pill)
+            .background(if (lit) c.accentWash else Color.Transparent)
+            .border(1.dp, if (lit) c.accent else c.line2, Radii.pill)
+            .clickable(src, ripple(), role = Role.Button, onClick = onClick)
+            .padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (icon != null) {
+            Icon(icon, null, Modifier.size(16.dp), tint = if (lit) c.accent else c.text2)
+            if (text.isNotEmpty()) Spacer(Modifier.width(6.dp))
+        }
+        if (text.isNotEmpty()) Text(text, style = MoodyTheme.type.label, color = if (lit) (if (c.isDark) c.text else c.accent) else c.text2, maxLines = 1, softWrap = false)
+    }
+}
+
 /** Muted sentence-case section label. */
 @Composable
 fun SectionLabel(text: String, modifier: Modifier = Modifier, inset: Dp = 16.dp, trailing: @Composable (() -> Unit)? = null) {

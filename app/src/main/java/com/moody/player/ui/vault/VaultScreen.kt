@@ -108,7 +108,7 @@ fun VaultScreen(vm: VaultViewModel, onBack: () -> Unit) {
 
     Box(Modifier.fillMaxSize().pointerInput(Unit) { awaitPointerEventScope { while (true) { awaitPointerEvent(); vm.lock.touch() } } }) {
         LazyVerticalGrid(
-            columns = GridCells.Adaptive(160.dp),
+            columns = com.moody.player.ui.components.MediaGridCells(),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),

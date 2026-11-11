@@ -174,7 +174,7 @@ fun VideoLibraryContent(
         ) {
             LazyVerticalGrid(
                 state = gridState,
-                columns = if (grid) GridCells.Adaptive(160.dp) else GridCells.Fixed(1),
+                columns = if (grid) com.moody.player.ui.components.MediaGridCells() else GridCells.Fixed(1),
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(start = side, end = side, top = topPad, bottom = bottomPad),
                 horizontalArrangement = Arrangement.spacedBy(if (grid) 12.dp else 0.dp),
@@ -280,8 +280,8 @@ private fun LazyGridScope.continueRow(s: VideoUiState, nav: VideoNav) {
             LazyRow(contentPadding = PaddingValues(horizontal = if (s.layout == LayoutMode.GRID) 0.dp else 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 items(s.continueWatching, key = { it.video.uri.toString() }) { item ->
                     ContinueCard(item, onClick = {
-                        val list = s.continueWatching.map { it.video }
-                        nav.play(list, list.indexOf(item.video))
+                        val sorted = s.shown.takeIf { s.query.isBlank() && item.video in it } ?: s.continueWatching.map { it.video }
+                        nav.play(sorted, sorted.indexOf(item.video).coerceAtLeast(0))
                     })
                 }
             }
