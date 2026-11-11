@@ -142,9 +142,10 @@ fun PlayerScreen(vm: PlayerViewModel, host: PlayerHost, inPip: Boolean) {
                 if (settings.showBookmarks && !locked) nearestBookmark(bookmarks, at, right)?.let { markTip = right to it; markTipTick++ }
             },
         )
-        // After a double-tap seek: a tip on that side to jump straight to a bookmark.
+        // After a double-tap or swipe seek: a tip on that side to jump straight to a bookmark.
         LaunchedEffect(markTipTick) { if (markTipTick > 0) { delay(3_500); markTip = null } }
         LaunchedEffect(locked, settings.showBookmarks) { if (locked || !settings.showBookmarks) markTip = null }
+        LaunchedEffect(st.uri) { markTip = null }
         JumpToBookmarkTip(markTip, controls && !locked) { b -> markTip = null; vm.jumpTo(b); poke++ }
 
         if (st.buffering && st.error == null) {

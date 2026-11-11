@@ -112,7 +112,7 @@ fun GestureLayer(
     locked: Boolean,
     onTap: () -> Unit,
     modifier: Modifier = Modifier,
-    /** After each double-tap seek: which side, and roughly where the video now is. */
+    /** After each double-tap or swipe seek: forward (right side) or back, and where the video now is. */
     onSideSeek: (right: Boolean, atMs: Long) -> Unit = { _, _ -> },
 ) {
     val settings by vm.settings.collectAsStateWithLifecycle()
@@ -129,6 +129,8 @@ fun GestureLayer(
     var level by remember { mutableStateOf<Pair<Drag, Float>?>(null) }
     var seekPreview by remember { mutableStateOf<Pair<Long, Long>?>(null) }
     var ping by remember { mutableStateOf<Pair<Boolean, Int>?>(null) } // (right side, seconds)
+    // Where a run of double-taps started: the player's position lags a seek, so later taps count from here.
+    var chainFrom by remember { mutableLongStateOf(0L) }
     var boosted by remember { mutableStateOf(false) }
     var lastTapAt by remember { mutableLongStateOf(0L) }
     var lastZone by remember { mutableStateOf(TapZone.CENTER) }
@@ -257,7 +259,10 @@ fun GestureLayer(
                         // Release.
                         when {
                             boosted -> { boosted = false; vm.engine.setRate(if (prevRate == 2f) 1f else prevRate) }
-                            mode == Drag.SEEK -> { seekPreview?.let { vm.engine.seekTo(it.first) }; seekPreview = null }
+                            mode == Drag.SEEK -> {
+                                seekPreview?.let { (target, delta) -> vm.engine.seekTo(target); if (delta != 0L) sideSeek(delta > 0, target) }
+                                seekPreview = null
+                            }
                             mode == Drag.PINCH -> {
                                 val a = when {
                                     pinchRatio > 1.12f -> Aspect.FILL
@@ -288,9 +293,10 @@ fun GestureLayer(
                                         flashJob = scope.launch { delay(550); flash = null }
                                     } else {
                                         val secs = (if (chaining) ping!!.second else 0) + stepSec
-                                        val delta = if (right) stepSec * 1000L else -stepSec * 1000L
-                                        vm.engine.seekBy(delta)
-                                        sideSeek(right, (st.positionMs + delta).coerceIn(0L, st.durationMs.coerceAtLeast(0L)))
+                                        if (!chaining) chainFrom = st.positionMs
+                                        vm.engine.seekBy(if (right) stepSec * 1000L else -stepSec * 1000L)
+                                        val total = if (right) secs * 1000L else -secs * 1000L
+                                        sideSeek(right, (chainFrom + total).coerceIn(0L, st.durationMs.coerceAtLeast(0L)))
                                         ping = right to secs
                                         if (right) rightSecs = secs else leftSecs = secs
                                         tapAt = start
