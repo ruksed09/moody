@@ -44,6 +44,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
@@ -114,7 +117,7 @@ fun decoderLabel(d: Decoder) = when (d) { Decoder.HW -> "Hardware"; Decoder.HW_P
  * when dragged down, and scrolls inside. Sub-pages (Speed, Loop...) replace the content in this same sheet.
  */
 @Composable
-fun PlayerMenus(menu: PlayerMenu, vm: PlayerViewModel, st: PlayerState, host: PlayerHost, onNavigate: (PlayerMenu) -> Unit, onDismiss: () -> Unit) {
+fun PlayerMenus(menu: PlayerMenu, vm: PlayerViewModel, st: PlayerState, host: PlayerHost, onNavigate: (PlayerMenu) -> Unit, onDismiss: () -> Unit, onTranscript: () -> Unit = {}) {
     val c = MoodyTheme.colors
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
@@ -193,7 +196,7 @@ fun PlayerMenus(menu: PlayerMenu, vm: PlayerViewModel, st: PlayerState, host: Pl
                 when (menu) {
                     PlayerMenu.MORE -> MoreMenu(vm, st, host, onNavigate, onDismiss)
                     PlayerMenu.AUDIO -> AudioMenu(vm, st, onNavigate)
-                    PlayerMenu.SUBTITLES -> SubtitlesMenu(vm, st, onNavigate)
+                    PlayerMenu.SUBTITLES -> SubtitlesMenu(vm, st, onNavigate, onTranscript)
                     PlayerMenu.SUB_STYLE -> SubStyleMenu(vm)
                     PlayerMenu.SUB_DELAY -> DelayMenu(st.subDelayMs, "Show subtitles earlier or later", vm.engine::setSubDelayMs)
                     PlayerMenu.AUDIO_DELAY -> DelayMenu(st.audioDelayMs, "Move the sound earlier or later", vm.engine::setAudioDelayMs)
@@ -334,17 +337,22 @@ private fun AudioMenu(vm: PlayerViewModel, st: PlayerState, go: (PlayerMenu) -> 
 }
 
 @Composable
-private fun SubtitlesMenu(vm: PlayerViewModel, st: PlayerState, go: (PlayerMenu) -> Unit) {
+private fun SubtitlesMenu(vm: PlayerViewModel, st: PlayerState, go: (PlayerMenu) -> Unit, onTranscript: () -> Unit) {
     val pick = rememberSubtitlePicker(vm)
-    OptionRow("Off", st.selectedSub == -1) { vm.engine.selectSub(-1); vm.toast("Subtitles off") }
+    val studio by vm.studio.collectAsStateWithLifecycle()
+    val studioOn by vm.studioOn.collectAsStateWithLifecycle()
+    OptionRow("Off", st.selectedSub == -1 && !studioOn) { vm.subsOff(); vm.toast("Subtitles off") }
+    studio?.let { d -> OptionRow(d.name, studioOn, "${d.format.label} · ${d.cues.size} lines") { vm.useStudio(); vm.toast(d.name) } }
     st.subTracks.filter { it.id != -1 }.forEachIndexed { i, t ->
         val l = trackLabel(t.name, i)
-        OptionRow(l.name, t.id == st.selectedSub, l.lang) { vm.engine.selectSub(t.id); vm.toast(l.name) }
+        OptionRow(l.name, t.id == st.selectedSub && !studioOn, l.lang) { vm.useVlcSub(t.id); vm.toast(l.name) }
     }
     Divider()
-    SheetRow(MoodyIcons.Plus, "Load from file", "SRT, ASS, VTT") { pick() }
+    if (studio != null) SheetRow(MoodyIcons.Lyrics, "Transcript", "Search, jump, copy") { onTranscript() }
+    SheetRow(MoodyIcons.Plus, "Load from file", "SRT, VTT, ASS/SSA") { pick() }
     SheetRow(MoodyIcons.Palette, "Style") { go(PlayerMenu.SUB_STYLE) }
     SheetRow(MoodyIcons.Timer, "Timing", delayLabel(st.subDelayMs)) { go(PlayerMenu.SUB_DELAY) }
+    if (studio == null) Note("Subtitle files (SRT, VTT, ASS/SSA) get a searchable transcript with tap-to-jump. Subtitles built into the video can't be listed.")
 }
 
 @Composable
@@ -356,10 +364,21 @@ private fun AspectMenu(vm: PlayerViewModel, st: PlayerState) {
 @Composable
 private fun SubStyleMenu(vm: PlayerViewModel) {
     val s by vm.settings.collectAsStateWithLifecycle()
+    val studioOn by vm.studioOn.collectAsStateWithLifecycle()
+    val c = MoodyTheme.colors
+    // Live preview: a small dark frame with a sample line, drawn exactly as on the video.
+    Box(
+        Modifier.padding(horizontal = 12.dp, vertical = 8.dp).fillMaxWidth().height(132.dp).clip(Radii.md)
+            .background(Brush.verticalGradient(listOf(Color(0xFF2A2F3A), Color(0xFF14161C), Color(0xFF0A0B0E))))
+            .border(1.dp, c.line, Radii.md)
+            .semantics { contentDescription = "Subtitle preview" },
+    ) {
+        CaptionFrame(s, 0.dp, Modifier.fillMaxSize().padding(vertical = 4.dp)) { StudioCaption("This is how your\nsubtitles will look.", s, scale = 0.72f) }
+    }
+    Note("Font")
+    Segmented(com.moody.player.domain.SubFont.entries.map { it.label }, s.subFont.ordinal) { i -> vm.updateSubLook { it.copy(subFont = com.moody.player.domain.SubFont.entries[i]) } }
     Note("Size")
     Segmented(SubSize.entries.map { it.label }, s.subSize.ordinal) { vm.updateSubStyle(size = SubSize.entries[it]) }
-    Note("Background")
-    Segmented(SubBg.entries.map { it.label }, s.subBg.ordinal) { vm.updateSubStyle(bg = SubBg.entries[it]) }
     Note("Colour")
     FlowRow(Modifier.padding(horizontal = 12.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         SUB_COLORS.forEach { (argb, name) ->
@@ -376,7 +395,28 @@ private fun SubStyleMenu(vm: PlayerViewModel) {
             )
         }
     }
-    Note("The new style shows after a short reload")
+    Note("Background")
+    Segmented(SubBg.entries.map { it.label }, s.subBg.ordinal) { vm.updateSubStyle(bg = SubBg.entries[it]) }
+    Note("Outline")
+    Segmented(com.moody.player.domain.SubOutline.entries.map { it.label }, s.subOutline.ordinal) { i -> vm.updateSubLook { it.copy(subOutline = com.moody.player.domain.SubOutline.entries[i]) } }
+    Note("Alignment")
+    Segmented(com.moody.player.domain.SubAlign.entries.map { it.label }, s.subAlign.ordinal) { i -> vm.updateSubLook { it.copy(subAlign = com.moody.player.domain.SubAlign.entries[i]) } }
+    Note("Position")
+    Segmented(listOf("Bottom", "Top"), if (s.subTop) 1 else 0) { i -> vm.updateSubLook { it.copy(subTop = i == 1) } }
+    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text("Distance from edge", style = MoodyTheme.type.caption, color = c.text2, modifier = Modifier.weight(1f))
+        Text("${s.subLift}%", style = MoodyTheme.type.mono, color = c.text2)
+    }
+    androidx.compose.material3.Slider(
+        value = s.subLift.toFloat(), onValueChange = { v -> vm.updateSubLook { it.copy(subLift = v.toInt()) } },
+        valueRange = 0f..30f, steps = 29,
+        modifier = Modifier.padding(horizontal = 12.dp).semantics { contentDescription = "Subtitle distance from edge, ${s.subLift} percent" },
+        colors = androidx.compose.material3.SliderDefaults.colors(thumbColor = c.accent, activeTrackColor = c.accent, inactiveTrackColor = c.line2, activeTickColor = Color.Transparent, inactiveTickColor = Color.Transparent),
+    )
+    Note(
+        if (studioOn) "Changes show at once on this video."
+        else "Font, outline, alignment and position apply to subtitle files. Built-in tracks use size, colour and background, and reload to show them.",
+    )
 }
 
 @Composable

@@ -1,5 +1,7 @@
 package com.moody.player.ui.player
 
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -68,7 +70,7 @@ fun rememberSubtitlePicker(vm: PlayerViewModel): () -> Unit {
                     out
                 }.getOrNull()
             }
-            if (file == null) vm.toast("Couldn't read that file") else { vm.engine.addSubtitle(Uri.fromFile(file)); vm.toast("Subtitles added") }
+            if (file == null) vm.toast("Couldn't read that file") else vm.importSubtitle(Uri.fromFile(file))
         }
     }
     return { picker.launch(arrayOf("*/*")) }
@@ -81,7 +83,9 @@ fun TrackPopover(kind: TrackKind, vm: PlayerViewModel, st: PlayerState, onDismis
     val pickSubtitle = rememberSubtitlePicker(vm)
     // libVLC lists a "Disable" pseudo-track with id -1; it is shown as "Off" for subtitles and hidden for audio.
     val list = (if (kind == TrackKind.AUDIO) st.audioTracks else st.subTracks).filter { it.id != -1 }
-    val selected = if (kind == TrackKind.AUDIO) st.selectedAudio else st.selectedSub
+    val studio by vm.studio.collectAsStateWithLifecycle()
+    val studioOn by vm.studioOn.collectAsStateWithLifecycle()
+    val selected = if (kind == TrackKind.AUDIO) st.selectedAudio else if (studioOn) -2 else st.selectedSub
     BoxWithConstraints(
         Modifier.fillMaxSize().clickable(remember { MutableInteractionSource() }, indication = null, onClick = onDismiss),
     ) {
@@ -105,14 +109,17 @@ fun TrackPopover(kind: TrackKind, vm: PlayerViewModel, st: PlayerState, onDismis
                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
             )
             Column(Modifier.verticalScroll(rememberScrollState())) {
-                if (kind == TrackKind.SUBS) TrackRow("Off", null, selected == -1) { vm.engine.selectSub(-1); vm.toast("Subtitles off"); onDismiss() }
+                if (kind == TrackKind.SUBS) {
+                    TrackRow("Off", null, selected == -1 && !studioOn) { vm.subsOff(); vm.toast("Subtitles off"); onDismiss() }
+                    studio?.let { d -> TrackRow(d.name, "File · ${d.format.label}", studioOn) { vm.useStudio(); vm.toast(d.name); onDismiss() } }
+                }
                 if (list.isEmpty() && kind == TrackKind.AUDIO) {
                     Text("This video has one audio track", style = MoodyTheme.type.caption, color = c.text3, modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp))
                 }
                 list.forEachIndexed { i, t ->
                     val label = trackLabel(t.name, i)
                     TrackRow(label.name, label.lang, t.id == selected) {
-                        if (kind == TrackKind.AUDIO) vm.engine.selectAudio(t.id) else vm.engine.selectSub(t.id)
+                        if (kind == TrackKind.AUDIO) vm.engine.selectAudio(t.id) else vm.useVlcSub(t.id)
                         vm.toast(label.name)
                         onDismiss()
                     }

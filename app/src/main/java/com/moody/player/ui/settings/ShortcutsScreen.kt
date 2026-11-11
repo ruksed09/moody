@@ -59,6 +59,7 @@ fun shortcutIcon(s: PlayerShortcut): ImageVector = when (s) {
     PlayerShortcut.MUTE -> MoodyIcons.VolumeHigh
     PlayerShortcut.ROTATE -> MoodyIcons.Rotate
     PlayerShortcut.BOOKMARK -> MoodyIcons.Bookmark
+    PlayerShortcut.TRANSCRIPT -> MoodyIcons.Lyrics
 }
 
 /** Settings > Customize player shortcuts: pick, order and preview the quick buttons under the player's title bar. */

@@ -93,6 +93,12 @@ class PlayerViewModel @Inject constructor(
 
     private var resumeChipJob: Job? = null
 
+    /** A subtitle file Moody draws itself (Subtitle Studio), and whether it is the one showing. */
+    private val _studio = MutableStateFlow<com.moody.player.domain.SubtitleDoc?>(null)
+    val studio: StateFlow<com.moody.player.domain.SubtitleDoc?> = _studio.asStateFlow()
+    private val _studioOn = MutableStateFlow(false)
+    val studioOn: StateFlow<Boolean> = _studioOn.asStateFlow()
+
     /** Bookmarks of the current video, by time. Always empty in the vault. */
     private val _bookmarks = MutableStateFlow<List<com.moody.player.data.db.Bookmark>>(emptyList())
     val bookmarks: StateFlow<List<com.moody.player.data.db.Bookmark>> = _bookmarks.asStateFlow()
@@ -116,6 +122,8 @@ class PlayerViewModel @Inject constructor(
         viewModelScope.launch {
             var lastSave = 0L
             engine.state.collect { s ->
+                // libVLC may pick a built-in track by itself; while Studio draws a file, keep libVLC's off.
+                if (_studioOn.value && s.selectedSub != -1 && s.subTracks.isNotEmpty()) engine.selectSub(-1)
                 val now = android.os.SystemClock.elapsedRealtime()
                 if (s.playing && statTickAt > 0) statPending += (now - statTickAt).coerceIn(0, 2_000)
                 statTickAt = if (s.playing) now else 0L
@@ -147,7 +155,12 @@ class PlayerViewModel @Inject constructor(
         val start = saved?.let { com.moody.player.domain.smartResume(resumePosition(it.positionMs, it.durationMs), s.smartResumeSec) } ?: 0L
         val perFile = if (s.perFileSettings && !isVault) fileSettings.get(entry.uri.toString()) else null
         engine.claim(token)
-        engine.open(entry.uri, start, decoder ?: s.decoder, SubStyle(s.subSize, s.subBg, s.subColor), sidecarSubtitle(entry.uri))
+        // A matching subtitle file next to the video: Studio draws it when it can read it, else libVLC does.
+        val side = sidecarSubtitle(entry.uri)
+        val doc = if (s.subStudio && side != null) loadSubtitle(side) else null
+        _studio.value = doc
+        _studioOn.value = doc != null
+        engine.open(entry.uri, start, decoder ?: s.decoder, SubStyle(s.subSize, s.subBg, s.subColor), if (doc != null) null else side, noAutoSubs = doc != null)
         perFile?.let { f ->
             if (f.speed != 1f) engine.setRate(f.speed)
             launch { delay(1200); if (f.audioTrack >= 0) engine.selectAudio(f.audioTrack); if (f.subTrack >= -1) engine.selectSub(f.subTrack) }
@@ -260,12 +273,66 @@ class PlayerViewModel @Inject constructor(
         val pos = engine.state.value.positionMs
         val s = settingsStore.settings.first()
         engine.claim(token)
-        engine.open(entry.uri, pos, decoder ?: engine.state.value.decoder, SubStyle(s.subSize, s.subBg, s.subColor), sidecarSubtitle(entry.uri))
+        val studioFile = _studio.value != null
+        engine.open(entry.uri, pos, decoder ?: engine.state.value.decoder, SubStyle(s.subSize, s.subBg, s.subColor), if (studioFile) null else sidecarSubtitle(entry.uri), noAutoSubs = studioFile)
+    }
+
+    /** Reads and parses a subtitle file (5 MB at most). Null when it can't be read or isn't SRT, VTT or ASS/SSA. */
+    private suspend fun loadSubtitle(uri: Uri): com.moody.player.domain.SubtitleDoc? = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        runCatching {
+            val bytes = (if (uri.scheme == "file") File(uri.path!!).inputStream() else context.contentResolver.openInputStream(uri)!!).use { input ->
+                val buf = java.io.ByteArrayOutputStream()
+                val chunk = ByteArray(16_384)
+                while (true) {
+                    val n = input.read(chunk)
+                    if (n < 0) break
+                    buf.write(chunk, 0, n)
+                    if (buf.size() > 5_000_000) return@runCatching null
+                }
+                buf.toByteArray()
+            }
+            val name = uri.lastPathSegment?.substringAfterLast('/').orEmpty()
+            com.moody.player.domain.parseSubtitles(com.moody.player.domain.decodeSubtitleBytes(bytes), name.ifBlank { "Subtitles" }, name.substringAfterLast('.', ""))
+        }.getOrNull()
+    }
+
+    /** A file the user picked: Studio takes it when it can, libVLC otherwise (e.g. image-based subtitles). */
+    fun importSubtitle(file: Uri) = viewModelScope.launch {
+        val doc = if (settings.value.subStudio) loadSubtitle(file) else null
+        if (doc != null) {
+            _studio.value = doc
+            useStudio()
+            _toasts.tryEmit("Subtitles added · ${doc.cues.size} lines")
+        } else {
+            engine.addSubtitle(file)
+            _toasts.tryEmit("Subtitles added")
+        }
+    }
+
+    fun updateSubLook(f: (com.moody.player.data.prefs.Settings) -> com.moody.player.data.prefs.Settings) = viewModelScope.launch { settingsStore.update(f) }
+
+    fun useStudio() { if (_studio.value == null) return; _studioOn.value = true; engine.selectSub(-1) }
+    fun useVlcSub(id: Int) { _studioOn.value = false; engine.selectSub(id) }
+    fun subsOff() { _studioOn.value = false; engine.selectSub(-1) }
+
+    /** Jumps to a subtitle line. The timing offset is applied, so the line shows the moment the picture gets there. */
+    fun seekToCue(startMs: Long) {
+        dismissResume()
+        engine.seekTo((startMs + engine.state.value.subDelayMs).coerceAtLeast(0))
+    }
+
+    /** Previous or next subtitle line from where the video is now. */
+    fun stepLine(next: Boolean) {
+        val cues = _studio.value?.cues ?: return
+        val t = engine.state.value.positionMs - engine.state.value.subDelayMs
+        val target = if (next) com.moody.player.domain.nextCueStart(cues, t) else com.moody.player.domain.prevCueStart(cues, t)
+        if (target == null) _toasts.tryEmit(if (next) "That's the last line" else "That's the first line") else seekToCue(target)
     }
 
     fun updateSubStyle(size: com.moody.player.domain.SubSize? = null, bg: com.moody.player.domain.SubBg? = null, color: Long? = null) = viewModelScope.launch {
         settingsStore.update { it.copy(subSize = size ?: it.subSize, subBg = bg ?: it.subBg, subColor = color ?: it.subColor) }
-        reopenHere()
+        // Studio draws its own subtitles live; only libVLC's built-in tracks need the reload.
+        if (!_studioOn.value) reopenHere()
     }
 
     private fun onEnded() {

@@ -9,6 +9,7 @@ enum class PlayerShortcut(val label: String) {
     MUTE("Mute"),
     ROTATE("Rotate screen"),
     BOOKMARK("Bookmark"),
+    TRANSCRIPT("Transcript"),
 }
 
 val DEFAULT_SHORTCUTS = listOf(PlayerShortcut.LOOP, PlayerShortcut.MUTE)

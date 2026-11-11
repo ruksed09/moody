@@ -214,8 +214,17 @@ class VlcEngine @Inject constructor(@ApplicationContext private val context: Con
         if (!mp.isPlaying && mp.length > 0) main.postDelayed({ player?.let { if (!it.isPlaying) it.time = it.time } }, 120)
     }
 
-    fun open(uri: Uri, startMs: Long, decoder: Decoder, subStyle: SubStyle, extraSubtitle: Uri? = null) {
+    private var lastExtraSub: Uri? = null
+    private var lastNoAutoSubs = false
+
+    /**
+     * [noAutoSubs] stops libVLC finding subtitle files next to the video; used while Subtitle Studio draws
+     * that file itself, so it never shows twice.
+     */
+    fun open(uri: Uri, startMs: Long, decoder: Decoder, subStyle: SubStyle, extraSubtitle: Uri? = null, noAutoSubs: Boolean = false) {
         val mp = ensure(subStyle)
+        lastExtraSub = extraSubtitle
+        lastNoAutoSubs = noAutoSubs
         val lib = libVlc ?: return
         triedSoftware = decoder == Decoder.SW
         lastOpen = Triple(uri, startMs, decoder)
@@ -238,6 +247,7 @@ class VlcEngine @Inject constructor(@ApplicationContext private val context: Con
             Decoder.HW_PLUS -> media.setHWDecoderEnabled(true, true)
         }
         if (startMs > 0) media.addOption(":start-time=${startMs / 1000.0}")
+        if (noAutoSubs) media.addOption(":no-sub-autodetect-file")
         mp.media = media
         media.release()
         extraSubtitle?.let { mp.addSlave(IMedia.Slave.Type.Subtitle, it, true) }
@@ -280,7 +290,7 @@ class VlcEngine @Inject constructor(@ApplicationContext private val context: Con
         if (!triedSoftware && last != null) {
             triedSoftware = true
             _events.tryEmit(EngineEvent.SwitchedToSoftware)
-            open(last.first, _state.value.positionMs, com.moody.player.domain.Decoder.SW, style ?: SubStyle())
+            open(last.first, _state.value.positionMs, com.moody.player.domain.Decoder.SW, style ?: SubStyle(), lastExtraSub, lastNoAutoSubs)
             return
         }
         _state.update { it.copy(playing = false, buffering = false, error = "This file could not be played. It may be damaged or use a format Moody can't read.") }
@@ -306,7 +316,7 @@ class VlcEngine @Inject constructor(@ApplicationContext private val context: Con
     fun play() {
         userPaused = false
         val mp = player ?: return
-        if (_state.value.ended) { mp.stop(); lastOpen?.let { open(it.first, 0, it.third, style ?: SubStyle()) }; return }
+        if (_state.value.ended) { mp.stop(); lastOpen?.let { open(it.first, 0, it.third, style ?: SubStyle(), lastExtraSub, lastNoAutoSubs) }; return }
         mp.play()
     }
 

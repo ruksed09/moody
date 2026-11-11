@@ -253,6 +253,7 @@ fun SettingsSectionScreen(
                         SubBg.entries.forEach { b -> ChoiceChip(b.label, s.subBg == b, { vm.update { it.copy(subBg = b) } }) }
                     }
                 }
+                item { Toggle("Subtitle Studio", "Moody draws subtitle files itself: a searchable transcript, tap a line to jump, more styles. Font, outline and position are set in the player.", s.subStudio, MoodyIcons.Lyrics) { v -> vm.update { it.copy(subStudio = v) } } }
             }
             SettingsSection.MUSIC -> {
                 item {

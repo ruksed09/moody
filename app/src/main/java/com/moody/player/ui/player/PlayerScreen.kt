@@ -83,10 +83,13 @@ fun PlayerScreen(vm: PlayerViewModel, host: PlayerHost, inPip: Boolean) {
     val loop by vm.loop.collectAsStateWithLifecycle()
     val bookmarks by vm.bookmarks.collectAsStateWithLifecycle()
     val shuffle by vm.shuffle.collectAsStateWithLifecycle()
+    val studio by vm.studio.collectAsStateWithLifecycle()
+    val studioOn by vm.studioOn.collectAsStateWithLifecycle()
+    var transcript by remember { mutableStateOf(false) }
 
     // Controls hide 3 s after the last touch while playing.
-    LaunchedEffect(controls, st.playing, scrubbing, menu, tracks, poke) {
-        if (controls && st.playing && !scrubbing && menu == null && tracks == null) { delay(3_000); controls = false }
+    LaunchedEffect(controls, st.playing, scrubbing, menu, tracks, poke, transcript) {
+        if (controls && st.playing && !scrubbing && menu == null && tracks == null && !transcript) { delay(3_000); controls = false }
     }
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
@@ -95,6 +98,8 @@ fun PlayerScreen(vm: PlayerViewModel, host: PlayerHost, inPip: Boolean) {
             onRelease = { vm.engine.detach(it) },
             modifier = Modifier.fillMaxSize(),
         )
+        // Subtitle files Moody draws itself (Subtitle Studio). Shown in picture-in-picture too.
+        studio?.takeIf { studioOn }?.let { d -> SubtitleOverlay(d, st, settings, controlsShown = controls && !locked && !inPip) }
         if (inPip) return@Box
 
         GestureLayer(
@@ -133,7 +138,9 @@ fun PlayerScreen(vm: PlayerViewModel, host: PlayerHost, inPip: Boolean) {
                         onCc = { tracks = TrackKind.SUBS; poke++ },
                         onMore = { menu = PlayerMenu.MORE; poke++ },
                     )
-                    ShortcutRow(vm, st, settings.playerShortcuts, ab, loop, shuffle, host.onRotate) { poke++ }
+                    ShortcutRow(vm, st, settings.playerShortcuts, ab, loop, shuffle, host.onRotate, onTranscript = {
+                        if (vm.studio.value != null) transcript = true else vm.toast("Load a subtitle file to see its transcript")
+                    }) { poke++ }
                     }
                     }
                     Spacer(Modifier.weight(1f))
@@ -195,7 +202,8 @@ fun PlayerScreen(vm: PlayerViewModel, host: PlayerHost, inPip: Boolean) {
             )
         }
 
-        menu?.let { m -> PlayerMenus(m, vm, st, host, onNavigate = { menu = it }, onDismiss = { menu = null }) }
+        menu?.let { m -> PlayerMenus(m, vm, st, host, onNavigate = { menu = it }, onDismiss = { menu = null }, onTranscript = { menu = null; transcript = true }) }
+        if (transcript) TranscriptPanel(vm, st, onDismiss = { transcript = false; poke++ })
     }
 }
 
@@ -246,7 +254,7 @@ private fun resolution(st: PlayerState): String? {
 @Composable
 private fun ShortcutRow(
     vm: PlayerViewModel, st: PlayerState, shortcuts: List<com.moody.player.domain.PlayerShortcut>,
-    ab: Pair<Long?, Long?>, loop: com.moody.player.domain.LoopMode, shuffle: Boolean, onRotate: () -> Unit, onUse: () -> Unit,
+    ab: Pair<Long?, Long?>, loop: com.moody.player.domain.LoopMode, shuffle: Boolean, onRotate: () -> Unit, onTranscript: () -> Unit, onUse: () -> Unit,
 ) {
     if (shortcuts.isEmpty()) return
     val accent = MoodyTheme.colors.accent
@@ -264,6 +272,7 @@ private fun ShortcutRow(
                 com.moody.player.domain.PlayerShortcut.MUTE -> Quad(if (st.muted) MoodyIcons.VolumeMute else MoodyIcons.VolumeHigh, if (st.muted) "Unmute" else "Mute", st.muted, vm::toggleMute)
                 com.moody.player.domain.PlayerShortcut.ROTATE -> Quad(MoodyIcons.Rotate, "Rotate screen", false, onRotate)
                 com.moody.player.domain.PlayerShortcut.BOOKMARK -> Quad(MoodyIcons.Bookmark, "Bookmark this moment", false, vm::addBookmark)
+                com.moody.player.domain.PlayerShortcut.TRANSCRIPT -> Quad(MoodyIcons.Lyrics, "Transcript", false, onTranscript)
             }
             Box(
                 Modifier.size(40.dp).clip(CircleShape).clickable(role = Role.Button) { action(); onUse() }.semantics { contentDescription = label },
