@@ -61,7 +61,7 @@ fun MoodyBottomBar(current: MainTab, onSelect: (MainTab) -> Unit, modifier: Modi
             Modifier
                 .fillMaxWidth()
                 .height(NavPillHeight)
-                .background(if (c.isDark) Color(0xFF110F15) else c.surface, shape)
+                .background(c.surface, shape)
                 .border(1.dp, c.line2, shape)
                 .clip(shape),
         ) {

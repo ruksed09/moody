@@ -25,10 +25,10 @@ object MoodyTheme {
 }
 
 object Radii {
-    val sm = RoundedCornerShape(6.dp)
-    val md = RoundedCornerShape(10.dp)
-    val lg = RoundedCornerShape(14.dp)
-    val xl = RoundedCornerShape(20.dp)
+    val sm = RoundedCornerShape(4.dp)
+    val md = RoundedCornerShape(8.dp)
+    val lg = RoundedCornerShape(12.dp)
+    val xl = RoundedCornerShape(16.dp)
     val pill = RoundedCornerShape(50)
 }
 

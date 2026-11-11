@@ -124,7 +124,7 @@ private fun ShortcutTile(sc: PlayerShortcut) {
 @Composable
 private fun Preview(selected: List<PlayerShortcut>) {
     Column(
-        Modifier.fillMaxWidth().clip(Radii.lg).background(Color(0xFF060509)).border(1.dp, MoodyTheme.colors.line2, Radii.lg).padding(vertical = 6.dp)
+        Modifier.fillMaxWidth().clip(Radii.lg).background(Color(0xFF050607)).border(1.dp, MoodyTheme.colors.line2, Radii.lg).padding(vertical = 6.dp)
             .semantics { contentDescription = "Preview: ${selected.joinToString { it.label }.ifEmpty { "no shortcuts" }}" },
     ) {
         Row(Modifier.fillMaxWidth().height(40.dp).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {

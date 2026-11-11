@@ -107,7 +107,7 @@ enum class PlayerMenu(val title: String, val parent: PlayerMenu? = null) {
 
 private val SPEEDS = listOf(0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f, 3f, 4f)
 private val SUB_COLORS = listOf(0xFFFFFAF2 to "Warm white", 0xFFFFE58A to "Yellow", 0xFFBFE9F2 to "Ice", 0xFFF2B8A0 to "Peach")
-private val SheetBg = Color(0xFC0F0E13)
+private val SheetBg = Color(0xFC0E1013)
 
 fun decoderLabel(d: Decoder) = when (d) { Decoder.HW -> "Hardware"; Decoder.HW_PLUS -> "Hardware+"; Decoder.SW -> "Software" }
 

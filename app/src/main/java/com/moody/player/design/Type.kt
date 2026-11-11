@@ -57,16 +57,16 @@ fun moodyType(mode: FontMode = FontMode.APP): MoodyType {
         letterSpacing = tracking.em, fontFeatureSettings = features,
     )
     return MoodyType(
-        hero = s(26f, 32f, 600, -0.02f),
-        display = s(21f, 26f, 600, -0.015f),
+        hero = s(22f, 28f, 600, -0.01f),
+        display = s(20f, 26f, 600, -0.01f),
         title = s(16f, 22f, 600, -0.005f),
         heading = s(15f, 20f, 500),
         body = s(14f, 20f, 400),
-        bodyStrong = s(14f, 19f, 500),
-        label = s(13f, 17f, 500),
-        caption = s(12f, 16f, 400),
-        section = s(12.5f, 17f, 500),
+        bodyStrong = s(14f, 20f, 500),
+        label = s(13f, 16f, 500),
+        caption = s(12f, 16f, 400, features = TABULAR),
+        section = s(12f, 16f, 500),
         mono = s(12f, 16f, 400, family = mono, features = TABULAR),
-        monoSmall = s(10.5f, 13f, 400, 0.01f, family = mono, features = TABULAR),
+        monoSmall = s(11f, 14f, 400, 0.01f, family = mono, features = TABULAR),
     )
 }

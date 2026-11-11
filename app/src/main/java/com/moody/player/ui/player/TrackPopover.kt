@@ -98,7 +98,7 @@ fun TrackPopover(kind: TrackKind, vm: PlayerViewModel, st: PlayerState, onDismis
                 .fillMaxWidth(0.82f)
                 .heightIn(max = maxHeight * 0.6f)
                 .clip(Radii.lg)
-                .background(Color(0xFA16141B))
+                .background(Color(0xFA14171A))
                 .border(1.dp, c.line2, Radii.lg)
                 .clickable(remember { MutableInteractionSource() }, indication = null) {}
                 .padding(vertical = 6.dp),

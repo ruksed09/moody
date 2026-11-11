@@ -420,8 +420,8 @@ private fun Severity.icon(): ImageVector = when (this) {
 private fun Severity.color(): Color {
     val c = MoodyTheme.colors
     return when (this) {
-        Severity.HEALTHY -> if (c.isDark) Color(0xFF5CC28A) else Color(0xFF2E7D4F)
-        Severity.WARNING -> if (c.isDark) Color(0xFFE3B341) else Color(0xFF9A6700)
+        Severity.HEALTHY -> if (c.isDark) Color(0xFF8FCB6B) else Color(0xFF3F7A2A)
+        Severity.WARNING -> if (c.isDark) Color(0xFFE3B341) else Color(0xFF8A5A00)
         Severity.CRITICAL -> c.danger
     }
 }

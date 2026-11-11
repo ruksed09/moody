@@ -103,7 +103,7 @@ class StatsViewModel @Inject constructor(
 private fun watchColor() = MoodyTheme.colors.accent
 
 @Composable
-private fun listenColor() = if (MoodyTheme.colors.isDark) Color(0xFF1BAF7A) else Color(0xFF2A78D6)
+private fun listenColor() = if (MoodyTheme.colors.isDark) Color(0xFFF08A6B) else Color(0xFFB5522F)
 
 /** Settings > Your stats: time spent watching and listening, by day, plus what you played most. */
 @Composable

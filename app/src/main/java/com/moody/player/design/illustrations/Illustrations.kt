@@ -125,9 +125,9 @@ private fun DrawScope.soundLines(w: Float, h: Float, line: Color) {
 
 private class Pal(c: MoodyColors) {
     val frame = c.raised
-    val deep = if (c.isDark) Color(0xFF08070B) else Color(0xFFE6DACB)
-    val hillA = if (c.isDark) Color(0xFF221F2A) else Color(0xFFDCCDBB)
-    val hillB = if (c.isDark) Color(0xFF1A1820) else Color(0xFFE7DBCC)
+    val deep = if (c.isDark) Color(0xFF07090A) else Color(0xFFDDE3E5)
+    val hillA = if (c.isDark) Color(0xFF1D2226) else Color(0xFFD0D8DB)
+    val hillB = if (c.isDark) Color(0xFF171B1E) else Color(0xFFE2E8EA)
     val moon = c.accent
     val line = c.line2
     val ink = c.text3

@@ -71,8 +71,8 @@ import kotlinx.coroutines.delay
 /** One easing curve and three durations across the app. */
 object Motion {
     val Ease = CubicBezierEasing(0.2f, 0f, 0f, 1f)
-    const val FAST = 150
-    const val BASE = 220
+    const val FAST = 120
+    const val BASE = 200
     const val ENTER = 280
     fun <T> fast() = tween<T>(FAST, easing = Ease)
     fun <T> base() = tween<T>(BASE, easing = Ease)
@@ -82,7 +82,7 @@ object Motion {
 /* ---------- reel line: Moody's one progress indicator ---------- */
 
 /**
- * The signature thin amber line. [progress] null = indeterminate (a short segment travels the track).
+ * The signature thin accent line. [progress] null = indeterminate (a short segment travels the track).
  */
 @Composable
 fun ReelLine(progress: Float?, modifier: Modifier = Modifier, height: Dp = 2.dp, track: Color = MoodyTheme.colors.line2) {
@@ -201,7 +201,7 @@ private fun pressScale(source: MutableInteractionSource): Float {
     return animateFloatAsState(if (pressed) 0.97f else 1f, Motion.fast(), label = "press").value
 }
 
-/** The one amber action on a screen. */
+/** The one accent action on a screen. */
 @Composable
 fun PrimaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, icon: ImageVector? = null, enabled: Boolean = true) {
     val c = MoodyTheme.colors
@@ -286,7 +286,7 @@ fun IconAction(
 
 /* ---------- chips ---------- */
 
-/** Selectable option chip, as in the mockup's track desk: hairline, amber when selected. */
+/** Selectable option chip, as in the mockup's track desk: hairline, accent when selected. */
 @Composable
 fun ChoiceChip(text: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier, icon: ImageVector? = null, height: Dp = 32.dp) {
     val c = MoodyTheme.colors
@@ -311,7 +311,7 @@ fun ChoiceChip(text: String, selected: Boolean, onClick: () -> Unit, modifier: M
 }
 
 /**
- * A compact action in the chip shape (Shuffle, Speed, Sleep). Hairline when idle; amber wash when
+ * A compact action in the chip shape (Shuffle, Speed, Sleep). Hairline when idle; accent wash when
  * [active] or [emphasis]. Presses scale down a touch like the other buttons.
  */
 @Composable

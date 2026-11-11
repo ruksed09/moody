@@ -195,7 +195,7 @@ fun TranscriptPanel(vm: PlayerViewModel, st: PlayerState, onDismiss: () -> Unit)
                 .fillMaxWidth()
                 .then(if (narrow) Modifier.heightIn(max = maxHeight * 0.66f) else Modifier.fillMaxHeight())
                 .clip(if (narrow) androidx.compose.foundation.shape.RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp) else Radii.lg)
-                .background(Color(0xFC0F0E13))
+                .background(Color(0xFC0E1013))
                 .clickable(remember { MutableInteractionSource() }, indication = null) {},
         ) {
             Row(Modifier.fillMaxWidth().height(52.dp).padding(start = 16.dp, end = 2.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -272,7 +272,7 @@ private fun TranscriptRow(cue: Cue, current: Boolean, query: String, onJump: () 
                 while (true) {
                     val at = cue.text.indexOf(query, from, ignoreCase = true)
                     if (at < 0) break
-                    addStyle(SpanStyle(color = Color(0xFFBC94F6), fontWeight = FontWeight.SemiBold), at, at + query.length)
+                    addStyle(SpanStyle(color = Color(0xFF7BE0D6), fontWeight = FontWeight.SemiBold), at, at + query.length)
                     from = at + query.length
                 }
             }

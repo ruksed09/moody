@@ -73,7 +73,7 @@ fun VisualizerScreen(vm: NowPlayingViewModel, onBack: () -> Unit) {
     val fallback by com.moody.player.player.music.AudioTap.onFallbackEngine.collectAsStateWithLifecycle()
     val sideFailed by com.moody.player.player.music.AudioTap.sidecarFailed.collectAsStateWithLifecycle()
     Box(
-        Modifier.fillMaxSize().background(Color(0xFF050407))
+        Modifier.fillMaxSize().background(Color(0xFF040506))
             .clickable(remember { MutableInteractionSource() }, indication = null) { chrome = !chrome; poke++ },
     ) {
         if (fallback && sideFailed) VizUnavailable(Modifier.fillMaxSize())

@@ -39,22 +39,20 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.coroutineScope
 
 /**
- * The launch moment: a soft purple glow rises, the logo scales up into place (0-900 ms),
+ * The launch moment: the logo scales up into place (0-900 ms),
  * then the wordmark rises in (700-1300 ms).
  */
 @Composable
 fun LogoAnimation(onDone: () -> Unit) {
     val c = MoodyTheme.colors
-    val glow = remember { Animatable(0f) }
     val logo = remember { Animatable(0f) }
     val word = remember { Animatable(0f) }
 
     LaunchedEffect(Unit) {
         coroutineScope {
-            val g = async { glow.animateTo(1f, tween(1000, easing = Motion.Ease)) }
             val l = async { delay(150); logo.animateTo(1f, tween(750, easing = Motion.Ease)) }
             val w = async { delay(700); word.animateTo(1f, tween(600, easing = Motion.Ease)) }
-            g.await(); l.await(); w.await()
+            l.await(); w.await()
         }
         delay(450)
         onDone()
@@ -63,12 +61,6 @@ fun LogoAnimation(onDone: () -> Unit) {
     Box(Modifier.fillMaxSize().background(c.bg).semantics { contentDescription = "Moody" }, contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Box(contentAlignment = Alignment.Center) {
-                Canvas(Modifier.size(220.dp)) {
-                    drawCircle(
-                        Brush.radialGradient(listOf(Color(0xFF8E4FE6).copy(alpha = 0.45f * glow.value), Color.Transparent)),
-                        radius = size.minDimension / 2,
-                    )
-                }
                 MoodyLogo(
                     Modifier.graphicsLayer {
                         val s = 0.82f + 0.18f * logo.value

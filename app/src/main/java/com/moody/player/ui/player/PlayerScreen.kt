@@ -127,8 +127,8 @@ fun PlayerScreen(vm: PlayerViewModel, host: PlayerHost, inPip: Boolean) {
 
         AnimatedVisibility((controls || ended) && !locked, enter = fadeIn(Motion.base()), exit = fadeOut(Motion.base())) {
             Box(Modifier.fillMaxSize()) {
-                if (!ended) Box(Modifier.fillMaxWidth().height(150.dp).background(Brush.verticalGradient(listOf(Color(0xB308070B), Color.Transparent))))
-                Box(Modifier.fillMaxWidth().height(200.dp).align(Alignment.BottomCenter).background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xE008070B)))))
+                if (!ended) Box(Modifier.fillMaxWidth().height(150.dp).background(Brush.verticalGradient(listOf(Color(0xB3080A0C), Color.Transparent))))
+                Box(Modifier.fillMaxWidth().height(200.dp).align(Alignment.BottomCenter).background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xE0080A0C)))))
                 Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
                     AnimatedVisibility(!ended, enter = fadeIn(Motion.base()), exit = fadeOut(Motion.fast())) {
                     Column {
@@ -425,7 +425,7 @@ private fun ResumeChip(at: Long, onStartOver: () -> Unit, modifier: Modifier = M
 
 @Composable
 private fun ErrorSheet(message: String, canSoftware: Boolean, hasNext: Boolean, onRetry: () -> Unit, onSoftware: () -> Unit, onNext: () -> Unit, onBack: () -> Unit) {
-    Box(Modifier.fillMaxSize().background(Color(0xED0B0A0F)).windowInsetsPadding(WindowInsets.safeDrawing).padding(24.dp), contentAlignment = Alignment.Center) {
+    Box(Modifier.fillMaxSize().background(Color(0xED0C0E10)).windowInsetsPadding(WindowInsets.safeDrawing).padding(24.dp), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(400.dp)) {
             Text("Playback stopped", style = MoodyTheme.type.title, color = OnVideo.text)
             Spacer(Modifier.height(8.dp))
