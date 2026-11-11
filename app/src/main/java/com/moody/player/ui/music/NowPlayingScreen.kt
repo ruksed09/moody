@@ -193,7 +193,7 @@ fun NowPlayingScreen(vm: NowPlayingViewModel, onClose: () -> Unit, onEqualizer: 
             BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 // The song's disc, as large as fits, turning while it plays.
                 val side = minOf(maxWidth - 48.dp, maxHeight - 32.dp).coerceIn(120.dp, 320.dp)
-                Disc(item, side, spinning = s.playing, sharedKey = NOW_PLAYING_DISC)
+                Disc(item, side, spinning = s.playing, sharedKey = NOW_PLAYING_DISC, current = true)
             }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {

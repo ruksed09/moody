@@ -240,6 +240,14 @@ fun SettingsSectionScreen(
                     val offCount = s.disabledGestures.size
                     Action("Gestures", if (!s.gestures) "Off" else if (offCount == 0) "All on · double-tap jumps ${s.doubleTapSeekSec} s" else "${PlayerGesture.entries.size - offCount} of ${PlayerGesture.entries.size} on", MoodyIcons.Hand, onGestures)
                 }
+                item { Label("Bookmarks") }
+                item {
+                    Toggle(
+                        "Show bookmarks",
+                        "Dots on the seek bar mark saved moments and a soft line spans saved ranges. Double-tap seeking offers a jump to one.",
+                        s.showBookmarks, MoodyIcons.Bookmark,
+                    ) { v -> vm.update { it.copy(showBookmarks = v) } }
+                }
                 if (android.os.Build.VERSION.SDK_INT >= 31) item {
                     var allowed by remember { mutableStateOf(android.provider.MediaStore.canManageMedia(context)) }
                     androidx.lifecycle.compose.LifecycleResumeEffect(Unit) { allowed = android.provider.MediaStore.canManageMedia(context); onPauseOrDispose {} }

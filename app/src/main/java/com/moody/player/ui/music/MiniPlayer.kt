@@ -68,7 +68,7 @@ fun MiniPlayer(s: MusicState, onOpen: () -> Unit, onToggle: () -> Unit, onNext: 
                     drawArc(c.line2, 0f, 360f, false, Offset(inset, inset), arc, style = Stroke(w))
                     if (progress > 0f) drawArc(c.accent, -90f, 360f * progress, false, Offset(inset, inset), arc, style = Stroke(w, cap = StrokeCap.Round))
                 }
-                Disc(item, 36.dp, spinning = s.playing, behind = c.surface, sharedKey = NOW_PLAYING_DISC)
+                Disc(item, 36.dp, spinning = s.playing, behind = c.surface, sharedKey = NOW_PLAYING_DISC, current = true)
             }
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {

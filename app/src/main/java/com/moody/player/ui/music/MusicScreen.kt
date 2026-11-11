@@ -215,7 +215,7 @@ fun MusicContent(
                     Column(Modifier.clip(Radii.lg).clickable { nav.openAlbum(a.id) }) {
                         // The album's disc on a quiet sleeve; it turns when one of its songs is playing.
                         BoxWithConstraints(Modifier.fillMaxWidth().aspectRatio(1f).clip(Radii.lg).background(c.surface), contentAlignment = Alignment.Center) {
-                            Disc(a.songs.firstOrNull(), maxWidth * 0.86f, spinning = current && playing, behind = c.surface)
+                            Disc(a.songs.firstOrNull(), maxWidth * 0.86f, spinning = current && playing, behind = c.surface, current = current)
                         }
                         Spacer(Modifier.height(8.dp))
                         Text(a.name, style = MoodyTheme.type.bodyStrong, color = if (current) c.accent else c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -300,7 +300,7 @@ fun SongRow(
         } else if (leadingIndex != null) {
             Text("$leadingIndex", style = MoodyTheme.type.mono, color = if (current) c.accent else c.text3, modifier = Modifier.width(32.dp))
         } else {
-            Disc(song, 44.dp, spinning = spinning)
+            Disc(song, 44.dp, spinning = spinning, current = current)
             Spacer(Modifier.width(12.dp))
         }
         Column(Modifier.weight(1f)) {

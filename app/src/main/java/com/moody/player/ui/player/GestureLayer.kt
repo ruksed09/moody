@@ -106,7 +106,15 @@ private const val DOUBLE_TAP_MS = 260L
  * vertical swipe left = brightness, right = volume; horizontal swipe seeks with a preview; pinch switches Fit/Fill.
  */
 @Composable
-fun GestureLayer(vm: PlayerViewModel, state: PlayerState, locked: Boolean, onTap: () -> Unit, modifier: Modifier = Modifier) {
+fun GestureLayer(
+    vm: PlayerViewModel,
+    state: PlayerState,
+    locked: Boolean,
+    onTap: () -> Unit,
+    modifier: Modifier = Modifier,
+    /** After each double-tap seek: which side, and roughly where the video now is. */
+    onSideSeek: (right: Boolean, atMs: Long) -> Unit = { _, _ -> },
+) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val activity = context as? Activity
@@ -116,6 +124,7 @@ fun GestureLayer(vm: PlayerViewModel, state: PlayerState, locked: Boolean, onTap
     val slop = LocalViewConfiguration.current.touchSlop
     val st by rememberUpdatedState(state)
     val tap by rememberUpdatedState(onTap)
+    val sideSeek by rememberUpdatedState(onSideSeek)
 
     var level by remember { mutableStateOf<Pair<Drag, Float>?>(null) }
     var seekPreview by remember { mutableStateOf<Pair<Long, Long>?>(null) }
@@ -279,7 +288,9 @@ fun GestureLayer(vm: PlayerViewModel, state: PlayerState, locked: Boolean, onTap
                                         flashJob = scope.launch { delay(550); flash = null }
                                     } else {
                                         val secs = (if (chaining) ping!!.second else 0) + stepSec
-                                        vm.engine.seekBy(if (right) stepSec * 1000L else -stepSec * 1000L)
+                                        val delta = if (right) stepSec * 1000L else -stepSec * 1000L
+                                        vm.engine.seekBy(delta)
+                                        sideSeek(right, (st.positionMs + delta).coerceIn(0L, st.durationMs.coerceAtLeast(0L)))
                                         ping = right to secs
                                         if (right) rightSecs = secs else leftSecs = secs
                                         tapAt = start

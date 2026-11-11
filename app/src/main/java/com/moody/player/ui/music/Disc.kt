@@ -123,11 +123,21 @@ private fun Modifier.sharedDisc(key: String?): Modifier {
 /**
  * A picture disc: the song's cover printed on a CD with a crimson rim and hub, a teal-lit spindle and a
  * soft crimson shadow. Without a cover the label is crimson. Crimson is the depth, teal is the light; the
- * two never share a gradient. [spinning] makes it follow the [DiscClock] (only the song that is playing
- * should). [behind] is the colour showing through the spindle hole.
+ * two never share a gradient. [spinning] keeps the [DiscClock] turning while this disc is on screen (only
+ * the song that is playing should). [current] marks the disc of the song loaded now, playing or paused: it
+ * always shows the clock's angle, so pausing stops it where it is and playing goes on from there.
+ * [behind] is the colour showing through the spindle hole.
  */
 @Composable
-fun Disc(item: AudioItem?, size: Dp, modifier: Modifier = Modifier, spinning: Boolean = false, behind: Color = MoodyTheme.colors.bg, sharedKey: String? = null) {
+fun Disc(
+    item: AudioItem?,
+    size: Dp,
+    modifier: Modifier = Modifier,
+    spinning: Boolean = false,
+    behind: Color = MoodyTheme.colors.bg,
+    sharedKey: String? = null,
+    current: Boolean = spinning,
+) {
     val c = MoodyTheme.colors
     if (spinning) {
         DisposableEffect(Unit) {
@@ -150,7 +160,7 @@ fun Disc(item: AudioItem?, size: Dp, modifier: Modifier = Modifier, spinning: Bo
             )
         }
         // Body, rim and label (or cover): this part turns.
-        Box(Modifier.fillMaxSize().graphicsLayer { rotationZ = if (spinning) DiscClock.angle else 0f }) {
+        Box(Modifier.fillMaxSize().graphicsLayer { rotationZ = if (current || spinning) DiscClock.angle else 0f }) {
             Canvas(Modifier.fillMaxSize()) {
                 val r = this.size.minDimension / 2f
                 drawCircle(Brush.radialGradient(listOf(DiscBodyIn, DiscBodyOut), center = center, radius = r), r)

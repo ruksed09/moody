@@ -47,6 +47,8 @@ data class Settings(
     val autoPip: Boolean = true,
     /** A thin, untouchable progress line stays on screen while the video controls are locked. */
     val seekBarWhenLocked: Boolean = false,
+    /** Bookmarks show on the video seek bar, and double-tap seeking offers a jump to one. */
+    val showBookmarks: Boolean = true,
     val playerShortcuts: List<com.moody.player.domain.PlayerShortcut> = com.moody.player.domain.DEFAULT_SHORTCUTS,
     val subSize: SubSize = SubSize.M,
     val subBg: SubBg = SubBg.SHADOW,
@@ -112,6 +114,7 @@ private object K {
     val bgPlay = booleanPreferencesKey("bg_play")
     val autoPip = booleanPreferencesKey("auto_pip")
     val seekLocked = booleanPreferencesKey("seek_locked")
+    val showMarks = booleanPreferencesKey("show_marks")
     val shortcuts = stringPreferencesKey("player_shortcuts")
     val subSize = stringPreferencesKey("sub_size")
     val subBg = stringPreferencesKey("sub_bg")
@@ -165,6 +168,7 @@ internal fun Preferences.toSettings(): Settings {
         backgroundPlay = this[K.bgPlay] ?: d.backgroundPlay,
         autoPip = this[K.autoPip] ?: d.autoPip,
         seekBarWhenLocked = this[K.seekLocked] ?: d.seekBarWhenLocked,
+        showBookmarks = this[K.showMarks] ?: d.showBookmarks,
         playerShortcuts = this[K.shortcuts]?.let { com.moody.player.domain.decodeShortcuts(it) } ?: d.playerShortcuts,
         subSize = enum(K.subSize, d.subSize),
         subBg = enum(K.subBg, d.subBg),
@@ -215,6 +219,7 @@ internal fun MutablePreferences.write(s: Settings) {
     this[K.bgPlay] = s.backgroundPlay
     this[K.autoPip] = s.autoPip
     this[K.seekLocked] = s.seekBarWhenLocked
+    this[K.showMarks] = s.showBookmarks
     this[K.shortcuts] = com.moody.player.domain.encodeShortcuts(s.playerShortcuts)
     this[K.subSize] = s.subSize.name
     this[K.subBg] = s.subBg.name

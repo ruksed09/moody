@@ -189,6 +189,16 @@ class ScreenshotTest {
             com.moody.player.ui.music.Disc(covered, 300.dp)
         }
     }
+    @Test fun seekMarks() = bare("seek-marks", ThemeMode.DARK) {
+        androidx.compose.foundation.layout.Box(
+            androidx.compose.ui.Modifier.background(androidx.compose.ui.graphics.Color(0xFF202428)).padding(24.dp),
+        ) {
+            com.moody.player.ui.player.SeekBar(
+                positionMs = 140_000, durationMs = 400_000, onSeek = {}, onScrubbing = {},
+                marks = listOf(40_000L to null, 90_000L to 130_000L, 250_000L to null, 300_000L to 360_000L),
+            )
+        }
+    }
     @Test fun discsDark() = bare("discs-dark", ThemeMode.DARK) { discs() }
     @Test fun discsLight() = bare("discs-light", ThemeMode.LIGHT) { discs() }
 

@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.CircularProgressIndicator
@@ -80,6 +81,8 @@ fun PlayerScreen(vm: PlayerViewModel, host: PlayerHost, inPip: Boolean) {
     val ab by vm.ab.collectAsStateWithLifecycle()
     var controls by remember { mutableStateOf(true) }
     var locked by remember { mutableStateOf(false) }
+    var markTip by remember { mutableStateOf<Pair<Boolean, com.moody.player.data.db.Bookmark>?>(null) }
+    var markTipTick by remember { androidx.compose.runtime.mutableIntStateOf(0) }
     var scrubbing by remember { mutableStateOf(false) }
     var menu by remember { mutableStateOf<PlayerMenu?>(null) }
     var showRemaining by remember { mutableStateOf(false) }
@@ -135,7 +138,14 @@ fun PlayerScreen(vm: PlayerViewModel, host: PlayerHost, inPip: Boolean) {
             locked = locked,
             onTap = { controls = !controls; poke++ },
             modifier = Modifier.fillMaxSize(),
+            onSideSeek = { right, at ->
+                if (settings.showBookmarks && !locked) nearestBookmark(bookmarks, at, right)?.let { markTip = right to it; markTipTick++ }
+            },
         )
+        // After a double-tap seek: a tip on that side to jump straight to a bookmark.
+        LaunchedEffect(markTipTick) { if (markTipTick > 0) { delay(3_500); markTip = null } }
+        LaunchedEffect(locked, settings.showBookmarks) { if (locked || !settings.showBookmarks) markTip = null }
+        JumpToBookmarkTip(markTip, controls && !locked) { b -> markTip = null; vm.jumpTo(b); poke++ }
 
         if (st.buffering && st.error == null) {
             CircularProgressIndicator(Modifier.align(Alignment.Center).size(40.dp), color = MoodyTheme.colors.accent, strokeWidth = 2.dp, trackColor = OnVideo.rail)
@@ -192,7 +202,7 @@ fun PlayerScreen(vm: PlayerViewModel, host: PlayerHost, inPip: Boolean) {
                     }
                     Spacer(Modifier.weight(1f))
                     BottomControls(
-                        st = st, showRemaining = showRemaining, ab = ab, marks = bookmarks.map { it.positionMs },
+                        st = st, showRemaining = showRemaining, ab = ab, marks = if (settings.showBookmarks) bookmarks.map { it.positionMs to it.endMs } else emptyList(),
                         canPrev = vm.hasPrev || st.positionMs > 5_000, hasNext = vm.hasNext || (shuffle && vm.queue.size > 1),
                         onPrev = { vm.prev(); poke++ },
                         onToggle = { vm.dismissResume(); vm.engine.toggle(); poke++ },
@@ -342,7 +352,7 @@ private fun BottomControls(
     st: PlayerState,
     showRemaining: Boolean,
     ab: Pair<Long?, Long?>,
-    marks: List<Long>,
+    marks: List<Pair<Long, Long?>>,
     canPrev: Boolean,
     hasNext: Boolean,
     onPrev: () -> Unit,
@@ -623,5 +633,59 @@ private fun AbBar(a: Long, b: Long?, at: Long, onSetB: () -> Unit, onJumpA: () -
             VideoIcon(MoodyIcons.Bookmark, "Bookmark this range", onBookmark, size = 18.dp, box = 40.dp)
         }
         VideoIcon(MoodyIcons.Close, "Stop A-B repeat", onClear, size = 16.dp, box = 40.dp)
+    }
+}
+
+/**
+ * The bookmark a double-tap seek points at: the next one after [at] when seeking forward, the one just
+ * passed when seeking back (a second's grace, so a fresh jump back still finds it). With none that way, the
+ * closest one the other way.
+ */
+internal fun nearestBookmark(marks: List<com.moody.player.data.db.Bookmark>, at: Long, right: Boolean): com.moody.player.data.db.Bookmark? {
+    if (marks.isEmpty()) return null
+    val after = marks.filter { it.positionMs > at + 500 }.minByOrNull { it.positionMs }
+    val before = marks.filter { it.positionMs < at - 1_000 }.maxByOrNull { it.positionMs }
+    return if (right) after ?: before else before ?: after
+}
+
+/** Bottom left or bottom right, on the side that was double-tapped: "Jump to <bookmark>". */
+@Composable
+private fun androidx.compose.foundation.layout.BoxScope.JumpToBookmarkTip(
+    tip: Pair<Boolean, com.moody.player.data.db.Bookmark>?,
+    controlsShown: Boolean,
+    onJump: (com.moody.player.data.db.Bookmark) -> Unit,
+) {
+    var last by remember { mutableStateOf(tip) }
+    if (tip != null) last = tip
+    val (right, b) = last ?: return
+    val lift by androidx.compose.animation.core.animateDpAsState(if (controlsShown) 148.dp else 40.dp, label = "tip-lift")
+    AnimatedVisibility(
+        tip != null,
+        Modifier
+            .align(if (right) Alignment.BottomEnd else Alignment.BottomStart)
+            .windowInsetsPadding(WindowInsets.safeDrawing)
+            .padding(horizontal = 16.dp)
+            .padding(bottom = lift),
+        enter = androidx.compose.animation.fadeIn(com.moody.player.design.components.Motion.fast()) +
+            androidx.compose.animation.slideInVertically(com.moody.player.design.components.Motion.base()) { it / 2 },
+        exit = androidx.compose.animation.fadeOut(com.moody.player.design.components.Motion.base()),
+    ) {
+        val label = b.name.ifBlank { com.moody.player.domain.bookmarkLabel(b.positionMs, b.endMs) }
+        Row(
+            Modifier
+                .widthIn(max = 240.dp)
+                .clip(Radii.pill)
+                .background(OnVideo.ink)
+                .clickable(onClickLabel = "Jump to bookmark") { onJump(b) }
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(MoodyIcons.Bookmark, null, Modifier.size(16.dp), tint = MoodyTheme.colors.accent)
+            Spacer(Modifier.width(8.dp))
+            Text(
+                "Jump to $label", style = MoodyTheme.type.label, color = OnVideo.text,
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }

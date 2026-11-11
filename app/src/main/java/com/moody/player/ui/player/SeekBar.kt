@@ -41,7 +41,8 @@ import com.moody.player.domain.formatDuration
 
 /**
  * The reel line, grown into a seek bar: thin rail, amber fill, a knob and a time tip while dragging.
- * [abA]/[abB] mark an A-B loop on the rail.
+ * [abA]/[abB] mark an A-B loop on the rail. [marks] are bookmarks as (start, end): a dot at each start,
+ * and a soft line from start to end for a saved range.
  */
 @Composable
 fun SeekBar(
@@ -52,7 +53,7 @@ fun SeekBar(
     modifier: Modifier = Modifier,
     abA: Long? = null,
     abB: Long? = null,
-    marks: List<Long> = emptyList(),
+    marks: List<Pair<Long, Long?>> = emptyList(),
     rail: androidx.compose.ui.graphics.Color = OnVideo.rail,
     tipBg: androidx.compose.ui.graphics.Color = OnVideo.ink,
     tipText: androidx.compose.ui.graphics.Color = OnVideo.text,
@@ -110,11 +111,28 @@ fun SeekBar(
                 val bx = (abB ?: positionMs) / durationMs.toFloat() * size.width
                 drawRect(accent.copy(alpha = 0.3f), Offset(ax, y - 3.dp.toPx()), Size((bx - ax).coerceAtLeast(2f), h + 6.dp.toPx()))
             }
-            if (durationMs > 0) marks.forEach { m ->
-                val mx = (m / durationMs.toFloat()).coerceIn(0f, 1f) * size.width
-                drawRoundRect(Color.White.copy(alpha = 0.85f), Offset(mx - 1.5.dp.toPx(), y - 3.dp.toPx()), Size(3.dp.toPx(), h + 6.dp.toPx()), CornerRadius(1.5.dp.toPx()))
-            }
             drawRoundRect(accent, Offset(0f, y), Size(size.width * frac, h), r)
+            if (durationMs > 0 && marks.isNotEmpty()) {
+                fun xOf(ms: Long) = (ms / durationMs.toFloat()).coerceIn(0f, 1f) * size.width
+                // Ranges first, see-through so the progress shows under them.
+                val lineH = h + 4.dp.toPx()
+                marks.forEach { (s, e) ->
+                    if (e != null && e > s) {
+                        val sx = xOf(s)
+                        drawRoundRect(
+                            Color.White.copy(alpha = 0.34f), Offset(sx, size.height / 2 - lineH / 2),
+                            Size((xOf(e) - sx).coerceAtLeast(lineH), lineH), CornerRadius(lineH / 2),
+                        )
+                    }
+                }
+                // A dot at every start, with a dark edge so it reads on the fill and on the rail.
+                val dot = 2.5.dp.toPx()
+                marks.forEach { (s, _) ->
+                    val c = Offset(xOf(s), size.height / 2)
+                    drawCircle(Color.Black.copy(alpha = 0.45f), dot + 1.dp.toPx(), c)
+                    drawCircle(Color.White, dot, c)
+                }
+            }
             val knob = if (dragging) 9.dp.toPx() else 7.dp.toPx()
             drawCircle(accent.copy(alpha = 0.25f), knob + 4.dp.toPx(), Offset(size.width * frac, size.height / 2))
             drawCircle(accent, knob, Offset(size.width * frac, size.height / 2))
