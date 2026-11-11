@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -193,10 +194,30 @@ class ScreenshotTest {
         androidx.compose.foundation.layout.Box(
             androidx.compose.ui.Modifier.background(androidx.compose.ui.graphics.Color(0xFF202428)).padding(24.dp),
         ) {
-            com.moody.player.ui.player.SeekBar(
-                positionMs = 140_000, durationMs = 400_000, onSeek = {}, onScrubbing = {},
-                marks = listOf(40_000L to null, 90_000L to 130_000L, 250_000L to null, 300_000L to 360_000L),
-            )
+            androidx.compose.foundation.layout.Column {
+                // A short video: two moments close together, overlapping ranges, the middle one playing.
+                com.moody.player.ui.player.SeekBar(
+                    positionMs = 140_000, durationMs = 400_000, onSeek = {}, onScrubbing = {},
+                    marks = listOf(
+                        com.moody.player.ui.player.SeekMark(40_000, null, "Intro"),
+                        com.moody.player.ui.player.SeekMark(43_000, null, "Title"),
+                        com.moody.player.ui.player.SeekMark(90_000, 170_000, "A"),
+                        com.moody.player.ui.player.SeekMark(120_000, 200_000, "B"),
+                        com.moody.player.ui.player.SeekMark(130_000, 150_000, "C"),
+                        com.moody.player.ui.player.SeekMark(250_000, null, "Drop"),
+                        com.moody.player.ui.player.SeekMark(300_000, 360_000, "Outro"),
+                    ),
+                )
+                androidx.compose.foundation.layout.Spacer(androidx.compose.ui.Modifier.size(24.dp))
+                // Two hours, the ranges from the question: 1:12:23-1:13:45 and 1:12:56-1:15:34.
+                com.moody.player.ui.player.SeekBar(
+                    positionMs = 4_400_000, durationMs = 7_200_000, onSeek = {}, onScrubbing = {},
+                    marks = listOf(
+                        com.moody.player.ui.player.SeekMark(4_343_000, 4_425_000, "A"),
+                        com.moody.player.ui.player.SeekMark(4_376_000, 4_534_000, "B"),
+                    ),
+                )
+            }
         }
     }
     @Test fun discsDark() = bare("discs-dark", ThemeMode.DARK) { discs() }

@@ -203,7 +203,7 @@ fun PlayerScreen(vm: PlayerViewModel, host: PlayerHost, inPip: Boolean) {
                     }
                     Spacer(Modifier.weight(1f))
                     BottomControls(
-                        st = st, showRemaining = showRemaining, ab = ab, marks = if (settings.showBookmarks) bookmarks.map { it.positionMs to it.endMs } else emptyList(),
+                        st = st, showRemaining = showRemaining, ab = ab, marks = if (settings.showBookmarks) bookmarks.mapIndexed { i, b -> SeekMark(b.positionMs, b.endMs, b.name.ifBlank { "Bookmark ${i + 1}" }) } else emptyList(),
                         canPrev = vm.hasPrev || st.positionMs > 5_000, hasNext = vm.hasNext || (shuffle && vm.queue.size > 1),
                         onPrev = { vm.prev(); poke++ },
                         onToggle = { vm.dismissResume(); vm.engine.toggle(); poke++ },
@@ -353,7 +353,7 @@ private fun BottomControls(
     st: PlayerState,
     showRemaining: Boolean,
     ab: Pair<Long?, Long?>,
-    marks: List<Pair<Long, Long?>>,
+    marks: List<SeekMark>,
     canPrev: Boolean,
     hasNext: Boolean,
     onPrev: () -> Unit,

@@ -369,6 +369,7 @@ class PlayerViewModel @Inject constructor(
             else it.endMs == null && kotlin.math.abs(it.positionMs - pos) < 1_500
         }
         if (dup) { _toasts.tryEmit(if (range) "This range is already bookmarked" else "Already bookmarked here"); return }
+        if (_bookmarks.value.size >= MAX_BOOKMARKS) { _toasts.tryEmit("Up to $MAX_BOOKMARKS bookmarks per video. Delete one to add more"); return }
         val now = System.currentTimeMillis()
         viewModelScope.launch {
             bookmarkDao.add(com.moody.player.data.db.Bookmark(
@@ -435,7 +436,9 @@ class PlayerViewModel @Inject constructor(
             val rows = bookmarkDao.allForUri(uri.toString()).map { b ->
                 if (b.uid.isEmpty()) b.copy(uid = java.util.UUID.randomUUID().toString(), updatedAt = maxOf(b.updatedAt, b.createdAt)).also { bookmarkDao.update(it) } else b
             }
-            val marks = rows.map { com.moody.player.data.media.FileMark(it.uid, it.positionMs, it.endMs, it.name, it.updatedAt, it.deleted) }
+            // Live bookmarks first, then the newest removals: the file holds a fixed number, so old removals go first.
+            val ordered = rows.filter { !it.deleted }.sortedBy { it.positionMs } + rows.filter { it.deleted }.sortedByDescending { it.updatedAt }
+            val marks = ordered.map { com.moody.player.data.media.FileMark(it.uid, it.positionMs, it.endMs, it.name, it.updatedAt, it.deleted) }
             val result = try {
                 com.moody.player.data.media.MarksInFile.write(context, uri, marks)
             } catch (e: android.app.RecoverableSecurityException) {
