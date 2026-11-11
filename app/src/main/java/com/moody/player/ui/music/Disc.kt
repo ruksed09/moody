@@ -121,9 +121,10 @@ private fun Modifier.sharedDisc(key: String?): Modifier {
 }
 
 /**
- * A picture disc: the song's cover printed on a CD, with a clear hub and a spindle hole. Without a cover
- * it is a plain dark disc with a tinted label. [spinning] makes it follow the [DiscClock] (only the song
- * that is playing should). [behind] is the colour showing through the hole.
+ * A picture disc: the song's cover printed on a CD with a crimson rim and hub, a teal-lit spindle and a
+ * soft crimson shadow. Without a cover the label is crimson. Crimson is the depth, teal is the light; the
+ * two never share a gradient. [spinning] makes it follow the [DiscClock] (only the song that is playing
+ * should). [behind] is the colour showing through the spindle hole.
  */
 @Composable
 fun Disc(item: AudioItem?, size: Dp, modifier: Modifier = Modifier, spinning: Boolean = false, behind: Color = MoodyTheme.colors.bg, sharedKey: String? = null) {
@@ -135,16 +136,33 @@ fun Disc(item: AudioItem?, size: Dp, modifier: Modifier = Modifier, spinning: Bo
         }
     }
     var failed by remember(item?.uri, item?.cover) { mutableStateOf(false) }
-    val labels = listOf(c.accentDeep, c.accent.copy(alpha = 0.55f), c.text3, c.line3)
-    val label = labels[((item?.album?.hashCode() ?: 0) and 0x7fffffff) % labels.size]
-    val detailed = size >= 96.dp
+    val small = size < 64.dp
+    val grooves = when { small -> 0; size <= 160.dp -> 3; else -> 12 }
+    val shadowAlpha = if (c.isDark) 0.32f else 0.22f
     Box(modifier.sharedDisc(sharedKey).size(size)) {
-        // Disc body and the label for songs without a cover; this part turns.
+        // The shadow stays put (it falls below the disc), so it is drawn outside the turning part.
+        if (!small) Canvas(Modifier.fillMaxSize()) {
+            val r = this.size.minDimension / 2f
+            val at = Offset(center.x, center.y + r * 0.06f)
+            drawCircle(
+                Brush.radialGradient(0.86f to DiscCrimsonShadow.copy(alpha = shadowAlpha), 1f to Color.Transparent, center = at, radius = r * 1.10f),
+                r * 1.10f, at,
+            )
+        }
+        // Body, rim and label (or cover): this part turns.
         Box(Modifier.fillMaxSize().graphicsLayer { rotationZ = if (spinning) DiscClock.angle else 0f }) {
             Canvas(Modifier.fillMaxSize()) {
                 val r = this.size.minDimension / 2f
-                drawCircle(c.raised, r)
-                drawCircle(label, r * 0.46f)
+                drawCircle(Brush.radialGradient(listOf(DiscBodyIn, DiscBodyOut), center = center, radius = r), r)
+                // Rim: a crimson band whose bright side shows the turning.
+                val rim = r * 0.04f
+                drawCircle(
+                    Brush.sweepGradient(listOf(DiscRimDeep, DiscRim, DiscRimDeep, DiscRim, DiscRimDeep), center = center),
+                    r - rim / 2, style = Stroke(width = rim.coerceAtLeast(1f)),
+                )
+                if (item == null || failed) {
+                    drawCircle(Brush.radialGradient(listOf(DiscRim, DiscCrimsonShadow), center = center, radius = r * 0.38f), r * 0.38f)
+                }
                 // A short mark on the label so the turning reads.
                 val m = r * 0.34f
                 drawArc(
@@ -161,36 +179,50 @@ fun Disc(item: AudioItem?, size: Dp, modifier: Modifier = Modifier, spinning: Bo
                         .build(),
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize().padding(size * 0.02f).clip(CircleShape),
+                    modifier = Modifier.fillMaxSize().padding(size * 0.02f).clip(CircleShape), // just inside the rim
                     onError = { failed = true },
                 )
             }
         }
-        // What stays still: grooves and sheen (both round, so turning wouldn't show), hub, hole and rim.
+        // What stays still: grooves, the cover's edge, the sheen (light doesn't turn), the hub and the hole.
         Canvas(Modifier.fillMaxSize()) {
             val r = this.size.minDimension / 2f
-            if (detailed) {
-                var g = r * 0.36f
-                while (g < r * 0.94f) {
-                    drawCircle(Color.White.copy(alpha = 0.04f), g, style = Stroke(width = 1f))
-                    g += r * 0.05f
-                }
+            val px = 1.dp.toPx()
+            val inner = r * 0.96f
+            if (grooves > 0) {
+                val from = r * 0.36f
+                val step = (inner - from) / (grooves + 1)
+                for (i in 1..grooves) drawCircle(Color.White.copy(alpha = 0.05f), from + step * i, style = Stroke(width = px * 0.75f))
             }
+            if (item != null && !failed) drawCircle(Color.Black.copy(alpha = 0.30f), inner, style = Stroke(width = px))
+            // Two opposed wedges of light: white on one side, the teal of the app on the other.
             drawCircle(
                 Brush.sweepGradient(
-                    0f to Color.Transparent, 0.10f to Color(0x1AFFFFFF), 0.20f to Color.Transparent,
-                    0.50f to Color.Transparent, 0.60f to Color(0x14FFFFFF), 0.70f to Color.Transparent,
+                    0f to Color.Transparent, 0.08f to Color.White.copy(alpha = 0.10f), 0.18f to Color.Transparent,
+                    0.50f to Color.Transparent, 0.58f to DiscTeal.copy(alpha = 0.14f), 0.68f to Color.Transparent,
                     1f to Color.Transparent, center = center,
                 ),
-                r * 0.96f,
+                inner,
             )
-            drawCircle(Color.Black.copy(alpha = 0.28f), r * 0.30f)
-            drawCircle(Color.White.copy(alpha = 0.10f), r * 0.30f, style = Stroke(width = 1.dp.toPx()))
-            drawCircle(behind, r * 0.12f)
-            drawCircle(c.line2, r - 0.5.dp.toPx(), style = Stroke(width = 1.dp.toPx()))
+            // Hub: a crimson ring around the spindle hole, whose edge catches the teal light.
+            val hub = r * (if (small) 0.26f else 0.22f)
+            val hole = r * (if (small) 0.11f else 0.09f)
+            drawCircle(Brush.radialGradient(listOf(DiscHubIn, DiscHubOut), center = center, radius = hub), hub)
+            drawCircle(Color.Black.copy(alpha = 0.25f), hub, style = Stroke(width = px))
+            drawCircle(behind, hole)
+            drawCircle(DiscTeal, hole, style = Stroke(width = px))
         }
     }
 }
+
+private val DiscBodyIn = Color(0xFF1A1C20)
+private val DiscBodyOut = Color(0xFF0E0F12)
+private val DiscRim = Color(0xFFDC143C)
+private val DiscRimDeep = Color(0xFF7A0F1F)
+private val DiscHubIn = Color(0xFFE0243F)
+private val DiscHubOut = Color(0xFF8B1024)
+private val DiscCrimsonShadow = Color(0xFF5A0A18)
+private val DiscTeal = Color(0xFF4FD1C5)
 
 private const val DEG_PER_SEC = 36f
 private const val DISC_TRAVEL_MS = 320

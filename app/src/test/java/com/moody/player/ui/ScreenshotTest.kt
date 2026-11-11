@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -166,6 +167,30 @@ class ScreenshotTest {
         v.draw(android.graphics.Canvas(bmp))
         File(out, "$name.png").outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
+
+
+    /** Discs at the sizes Moody uses, with a cover (a made-up gradient) and without one. */
+    @Composable private fun discs() {
+        val art = File(out, "disc-art.jpg").also { f ->
+            val b = Bitmap.createBitmap(256, 256, Bitmap.Config.ARGB_8888)
+            val cv = android.graphics.Canvas(b)
+            val p = android.graphics.Paint().apply { shader = android.graphics.LinearGradient(0f, 0f, 256f, 256f, 0xFFE8B04A.toInt(), 0xFF2A5D8F.toInt(), android.graphics.Shader.TileMode.CLAMP) }
+            cv.drawRect(0f, 0f, 256f, 256f, p)
+            f.outputStream().use { b.compress(Bitmap.CompressFormat.JPEG, 90, it) }
+        }
+        val plain = songs[0]
+        val covered = songs[1].copy(cover = art.path)
+        Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(16.dp)) {
+            for (item in listOf(plain, covered)) {
+                androidx.compose.foundation.layout.Row(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(16.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    listOf(36, 44, 96, 140).forEach { com.moody.player.ui.music.Disc(item, it.dp) }
+                }
+            }
+            com.moody.player.ui.music.Disc(covered, 300.dp)
+        }
+    }
+    @Test fun discsDark() = bare("discs-dark", ThemeMode.DARK) { discs() }
+    @Test fun discsLight() = bare("discs-light", ThemeMode.LIGHT) { discs() }
 
     @Test fun welcomeDark() = bare("welcome-dark", ThemeMode.DARK) { com.moody.player.ui.onboarding.WelcomePager {} }
     @Test fun welcomeLight() = bare("welcome-light", ThemeMode.LIGHT) { com.moody.player.ui.onboarding.WelcomePager {} }
