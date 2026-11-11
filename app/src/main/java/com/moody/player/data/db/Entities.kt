@@ -58,13 +58,22 @@ data class FileSettings(
     val subTrack: Int = -1,
 )
 
-/** A moment the user marked in a video. Never written for vault videos. */
+/**
+ * A moment the user marked in a video, or a range ([endMs] set) saved from A-B repeat. Never written for
+ * vault videos. [uid] identifies it across phones (bookmarks travel inside MP4 files); a removed bookmark is
+ * kept as [deleted] so a copy read back from a file doesn't bring it back.
+ */
 @Entity(tableName = "bookmarks", indices = [androidx.room.Index("uri")])
 data class Bookmark(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val uri: String,
     val positionMs: Long,
     val createdAt: Long,
+    @androidx.room.ColumnInfo(defaultValue = "") val name: String = "",
+    val endMs: Long? = null,
+    @androidx.room.ColumnInfo(defaultValue = "") val uid: String = "",
+    @androidx.room.ColumnInfo(defaultValue = "0") val updatedAt: Long = 0,
+    @androidx.room.ColumnInfo(defaultValue = "0") val deleted: Boolean = false,
 )
 
 /**

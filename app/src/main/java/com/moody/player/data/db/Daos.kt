@@ -85,9 +85,13 @@ interface FileSettingsDao {
 
 @Dao
 interface BookmarkDao {
-    @Query("SELECT * FROM bookmarks WHERE uri = :uri ORDER BY positionMs") fun forUri(uri: String): Flow<List<Bookmark>>
+    @Query("SELECT * FROM bookmarks WHERE uri = :uri AND deleted = 0 ORDER BY positionMs") fun forUri(uri: String): Flow<List<Bookmark>>
+    /** Including removed ones, for merging with a copy read from the file. */
+    @Query("SELECT * FROM bookmarks WHERE uri = :uri") suspend fun allForUri(uri: String): List<Bookmark>
     @Insert suspend fun add(b: Bookmark): Long
-    @Query("DELETE FROM bookmarks WHERE id = :id") suspend fun remove(id: Long)
+    @Query("UPDATE bookmarks SET name = :name, updatedAt = :now WHERE id = :id") suspend fun rename(id: Long, name: String, now: Long)
+    @Query("UPDATE bookmarks SET deleted = 1, updatedAt = :now WHERE id = :id") suspend fun remove(id: Long, now: Long)
+    @androidx.room.Update suspend fun update(b: Bookmark)
 }
 
 @Dao

@@ -9,10 +9,11 @@ import androidx.room.RoomDatabase
         PlaybackPosition::class, Playlist::class, PlaylistEntry::class, Favorite::class, VaultItem::class, RecentUrl::class, FileSettings::class,
         Bookmark::class, PlayStat::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
-    // Version 2 only adds the bookmarks and play_stats tables; everything already stored is kept.
-    autoMigrations = [AutoMigration(from = 1, to = 2)],
+    // Version 2 only adds the bookmarks and play_stats tables; version 3 only adds columns to bookmarks
+    // (name, range end, id, update time, removed flag). Everything already stored is kept.
+    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3)],
 )
 abstract class MoodyDb : RoomDatabase() {
     abstract fun positions(): PositionDao

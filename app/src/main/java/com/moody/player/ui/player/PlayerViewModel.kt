@@ -350,23 +350,55 @@ class PlayerViewModel @Inject constructor(
     private fun isPrivate(uri: Uri): Boolean =
         isVault || media.videos.value?.firstOrNull { it.uri == uri }?.relativePath?.let { it in settings.value.hiddenFolders } == true
 
-    /** Marks the current moment. Bookmarks are not kept for private videos. */
+    /**
+     * Marks the current moment, or, while an A-B repeat runs, saves that range. Bookmarks are not kept for
+     * private videos. Name them afterwards in Bookmarks.
+     */
     fun addBookmark() {
         val e = current ?: return
         if (isPrivate(e.uri)) { _toasts.tryEmit(if (isVault) "Bookmarks are off for vault videos" else "Bookmarks are off for hidden folders"); return }
-        val pos = engine.state.value.positionMs
-        if (_bookmarks.value.any { kotlin.math.abs(it.positionMs - pos) < 1_500 }) { _toasts.tryEmit("Already bookmarked here"); return }
-        viewModelScope.launch { bookmarkDao.add(com.moody.player.data.db.Bookmark(uri = e.uri.toString(), positionMs = pos, createdAt = System.currentTimeMillis())) }
-        _toasts.tryEmit("Bookmarked ${formatDuration(pos)}")
+        val (a, b) = _ab.value
+        val range = a != null && b != null
+        val pos = if (range) a!! else engine.state.value.positionMs
+        val end = if (range) b else null
+        val dup = _bookmarks.value.any {
+            if (range) it.endMs != null && kotlin.math.abs(it.positionMs - pos) < 500 && kotlin.math.abs(it.endMs - end!!) < 500
+            else it.endMs == null && kotlin.math.abs(it.positionMs - pos) < 1_500
+        }
+        if (dup) { _toasts.tryEmit(if (range) "This range is already bookmarked" else "Already bookmarked here"); return }
+        val now = System.currentTimeMillis()
+        viewModelScope.launch {
+            bookmarkDao.add(com.moody.player.data.db.Bookmark(
+                uri = e.uri.toString(), positionMs = pos, endMs = end, createdAt = now, updatedAt = now, uid = java.util.UUID.randomUUID().toString(),
+            ))
+            marksChanged()
+        }
+        _toasts.tryEmit("Bookmarked ${com.moody.player.domain.bookmarkLabel(pos, end)}. Name it in Bookmarks")
     }
 
-    fun removeBookmark(b: com.moody.player.data.db.Bookmark) = viewModelScope.launch { bookmarkDao.remove(b.id) }
+    fun removeBookmark(b: com.moody.player.data.db.Bookmark) = viewModelScope.launch { bookmarkDao.remove(b.id, System.currentTimeMillis()); marksChanged() }
 
+    /** Saves a name typed for [b]; only the allowed characters are kept. */
+    fun renameBookmark(b: com.moody.player.data.db.Bookmark, raw: String) = viewModelScope.launch {
+        bookmarkDao.rename(b.id, com.moody.player.domain.BookmarkNames.clean(raw), System.currentTimeMillis())
+        marksChanged()
+    }
+
+    /** Jumps to a moment, or replays a saved range as an A-B repeat. */
     fun jumpTo(b: com.moody.player.data.db.Bookmark) {
         dismissResume()
+        val end = b.endMs
+        if (end != null && end > b.positionMs) {
+            _ab.value = b.positionMs to end
+            _toasts.tryEmit("Repeating ${com.moody.player.domain.bookmarkLabel(b.positionMs, end)}")
+        }
         engine.seekTo(b.positionMs)
         if (!engine.state.value.playing) engine.play()
     }
+
+    /** Called after any bookmark change of the current video. */
+    private fun marksChanged() { marksDirty = true }
+    private var marksDirty = false
 
     /** Writes play time gathered so far. Vault videos and links are never counted. */
     private fun flushStats() {
@@ -399,6 +431,9 @@ class PlayerViewModel @Inject constructor(
     }
 
     fun clearAb() { _ab.value = null to null; _toasts.tryEmit("A-B repeat off") }
+
+    /** Jumps back to A (the mini bar's times are tappable). */
+    fun seekToA() { _ab.value.first?.let { dismissResume(); engine.seekTo(it) } }
 
     fun sleepIn(minutes: Int?) {
         sleepJob?.cancel()

@@ -198,18 +198,17 @@ fun PlayerScreen(vm: PlayerViewModel, host: PlayerHost, inPip: Boolean) {
             LockedOverlay(controls) { locked = false; controls = true; vm.toast("Controls unlocked") }
         }
 
-        // A-B: A is set, B not yet: offer the second mark right on the video.
-        if (ab.first != null && ab.second == null && !locked) {
-            Text(
-                "Set B", style = MoodyTheme.type.label, color = MoodyTheme.colors.accentInk,
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .windowInsetsPadding(WindowInsets.safeDrawing)
-                    .padding(end = 16.dp, bottom = if (controls) 132.dp else 24.dp)
-                    .clip(Radii.pill)
-                    .background(MoodyTheme.colors.accent)
-                    .clickable(role = Role.Button) { vm.markB(); poke++ }
-                    .padding(horizontal = 14.dp, vertical = 8.dp),
+        // A-B repeat: a mini bar with the start and end times while it is set up or running.
+        val abA = ab.first
+        if (abA != null && !locked) {
+            AbBar(
+                a = abA, b = ab.second, at = st.positionMs,
+                onSetB = { vm.markB(); poke++ },
+                onJumpA = { vm.seekToA(); poke++ },
+                onBookmark = { vm.addBookmark(); poke++ },
+                onClear = { vm.clearAb(); poke++ },
+                modifier = Modifier.align(Alignment.BottomEnd).windowInsetsPadding(WindowInsets.safeDrawing)
+                    .padding(end = 16.dp, bottom = if (controls) 132.dp else 24.dp),
             )
         }
 
@@ -571,5 +570,37 @@ private fun LockedProgress(st: PlayerState, modifier: Modifier = Modifier) {
         Box(Modifier.fillMaxWidth().height(3.dp).clip(Radii.pill).background(OnVideo.rail)) {
             Box(Modifier.fillMaxWidth(frac).fillMaxHeight().background(MoodyTheme.colors.accent))
         }
+    }
+}
+
+/**
+ * The A-B mini bar. With only A set it reads "A 1:23  B --:--" and offers Set B (live: B shows where it
+ * would land). With both it reads "1:23 \u2013 1:45": tap the times to go back to A, bookmark the range, or
+ * close to stop repeating.
+ */
+@Composable
+private fun AbBar(a: Long, b: Long?, at: Long, onSetB: () -> Unit, onJumpA: () -> Unit, onBookmark: () -> Unit, onClear: () -> Unit, modifier: Modifier = Modifier) {
+    val accent = MoodyTheme.colors.accent
+    Row(
+        modifier.clip(Radii.pill).background(OnVideo.ink).padding(start = 6.dp, end = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(MoodyIcons.AbRepeat, null, Modifier.padding(start = 8.dp).size(18.dp), tint = if (b != null) accent else OnVideo.text)
+        val times = if (b != null) com.moody.player.domain.bookmarkLabel(a, b)
+            else "A ${formatDuration(a)}  B ${if (at > a + 500) formatDuration(at) else "--:--"}"
+        Text(
+            times, style = MoodyTheme.type.mono, color = OnVideo.text,
+            modifier = Modifier.clip(Radii.pill).clickable(onClickLabel = "Go back to A", onClick = onJumpA).padding(horizontal = 10.dp, vertical = 12.dp),
+        )
+        if (b == null) {
+            Text(
+                "Set B", style = MoodyTheme.type.label, color = MoodyTheme.colors.accentInk,
+                modifier = Modifier.clip(Radii.pill).background(if (at > a + 500) accent else accent.copy(alpha = 0.45f))
+                    .clickable(role = Role.Button, onClick = onSetB).padding(horizontal = 14.dp, vertical = 8.dp),
+            )
+        } else {
+            VideoIcon(MoodyIcons.Bookmark, "Bookmark this range", onBookmark, size = 18.dp, box = 40.dp)
+        }
+        VideoIcon(MoodyIcons.Close, "Stop A-B repeat", onClear, size = 16.dp, box = 40.dp)
     }
 }

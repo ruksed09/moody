@@ -534,24 +534,41 @@ private fun SleepMenu(vm: PlayerViewModel, close: () -> Unit) {
 private fun BookmarksMenu(vm: PlayerViewModel, st: PlayerState, close: () -> Unit) {
     val c = MoodyTheme.colors
     val marks by vm.bookmarks.collectAsStateWithLifecycle()
-    SheetRow(MoodyIcons.Plus, "Bookmark this moment", formatDuration(st.positionMs)) { vm.addBookmark() }
+    val ab by vm.ab.collectAsStateWithLifecycle()
+    var naming by remember { mutableStateOf<com.moody.player.data.db.Bookmark?>(null) }
+    val (a, b) = ab
+    if (a != null && b != null) SheetRow(MoodyIcons.Plus, "Bookmark this A-B range", com.moody.player.domain.bookmarkLabel(a, b)) { vm.addBookmark() }
+    else SheetRow(MoodyIcons.Plus, "Bookmark this moment", formatDuration(st.positionMs)) { vm.addBookmark() }
     if (marks.isEmpty()) {
-        Note("Bookmarks show as small marks on the progress bar. Add the Bookmark shortcut to mark moments in one tap.")
+        Note("Bookmarks show as small marks on the progress bar. While A-B repeat runs, a bookmark saves the range.")
         return
     }
     Divider()
-    marks.forEachIndexed { i, b ->
+    marks.forEachIndexed { i, m ->
+        val label = com.moody.player.domain.bookmarkLabel(m.positionMs, m.endMs)
         Row(
-            Modifier.fillMaxWidth().height(48.dp).clip(Radii.md).clickable { vm.jumpTo(b); close() }.padding(start = 12.dp, end = 4.dp),
+            Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(Radii.md).clickable { vm.jumpTo(m); close() }.padding(start = 12.dp, end = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                formatDuration(b.positionMs), style = MoodyTheme.type.mono, color = c.accent,
+                label, style = MoodyTheme.type.mono, color = c.accent,
                 modifier = Modifier.border(1.dp, c.line3, Radii.sm).padding(horizontal = 6.dp, vertical = 2.dp),
             )
             Spacer(Modifier.width(12.dp))
-            Text("Bookmark ${i + 1}", style = MoodyTheme.type.body, color = c.text, modifier = Modifier.weight(1f))
-            VideoIcon(MoodyIcons.Close, "Remove bookmark at ${formatDuration(b.positionMs)}", { vm.removeBookmark(b) }, size = 16.dp, box = 40.dp)
+            Text(
+                m.name.ifBlank { "Bookmark ${i + 1}" }, style = MoodyTheme.type.body, color = if (m.name.isBlank()) c.text2 else c.text,
+                maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
+            )
+            VideoIcon(MoodyIcons.Rename, "Name bookmark at $label", { naming = m }, size = 16.dp, box = 40.dp)
+            VideoIcon(MoodyIcons.Close, "Remove bookmark at $label", { vm.removeBookmark(m) }, size = 16.dp, box = 40.dp)
         }
+    }
+    naming?.let { m ->
+        com.moody.player.ui.music.NameDialog(
+            "Name bookmark", m.name, "Save", onDismiss = { naming = null },
+            filter = com.moody.player.domain.BookmarkNames::filter,
+            note = "Letters, digits, spaces and \u2014 - / : ; only, up to 40 characters. Leave empty for no name.",
+            allowBlank = true,
+        ) { vm.renameBookmark(m, it); naming = null }
     }
 }

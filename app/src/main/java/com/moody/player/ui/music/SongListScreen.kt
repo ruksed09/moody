@@ -232,7 +232,11 @@ fun SheetRow(icon: ImageVector, label: String, meta: String? = null, onClick: ()
 }
 
 @Composable
-fun NameDialog(title: String, initial: String, confirm: String, onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
+fun NameDialog(
+    title: String, initial: String, confirm: String, onDismiss: () -> Unit,
+    filter: (String) -> String = { it.take(60) }, note: String? = null, allowBlank: Boolean = false,
+    onConfirm: (String) -> Unit,
+) {
     val c = MoodyTheme.colors
     var text by remember { mutableStateOf(initial) }
     val focus = remember { FocusRequester() }
@@ -243,13 +247,17 @@ fun NameDialog(title: String, initial: String, confirm: String, onDismiss: () ->
             Spacer(Modifier.height(16.dp))
             Box(Modifier.fillMaxWidth().height(48.dp).background(c.bg, Radii.md).border(1.dp, c.accent.copy(alpha = 0.55f), Radii.md).padding(horizontal = 12.dp), contentAlignment = Alignment.CenterStart) {
                 if (text.isEmpty()) Text("Name", style = MoodyTheme.type.body, color = c.text3)
-                BasicTextField(text, { text = it.take(60) }, singleLine = true, textStyle = MoodyTheme.type.body.copy(color = c.text), cursorBrush = SolidColor(c.accent), modifier = Modifier.fillMaxWidth().focusRequester(focus))
+                BasicTextField(text, { text = filter(it) }, singleLine = true, textStyle = MoodyTheme.type.body.copy(color = c.text), cursorBrush = SolidColor(c.accent), modifier = Modifier.fillMaxWidth().focusRequester(focus))
+            }
+            note?.let {
+                Spacer(Modifier.height(8.dp))
+                Text(it, style = MoodyTheme.type.caption, color = c.text3)
             }
             Spacer(Modifier.height(24.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 QuietButton("Cancel", onDismiss)
                 Spacer(Modifier.width(8.dp))
-                PrimaryButton(confirm, { onConfirm(text) }, enabled = text.isNotBlank())
+                PrimaryButton(confirm, { onConfirm(text) }, enabled = allowBlank || text.isNotBlank())
             }
         }
     }
