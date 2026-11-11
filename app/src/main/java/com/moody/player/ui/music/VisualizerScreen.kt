@@ -1,5 +1,6 @@
 package com.moody.player.ui.music
 
+import androidx.compose.foundation.layout.widthIn
 import android.app.Activity
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -50,7 +51,8 @@ import kotlinx.coroutines.delay
 fun VisualizerScreen(vm: NowPlayingViewModel, onBack: () -> Unit) {
     val s by vm.state.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
-    val c = MoodyTheme.colors
+    // The picture is always on black, so its chrome always uses the dark palette, whatever the app theme.
+    val c = com.moody.player.design.DarkColors
     val view = LocalView.current
     var chrome by remember { mutableStateOf(true) }
     var poke by remember { mutableIntStateOf(0) }
@@ -72,12 +74,17 @@ fun VisualizerScreen(vm: NowPlayingViewModel, onBack: () -> Unit) {
     val frames = rememberVizFrames(active = true, playing = s.playing, s = settings)
     val fallback by com.moody.player.player.music.AudioTap.onFallbackEngine.collectAsStateWithLifecycle()
     val sideFailed by com.moody.player.player.music.AudioTap.sidecarFailed.collectAsStateWithLifecycle()
+    androidx.compose.runtime.CompositionLocalProvider(com.moody.player.design.LocalMoodyColors provides c) {
     Box(
         Modifier.fillMaxSize().background(Color(0xFF040506))
             .clickable(remember { MutableInteractionSource() }, indication = null) { chrome = !chrome; poke++ },
     ) {
         if (fallback && sideFailed) VizUnavailable(Modifier.fillMaxSize())
-        else VisualizerCanvas(settings.vizStyle, frames, c.accent, c.accentHi, settings.vizIntensity, Modifier.fillMaxSize().padding(24.dp))
+        else VisualizerCanvas(
+            settings.vizStyle, frames, c.accent, c.accentHi, settings.vizIntensity,
+            // Centred between the top bar and the style picker, so the picture never runs under them.
+            Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).padding(start = 24.dp, end = 24.dp, top = 64.dp, bottom = 88.dp),
+        )
         AnimatedVisibility(chrome, enter = fadeIn(), exit = fadeOut()) {
             Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).padding(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -93,8 +100,9 @@ fun VisualizerScreen(vm: NowPlayingViewModel, onBack: () -> Unit) {
         }
         VizStylePicker(
             settings.vizStyle, { v -> vm.updateViz { it.copy(vizStyle = v) } },
-            Modifier.align(Alignment.BottomCenter).fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = 12.dp, vertical = 20.dp),
+            Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = 12.dp, vertical = 20.dp).widthIn(max = 420.dp).fillMaxWidth(),
         )
     }
     if (tuneOpen) VizTuneSheet(settings, { f -> vm.updateViz(f) }, onDismiss = { tuneOpen = false; poke++ })
+    }
 }

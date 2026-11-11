@@ -1,5 +1,6 @@
 package com.moody.player.ui.music
 
+import androidx.compose.foundation.layout.heightIn
 import android.graphics.drawable.BitmapDrawable
 import android.os.Build
 import androidx.compose.animation.animateColorAsState
@@ -373,7 +374,7 @@ private fun VisualizerPanel(
     val sideFailed by com.moody.player.player.music.AudioTap.sidecarFailed.collectAsStateWithLifecycle()
     Column(modifier) {
         // The picture sits in its own rounded panel, with room around it so round styles stay whole.
-        Box(Modifier.weight(1f).fillMaxWidth().clip(Radii.lg).background(c.surface)) {
+        Box(Modifier.weight(1f).heightIn(min = 120.dp).fillMaxWidth().clip(Radii.xl).background(c.surface).border(1.dp, c.line, Radii.xl)) {
             if (fallback && sideFailed) VizUnavailable(Modifier.fillMaxSize())
             else VisualizerCanvas(settings.vizStyle, frames, c.accent, tint, settings.vizIntensity, Modifier.fillMaxSize().padding(16.dp))
             Row(Modifier.align(Alignment.TopEnd)) {

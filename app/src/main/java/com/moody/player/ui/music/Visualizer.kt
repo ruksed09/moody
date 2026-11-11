@@ -1,5 +1,11 @@
 package com.moody.player.ui.music
 
+import com.moody.player.design.Radii
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.border
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -62,6 +68,7 @@ import kotlin.math.sin
 private const val DELAY_MS = 180
 private const val BANDS = 48
 private const val WAVE = 256
+private const val PILLS = 9
 
 /** Smoothed levels for one visualizer, updated once per display frame (capped near 60 fps). */
 @Stable
@@ -69,6 +76,9 @@ class VizFrames {
     val levels = FloatArray(BANDS)
     val wave = FloatArray(WAVE)
     var level = 0f
+    /** Minimal's nine pills, 0..1, each normalised to its own recent peak so every song fills them. */
+    val pills = FloatArray(PILLS)
+    internal val pillPeak = FloatArray(PILLS) { 0.35f }
     /** Read inside drawing only, so a new frame redraws without recomposing. */
     var tick by mutableLongStateOf(0L)
 }
@@ -108,6 +118,7 @@ fun rememberVizFrames(active: Boolean, playing: Boolean, s: Settings): VizFrames
             }
             smoothInto(f.levels, target, intensity)
             f.level += ((if (ok) analyzer.level else 0f) - f.level) * 0.3f
+            updatePills(f)
             f.tick++
             if (!playing && f.level < 0.002f && f.levels.all { it < 0.002f }) break
         }
@@ -147,24 +158,47 @@ private fun DrawScope.bars(f: VizFrames, a: Color, b: Color) {
     }
 }
 
+/**
+ * Groups bands 2..45 (the outermost ones are nearly always empty) into nine pills. The bands are already
+ * log-spaced, so equal groups are musical groups. Treble gets a small lift, and each pill follows its own
+ * slowly decaying peak, so quiet songs and loud ones both use the whole height.
+ */
+private fun updatePills(f: VizFrames) {
+    for (p in 0 until PILLS) {
+        val lo = 2 + p * 44 / PILLS
+        val hi = 2 + (p + 1) * 44 / PILLS
+        var m1 = 0f; var m2 = 0f
+        for (i in lo until hi) { val x = f.levels[i]; if (x > m1) { m2 = m1; m1 = x } else if (x > m2) m2 = x }
+        val raw = (m1 + m2) / 2f * (1f + 0.35f * p / (PILLS - 1f))
+        f.pillPeak[p] = maxOf(raw, f.pillPeak[p] * 0.995f, 0.35f)
+        val t = (raw / f.pillPeak[p]).coerceIn(0f, 1f)
+        f.pills[p] += (t - f.pills[p]) * (if (t > f.pills[p]) 0.5f else 0.14f)
+    }
+}
+
+/** Radius every round style stays inside: the panel's short side, capped at the Now Playing disc (320 dp). */
+private fun DrawScope.safeR() = min(min(size.width, size.height), 320.dp.toPx()) / 2f - 4.dp.toPx()
+
 private fun DrawScope.circle(f: VizFrames, a: Color, b: Color, intensity: Float) {
     val c = center
-    val m = min(size.width, size.height)
-    // Kept inside the panel: the longest spoke stops short of the edge at any level and motion setting.
-    val base = m * 0.22f * (1f + f.level * 0.08f * intensity.coerceAtMost(2f))
-    val reach = (m * 0.46f - base - 3.dp.toPx()).coerceAtLeast(0f)
-    drawCircle(a, base * 0.92f, c, alpha = 0.08f + f.level * 0.12f)
+    val r = safeR()
+    val k = (intensity / 2f).coerceIn(0f, 1f)
     val spokes = BANDS * 2
-    val stroke = (2 * PI * base / spokes * 0.55f).toFloat().coerceIn(1.5f, 6.dp.toPx())
-    for (k in 0 until spokes) {
+    val stroke = (2 * PI * r * 0.46f / spokes * 0.55f).toFloat().coerceIn(1.5f, 5.dp.toPx())
+    val tip = r - stroke / 2
+    // The ring breathes a little with the music; the spokes' reach is fixed, so loud passages never flatten them.
+    val base = r * (0.44f + 0.04f * f.level * k)
+    val lift = 3.dp.toPx()
+    val reach = (tip - r * 0.48f - lift).coerceAtLeast(0f)
+    drawCircle(a, base - 4.dp.toPx(), c, alpha = 0.08f + f.level * 0.12f)
+    for (s in 0 until spokes) {
         // Mirror the bands so bass meets bass at the top and treble at the bottom.
-        val band = if (k < BANDS) k else spokes - 1 - k
+        val band = if (s < BANDS) s else spokes - 1 - s
         val v = f.levels[band]
-        val ang = (k / spokes.toFloat()) * 2 * PI - PI / 2
+        val ang = (s / spokes.toFloat()) * 2 * PI - PI / 2
         val dx = cos(ang).toFloat(); val dy = sin(ang).toFloat()
-        val start = Offset(c.x + dx * base, c.y + dy * base)
-        val end = Offset(c.x + dx * (base + 3.dp.toPx() + v * reach), c.y + dy * (base + 3.dp.toPx() + v * reach))
-        drawLine(lerpColor(a, b, band / BANDS.toFloat()), start, end, stroke, StrokeCap.Round)
+        val end = base + lift + v * reach
+        drawLine(lerpColor(a, b, band / BANDS.toFloat()), Offset(c.x + dx * base, c.y + dy * base), Offset(c.x + dx * end, c.y + dy * end), stroke, StrokeCap.Round)
     }
 }
 
@@ -186,31 +220,37 @@ private fun DrawScope.wave(f: VizFrames, a: Color, b: Color) {
 
 private fun DrawScope.rings(f: VizFrames, a: Color, b: Color, intensity: Float) {
     val c = center
-    val m = min(size.width, size.height) / 2
+    val maxStroke = 6.dp.toPx()
+    val out = safeR() - maxStroke / 2
+    val k = (intensity / 2f).coerceIn(0f, 1f)
     val groups = 6
     val per = BANDS / groups
     for (g in 0 until groups) {
         var v = 0f
         for (i in g * per until (g + 1) * per) v = maxOf(v, f.levels[i])
-        // Rest radii leave room to swell; nothing passes the panel's edge.
-        val r = (m * (0.16f + 0.11f * g) * (1f + v * 0.15f * intensity.coerceAtMost(2f))).coerceAtMost(m * 0.94f)
-        drawCircle(lerpColor(a, b, g / (groups - 1f)), r, c, alpha = (0.85f - g * 0.11f) * (0.35f + v * 0.65f), style = Stroke((1.5f + v * 5f).dp.toPx()))
+        // The swell (0.10) is smaller than the spacing (0.13), so rings never cross; the outer one peaks at 0.95.
+        val r = out * (0.20f + 0.13f * g + 0.10f * v * k)
+        drawCircle(
+            lerpColor(a, b, g / (groups - 1f)), r, c,
+            alpha = (0.85f - g * 0.11f) * (0.35f + v * 0.65f),
+            style = Stroke(1.5.dp.toPx() + v * (maxStroke - 1.5.dp.toPx())),
+        )
     }
-    drawCircle(a, m * 0.09f * (1f + f.levels[2] * 0.6f * intensity.coerceAtMost(2f)), c, alpha = 0.55f)
+    drawCircle(a, out * 0.08f * (1f + 0.5f * f.levels[2] * k), c, alpha = 0.55f)
 }
 
 private fun DrawScope.minimal(f: VizFrames, a: Color, b: Color) {
-    val pills = 9
-    val w = 8.dp.toPx()
-    val gap = 8.dp.toPx()
-    val total = pills * w + (pills - 1) * gap
-    val maxH = size.height * 0.42f
-    for (p in 0 until pills) {
-        var v = 0f
-        for (i in p * BANDS / pills until (p + 1) * BANDS / pills) v = maxOf(v, f.levels[i])
-        val h = (w + v * maxH)
-        val x = center.x - total / 2 + p * (w + gap)
-        drawRoundRect(lerpColor(a, b, p / (pills - 1f)), Offset(x, center.y - h / 2), Size(w, h), CornerRadius(w / 2, w / 2))
+    // Nine pills sized to the panel: pill + 0.9 pill gap, the whole row about two thirds of the width.
+    val total = min(min(size.width * 0.64f, size.height * 1.2f), 360.dp.toPx())
+    val w = (total / 16.2f).coerceIn(8.dp.toPx(), 18.dp.toPx())
+    val gap = w * 0.9f
+    val span = PILLS * w + (PILLS - 1) * gap
+    val maxH = min(size.height * 0.56f, span * 0.9f)
+    for (p in 0 until PILLS) {
+        val v = f.pills[p]
+        val h = w + v * (maxH - w)
+        val x = center.x - span / 2 + p * (w + gap)
+        drawRoundRect(lerpColor(a, b, p / (PILLS - 1f)), Offset(x, center.y - h / 2), Size(w, h), CornerRadius(w / 2, w / 2), alpha = 0.6f + 0.4f * v)
     }
 }
 
@@ -219,8 +259,18 @@ private fun lerpColor(a: Color, b: Color, t: Float) = androidx.compose.ui.graphi
 /** Style chips: switching is instant, the next frame draws the new style. */
 @Composable
 fun VizStylePicker(style: VizStyle, onPick: (VizStyle) -> Unit, modifier: Modifier = Modifier) {
-    LazyRow(modifier, horizontalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(horizontal = 4.dp)) {
-        items(VizStyle.entries) { v -> ChoiceChip(v.label, v == style, { onPick(v) }) }
+    // Five equal segments that always fit, never scroll: every style stays in view.
+    val c = MoodyTheme.colors
+    Row(modifier.height(36.dp).clip(Radii.pill).background(c.surface).border(1.dp, c.line, Radii.pill).padding(3.dp)) {
+        VizStyle.entries.forEach { v ->
+            val on = v == style
+            Box(
+                Modifier.weight(1f).fillMaxHeight().clip(Radii.pill)
+                    .background(if (on) c.accentWash else Color.Transparent)
+                    .selectable(on, role = Role.RadioButton) { onPick(v) },
+                contentAlignment = Alignment.Center,
+            ) { Text(v.label, style = MoodyTheme.type.label, color = if (on) c.accent else c.text2, maxLines = 1) }
+        }
     }
 }
 
@@ -229,7 +279,7 @@ fun VizStylePicker(style: VizStyle, onPick: (VizStyle) -> Unit, modifier: Modifi
 @Composable
 fun VizTuneSheet(s: Settings, onChange: ((Settings) -> Settings) -> Unit, onDismiss: () -> Unit) {
     val c = MoodyTheme.colors
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = c.raised) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = c.surface) {
         Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp).padding(bottom = 16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Visualizer", style = MoodyTheme.type.title, color = c.text, modifier = Modifier.weight(1f))

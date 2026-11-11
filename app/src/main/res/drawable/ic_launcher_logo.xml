@@ -3,4 +3,4 @@
      and the mark inside stays clear of every launcher shape. -->
 <inset xmlns:android="http://schemas.android.com/apk/res/android"
     android:drawable="@drawable/moody_icon_art"
-    android:inset="4%" />
+    android:inset="10%" />

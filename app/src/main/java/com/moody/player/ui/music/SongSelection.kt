@@ -73,7 +73,7 @@ fun SongBatchHost(vm: MusicViewModel, request: SongBatchRequest?, onFinish: (don
     val c = MoodyTheme.colors
     val context = LocalContext.current
     val toaster = LocalToaster.current
-    val delete = rememberSongsDelete { gone -> vm.forgetDeleted(gone); onFinish(true) }
+    val delete = rememberSongsDelete(onFailed = { onFinish(false) }) { gone -> vm.forgetDeleted(gone); onFinish(true) }
     var confirmDelete by remember(request) { mutableStateOf(request?.action == SongBatch.DELETE) }
     var creating by remember(request) { mutableStateOf(false) }
     val r = request ?: return
@@ -125,10 +125,11 @@ fun SongBatchHost(vm: MusicViewModel, request: SongBatchRequest?, onFinish: (don
 
 /**
  * Deletes several song files with one system confirmation on Android 11 and later. On older versions
- * each file is deleted directly; files Moody may not delete are counted and reported.
+ * each file is deleted directly; files Moody may not delete are counted and reported. [onFailed] runs
+ * when nothing was deleted (the prompt was cancelled), so the caller can let the user try again.
  */
 @Composable
-fun rememberSongsDelete(onDeleted: (List<AudioItem>) -> Unit): (List<AudioItem>) -> Unit {
+fun rememberSongsDelete(onFailed: () -> Unit = {}, onDeleted: (List<AudioItem>) -> Unit): (List<AudioItem>) -> Unit {
     val context = LocalContext.current
     val toaster = LocalToaster.current
     val scope = rememberCoroutineScope()
@@ -137,7 +138,7 @@ fun rememberSongsDelete(onDeleted: (List<AudioItem>) -> Unit): (List<AudioItem>)
         val list = pending
         pending = emptyList()
         if (list.isEmpty()) return@rememberLauncherForActivityResult
-        if (res.resultCode != android.app.Activity.RESULT_OK) { toaster.show("Not deleted"); return@rememberLauncherForActivityResult }
+        if (res.resultCode != android.app.Activity.RESULT_OK) { toaster.show("Not deleted"); onFailed(); return@rememberLauncherForActivityResult }
         toaster.show("Deleted ${songs(list.size)}")
         onDeleted(list)
     }
@@ -154,7 +155,7 @@ fun rememberSongsDelete(onDeleted: (List<AudioItem>) -> Unit): (List<AudioItem>)
                 }
                 val failed = list.size - gone.size
                 toaster.show(if (failed == 0) "Deleted ${songs(gone.size)}" else "Deleted ${songs(gone.size)}; ${songs(failed)} couldn't be deleted")
-                if (gone.isNotEmpty()) onDeleted(gone)
+                if (gone.isNotEmpty()) onDeleted(gone) else onFailed()
             }
         }
     }
