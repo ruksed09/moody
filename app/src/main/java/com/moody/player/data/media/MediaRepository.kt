@@ -63,7 +63,8 @@ class MediaRepository @Inject constructor(
         context.contentResolver.registerContentObserver(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, true, observer)
         @OptIn(FlowPreview::class)
         scope.launch { changes.debounce(500).collect { rescan() } }
-        scope.launch { settings.settings.map { it.minSongSec }.distinctUntilChanged().collect { rescan() } }
+        // Songs shorter than the minimum, and files removed from the library in Media Health, drop out on a rescan.
+        scope.launch { settings.settings.map { it.minSongSec to it.removedMedia }.distinctUntilChanged().collect { rescan() } }
         scope.launch { songEdits.all.collect { e -> synchronized(this@MediaRepository) { _edits.value = e; publishAudio() } } }
     }
 
@@ -92,11 +93,13 @@ class MediaRepository @Inject constructor(
         _scanning.value = true
         try {
             _access.value = accessLevel(context)
-            val minSong = settings.settings.first().minSongSec * 1000L
+            val s = settings.settings.first()
+            val minSong = s.minSongSec * 1000L
+            val removed = s.removedMedia
             val vaulted = vaultDao.sourceUris().first().toSet()
             withContext(Dispatchers.IO) {
-                _videos.value = if (_access.value == AccessLevel.NONE) emptyList() else scanner.videos().filter { it.uri.toString() !in vaulted }
-                rawAudio = if (hasAudioAccess(context)) scanner.audio(minSong) else emptyList()
+                _videos.value = if (_access.value == AccessLevel.NONE) emptyList() else scanner.videos().filter { it.uri.toString() !in vaulted && it.uri.toString() !in removed }
+                rawAudio = if (hasAudioAccess(context)) scanner.audio(minSong).filter { it.uri.toString() !in removed } else emptyList()
                 publishAudio()
             }
         } finally {

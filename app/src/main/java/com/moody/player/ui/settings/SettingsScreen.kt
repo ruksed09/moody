@@ -175,9 +175,10 @@ fun SettingsPage(title: String, onBack: () -> Unit, content: LazyListScope.() ->
 
 /** Settings home: one row per category. */
 @Composable
-fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit, onSection: (SettingsSection) -> Unit, onStats: () -> Unit = {}) {
+fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit, onSection: (SettingsSection) -> Unit, onStats: () -> Unit = {}, onHealth: () -> Unit = {}) {
     SettingsPage("Settings", onBack) {
         item(key = "stats") { Action("Your stats", "Time spent watching and listening, top songs and videos", MoodyIcons.Chart, onStats) }
+        item(key = "health") { Action("Media health", "Find damaged, incomplete or unsupported files", MoodyIcons.Health, onHealth) }
         SettingsSection.entries.forEach { sec ->
             item(key = sec.id) { Action(sec.title, sec.summary, sec.icon) { onSection(sec) } }
         }

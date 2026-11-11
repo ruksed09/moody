@@ -63,6 +63,8 @@ fun MoodyRoot(settings: Settings, slots: AppSlots, toaster: Toaster = remember {
     MoodyTheme(settings.themeMode, settings.fontMode) {
         CompositionLocalProvider(LocalToaster provides toaster) {
             val nav = rememberNavController()
+            val openHealth = remember(nav) { { uri: android.net.Uri -> nav.navigate(Routes.health(uri)) { launchSingleTop = true } } }
+            CompositionLocalProvider(com.moody.player.ui.health.LocalOpenHealth provides openHealth) {
             Box(Modifier.fillMaxSize().background(MoodyTheme.colors.bg)) {
                 NavHost(
                     nav,
@@ -81,6 +83,7 @@ fun MoodyRoot(settings: Settings, slots: AppSlots, toaster: Toaster = remember {
                 }
                 slots.overlay(nav)
                 ToastHost(toaster)
+            }
             }
         }
     }

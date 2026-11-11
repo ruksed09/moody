@@ -148,6 +148,7 @@ fun SongActionsSheet(song: AudioItem, vm: MusicViewModel, onDismiss: () -> Unit,
     var picking by remember { mutableStateOf(false) }
     var creating by remember { mutableStateOf(false) }
     var showInfo by remember { mutableStateOf(false) }
+    val openHealth = com.moody.player.ui.health.LocalOpenHealth.current
     var confirmDelete by remember { mutableStateOf(false) }
     val delete = rememberSongDelete { gone -> vm.forgetDeleted(gone); onDismiss() }
     val fav = song.uri.toString() in favs
@@ -176,6 +177,7 @@ fun SongActionsSheet(song: AudioItem, vm: MusicViewModel, onDismiss: () -> Unit,
                 }
                 playlistActions?.invoke()
                 SheetRow(MoodyIcons.Info, "Info") { showInfo = true }
+                SheetRow(MoodyIcons.Health, "Check file health") { onDismiss(); openHealth(song.uri) }
                 SheetRow(MoodyIcons.Close, "Delete from phone") { confirmDelete = true }
             } else {
                 SheetRow(MoodyIcons.Plus, "New playlist") { creating = true }

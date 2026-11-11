@@ -123,7 +123,13 @@ class MainActivity : ComponentActivity() {
                             PermissionsScreen(onContinue = { media.refreshAccess(); nav.popBackStack() }, onBack = { nav.popBackStack() })
                         }
                         composable(Routes.SETTINGS) {
-                            SettingsScreen(hiltViewModel(), onBack = { nav.popBackStack() }, onSection = { nav.navigate(Routes.settingsSection(it.id)) { launchSingleTop = true } }, onStats = { nav.navigate(Routes.STATS) { launchSingleTop = true } })
+                            SettingsScreen(hiltViewModel(), onBack = { nav.popBackStack() }, onSection = { nav.navigate(Routes.settingsSection(it.id)) { launchSingleTop = true } }, onStats = { nav.navigate(Routes.STATS) { launchSingleTop = true } }, onHealth = { nav.navigate(Routes.health()) { launchSingleTop = true } })
+                        }
+                        composable(
+                            Routes.HEALTH,
+                            arguments = listOf(androidx.navigation.navArgument("uri") { type = androidx.navigation.NavType.StringType; nullable = true; defaultValue = null }),
+                        ) {
+                            com.moody.player.ui.health.HealthScreen(hiltViewModel(), onBack = { nav.popBackStack() })
                         }
                         composable(Routes.STATS) {
                             com.moody.player.ui.stats.StatsScreen(hiltViewModel(), onBack = { nav.popBackStack() })

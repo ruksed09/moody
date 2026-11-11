@@ -247,7 +247,8 @@ fun VideoLibraryContent(
         }
     }
 
-    actionsFor?.let { v -> VideoActionsSheet(v, onDismiss = { actionsFor = null }) { a ->
+    val openHealth = com.moody.player.ui.health.LocalOpenHealth.current
+    actionsFor?.let { v -> VideoActionsSheet(v, onDismiss = { actionsFor = null }, onHealth = { actionsFor = null; openHealth(v.uri) }) { a ->
         actionsFor = null
         if (a == null) nav.play(s.shown, s.shown.indexOf(v).coerceAtLeast(0)) else nav.onSelection(a, listOf(v)) {}
     } }
@@ -360,7 +361,7 @@ private fun SectionHeader(title: String, layout: LayoutMode, onLayout: (LayoutMo
 /** Per-video menu from a row's three dots. Picking null means Play. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun VideoActionsSheet(v: VideoItem, onDismiss: () -> Unit, onPick: (SelectionAction?) -> Unit) {
+private fun VideoActionsSheet(v: VideoItem, onDismiss: () -> Unit, onHealth: () -> Unit, onPick: (SelectionAction?) -> Unit) {
     val c = MoodyTheme.colors
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = c.surface) {
         Column(Modifier.padding(bottom = 24.dp)) {
@@ -377,6 +378,13 @@ private fun VideoActionsSheet(v: VideoItem, onDismiss: () -> Unit, onPick: (Sele
                     Icon(icon, null, Modifier.size(20.dp), tint = if (a == SelectionAction.DELETE) c.danger else c.text2)
                     Spacer(Modifier.width(16.dp))
                     Text(label, style = MoodyTheme.type.body, color = if (a == SelectionAction.DELETE) c.danger else c.text)
+                }
+                if (a == SelectionAction.INFO) {
+                    Row(Modifier.fillMaxWidth().height(52.dp).clickable(onClick = onHealth).padding(horizontal = 24.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(MoodyIcons.Health, null, Modifier.size(20.dp), tint = c.text2)
+                        Spacer(Modifier.width(16.dp))
+                        Text("Check file health", style = MoodyTheme.type.body, color = c.text)
+                    }
                 }
             }
         }

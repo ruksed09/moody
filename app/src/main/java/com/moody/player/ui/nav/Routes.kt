@@ -19,6 +19,7 @@ object Routes {
     const val MUSIC_FOLDER = "music-folder/{key}"
     const val STATS = "stats"
     const val VISUALIZER = "visualizer"
+    const val HEALTH = "health?uri={uri}"
 
     /** Empty paths (files at the storage root) travel as "~" so the route still matches. */
     fun folder(path: String) = "folder/${Uri.encode(path.ifEmpty { "~" })}"
@@ -27,5 +28,6 @@ object Routes {
     fun playlist(id: Long) = "playlist/$id"
     fun album(id: Long) = "album/$id"
     fun artist(name: String) = "artist/${Uri.encode(name)}"
+    fun health(uri: Uri? = null) = if (uri == null) "health" else "health?uri=${Uri.encode(uri.toString())}"
     fun musicFolder(path: String) = "music-folder/${Uri.encode(path.ifEmpty { "~" })}"
 }
