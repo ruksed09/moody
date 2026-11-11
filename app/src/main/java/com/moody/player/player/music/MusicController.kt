@@ -21,6 +21,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -28,6 +29,9 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 enum class RepeatMode { OFF, ALL, ONE }
+
+/** How long the sleep timer takes to fade the music out. */
+private const val FADE_MS = 60_000L
 
 data class MusicState(
     val connected: Boolean = false,
@@ -54,6 +58,7 @@ class MusicController @Inject constructor(
     @ApplicationContext private val context: Context,
     private val media: MediaRepository,
     private val coordinator: PlaybackCoordinator,
+    private val settings: com.moody.player.data.prefs.SettingsStore,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var controller: MediaController? = null
@@ -158,7 +163,7 @@ class MusicController @Inject constructor(
         if (c.mediaItemCount == 0) playQueue(items, 0) else c.addMediaItems(items.map { it.toMediaItem() })
     }
 
-    fun toggle() = withController { c -> if (c.isPlaying) c.pause() else { if (c.playbackState == Player.STATE_IDLE) c.prepare(); c.play() } }
+    fun toggle() = withController { c -> if (c.isPlaying) c.pause() else { restoreVolume(); if (c.playbackState == Player.STATE_IDLE) c.prepare(); c.play() } }
     fun pause() = withController { it.pause() }
     fun next() = withController { if (it.hasNextMediaItem()) it.seekToNextMediaItem() }
     fun prev() = withController { if (it.currentPosition > 3_000 || !it.hasPreviousMediaItem()) it.seekTo(0) else it.seekToPreviousMediaItem() }
@@ -219,13 +224,27 @@ class MusicController @Inject constructor(
 
     fun sleepIn(minutes: Int?) {
         sleepJob?.cancel()
+        restoreVolume()
         if (minutes == null) { _state.update { it.copy(sleepAt = null) }; return }
-        val at = System.currentTimeMillis() + minutes * 60_000L
+        val total = minutes * 60_000L
+        val at = System.currentTimeMillis() + total
         _state.update { it.copy(sleepAt = at) }
         sleepJob = scope.launch {
-            delay(minutes * 60_000L)
+            val fade = settings.settings.first().sleepFade
+            val fadeMs = if (fade) minOf(FADE_MS, total) else 0L
+            delay(total - fadeMs)
+            if (fadeMs > 0) {
+                val steps = 40
+                for (i in 1..steps) {
+                    controller?.volume = (1f - i / steps.toFloat()).coerceAtLeast(0f)
+                    delay(fadeMs / steps)
+                }
+            }
             controller?.pause()
+            restoreVolume()
             _state.update { it.copy(sleepAt = null) }
         }
     }
+
+    private fun restoreVolume() { controller?.let { if (it.volume < 1f) it.volume = 1f } }
 }

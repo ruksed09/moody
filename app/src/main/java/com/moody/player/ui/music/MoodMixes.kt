@@ -1,0 +1,107 @@
+package com.moody.player.ui.music
+
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
+import androidx.compose.material3.ripple
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import com.moody.player.data.media.AudioItem
+import com.moody.player.design.MoodyTheme
+import com.moody.player.design.Radii
+import com.moody.player.design.components.Motion
+import com.moody.player.design.icons.MoodyIcons
+import com.moody.player.domain.MoodMix
+
+private val CardSide = 148.dp
+
+/**
+ * Mixes Moody builds from what you play, when you play it and what you love. Everything is worked out
+ * on the phone; each card says what it is built from.
+ */
+@Composable
+fun MoodMixesRow(mixes: List<MoodMix<AudioItem>>, onPlay: (MoodMix<AudioItem>) -> Unit) {
+    val c = MoodyTheme.colors
+    Column(Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(MoodyIcons.Sparkle, null, Modifier.size(16.dp), tint = c.accent)
+            Spacer(Modifier.width(8.dp))
+            Text("Mood mixes", style = MoodyTheme.type.title, color = c.text, modifier = Modifier.weight(1f))
+            Text("Made on this phone", style = MoodyTheme.type.caption, color = c.text3)
+        }
+        LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            items(mixes, key = { it.id }) { m -> MixCard(m) { onPlay(m) } }
+        }
+        Spacer(Modifier.height(16.dp))
+    }
+}
+
+@Composable
+private fun MixCard(m: MoodMix<AudioItem>, onClick: () -> Unit) {
+    val c = MoodyTheme.colors
+    val src = remember { MutableInteractionSource() }
+    val pressed by src.collectIsPressedAsState()
+    val scale by animateFloatAsState(if (pressed) 0.97f else 1f, Motion.fast(), label = "mix-press")
+    Column(
+        Modifier
+            .width(CardSide)
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .clip(Radii.lg)
+            .clickable(src, ripple(), role = Role.Button, onClick = onClick)
+            .semantics(mergeDescendants = true) { contentDescription = "Play ${m.title}, ${m.songs.size} songs. ${m.basis}" },
+    ) {
+        Box(Modifier.size(CardSide).clip(Radii.lg).background(c.raised)) {
+            // Four different albums make a mosaic; fewer show the first cover large.
+            val covers = remember(m.songs) { m.songs.distinctBy { it.albumId }.take(4) }
+            if (covers.size == 4) {
+                val half = CardSide / 2
+                Column {
+                    Row { Artwork(covers[0], Modifier.size(half), RectangleShape, 0.dp); Artwork(covers[1], Modifier.size(half), RectangleShape, 0.dp) }
+                    Row { Artwork(covers[2], Modifier.size(half), RectangleShape, 0.dp); Artwork(covers[3], Modifier.size(half), RectangleShape, 0.dp) }
+                }
+            } else {
+                Artwork(covers.firstOrNull(), Modifier.fillMaxSize(), RectangleShape, 28.dp)
+            }
+            Box(
+                Modifier.align(Alignment.BottomEnd).padding(8.dp).size(36.dp).clip(CircleShape).background(c.accent),
+                contentAlignment = Alignment.Center,
+            ) { Icon(if (m.shuffle) MoodyIcons.Shuffle else MoodyIcons.Play, null, Modifier.size(16.dp), tint = c.accentInk) }
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(m.title, style = MoodyTheme.type.bodyStrong, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(
+            "${m.songs.size} songs · ${m.basis}", style = MoodyTheme.type.caption, color = c.text3,
+            maxLines = 2, minLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(bottom = 4.dp),
+        )
+    }
+}

@@ -36,6 +36,7 @@ class VlcAudioPlayer(private val context: Context) : SimpleBasePlayer(Looper.get
     private var repeat = Player.REPEAT_MODE_OFF
     private var shuffle = false
     private var speed = 1f
+    private var volume = 1f
 
     init {
         mp.setEventListener { e ->
@@ -89,6 +90,7 @@ class VlcAudioPlayer(private val context: Context) : SimpleBasePlayer(Looper.get
         mp.media = media
         media.release()
         mp.rate = speed
+        mp.volume = (volume * 100).toInt()
         if (play) mp.play()
     }
 
@@ -105,7 +107,7 @@ class VlcAudioPlayer(private val context: Context) : SimpleBasePlayer(Looper.get
                     COMMAND_SEEK_TO_NEXT_MEDIA_ITEM, COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM, COMMAND_SEEK_TO_NEXT, COMMAND_SEEK_TO_PREVIOUS,
                     COMMAND_SEEK_TO_MEDIA_ITEM, COMMAND_SEEK_TO_DEFAULT_POSITION, COMMAND_SET_REPEAT_MODE, COMMAND_SET_SHUFFLE_MODE,
                     COMMAND_SET_SPEED_AND_PITCH, COMMAND_GET_CURRENT_MEDIA_ITEM, COMMAND_GET_TIMELINE, COMMAND_GET_METADATA,
-                    COMMAND_CHANGE_MEDIA_ITEMS, COMMAND_SET_MEDIA_ITEM, COMMAND_RELEASE,
+                    COMMAND_CHANGE_MEDIA_ITEMS, COMMAND_SET_MEDIA_ITEM, COMMAND_RELEASE, COMMAND_SET_VOLUME, COMMAND_GET_VOLUME,
                 ).build(),
             )
             .setPlayWhenReady(playWhenReady, PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST)
@@ -116,6 +118,7 @@ class VlcAudioPlayer(private val context: Context) : SimpleBasePlayer(Looper.get
             .setRepeatMode(repeat)
             .setShuffleModeEnabled(shuffle)
             .setPlaybackParameters(PlaybackParameters(speed))
+            .setVolume(volume)
             .build()
     }
 
@@ -199,6 +202,12 @@ class VlcAudioPlayer(private val context: Context) : SimpleBasePlayer(Looper.get
             }
             else -> if (target != index || !mp.hasMedia()) load(target, pos, playWhenReady) else { mp.setTime(pos, false); mark(pos) }
         }
+        return done()
+    }
+
+    override fun handleSetVolume(volume: Float): ListenableFuture<*> {
+        this.volume = volume.coerceIn(0f, 1f)
+        mp.volume = (this.volume * 100).toInt()
         return done()
     }
 

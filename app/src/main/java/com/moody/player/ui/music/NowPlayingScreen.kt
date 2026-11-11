@@ -8,6 +8,8 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import com.moody.player.design.components.ActionChip
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
@@ -93,12 +95,38 @@ class NowPlayingViewModel @Inject constructor(
     val music: MusicController,
     private val favorites: FavoriteDao,
     private val media: com.moody.player.data.media.MediaRepository,
+    private val lyricsStore: com.moody.player.data.media.LyricsStore,
 ) : ViewModel() {
     fun originalSong(song: com.moody.player.data.media.AudioItem) = media.originalSong(song.uri) ?: song
     fun editSong(song: com.moody.player.data.media.AudioItem, edit: com.moody.player.data.media.SongEdit?) = viewModelScope.launch { media.editSong(song.uri, edit) }
     val state = music.state
     val favoriteUris = favorites.all().map { l -> l.map { it.audioUri }.toSet() }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
     fun toggleFavorite(uri: String, on: Boolean) = viewModelScope.launch { if (on) favorites.add(Favorite(uri)) else favorites.remove(uri) }
+
+    /** Lyrics of one song: null lyrics once loaded means the song has none yet. */
+    data class LyricsUi(val uri: android.net.Uri? = null, val lyrics: com.moody.player.domain.Lyrics? = null, val loading: Boolean = true, val added: Boolean = false)
+    private val _lyrics = kotlinx.coroutines.flow.MutableStateFlow(LyricsUi())
+    val lyrics: kotlinx.coroutines.flow.StateFlow<LyricsUi> = _lyrics
+
+    fun loadLyrics(song: android.net.Uri, force: Boolean = false) {
+        if (!force && _lyrics.value.uri == song) return
+        _lyrics.value = LyricsUi(song)
+        viewModelScope.launch {
+            val l = lyricsStore.load(song)
+            if (_lyrics.value.uri == song) _lyrics.value = LyricsUi(song, l, loading = false, added = lyricsStore.hasAdded(song))
+        }
+    }
+
+    fun importLyrics(song: android.net.Uri, picked: android.net.Uri, done: (Boolean) -> Unit) = viewModelScope.launch {
+        val ok = lyricsStore.import(song, picked)
+        if (ok) loadLyrics(song, force = true)
+        done(ok)
+    }
+
+    fun removeLyrics(song: android.net.Uri) = viewModelScope.launch {
+        lyricsStore.remove(song)
+        loadLyrics(song, force = true)
+    }
 }
 
 @Composable
@@ -112,7 +140,17 @@ fun NowPlayingScreen(vm: NowPlayingViewModel, onClose: () -> Unit, onEqualizer: 
     var queueOpen by remember { mutableStateOf(false) }
     var extrasOpen by remember { mutableStateOf<String?>(null) }
     var infoOpen by remember { mutableStateOf(false) }
+    var showLyrics by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     val item = s.current
+    val lyr by vm.lyrics.collectAsStateWithLifecycle()
+    androidx.compose.runtime.LaunchedEffect(showLyrics, item?.uri) { if (showLyrics && item != null) vm.loadLyrics(item.uri) }
+    var lyricsTarget by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<android.net.Uri?>(null) }
+    val pickLyrics = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { picked ->
+        val song = lyricsTarget
+        if (picked != null && song != null) vm.importLyrics(song, picked) { ok ->
+            toaster.show(if (ok) "Lyrics added" else "That file has no lyrics Moody can read")
+        }
+    }
 
     Box(Modifier.fillMaxSize().background(c.bg)) {
         // Backdrop: the artwork itself, blurred, under a wash of its own dominant colour.
@@ -124,7 +162,7 @@ fun NowPlayingScreen(vm: NowPlayingViewModel, onClose: () -> Unit, onEqualizer: 
         Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(horizontal = 24.dp)) {
             Row(Modifier.fillMaxWidth().height(56.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconAction(MoodyIcons.ChevronDown, "Close", onClose, tint = c.text)
-                Text("Now playing", style = MoodyTheme.type.label, color = c.text2, modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { ViewSwitch(showLyrics) { showLyrics = it } }
                 IconAction(MoodyIcons.Queue, "Queue", { queueOpen = true }, tint = c.text)
             }
             // Speed, sleep and equalizer sit right under the header, where they are easy to reach and read.
@@ -133,7 +171,20 @@ fun NowPlayingScreen(vm: NowPlayingViewModel, onClose: () -> Unit, onEqualizer: 
                 ActionChip(s.sleepAt?.let { "${((it - System.currentTimeMillis()) / 60_000) + 1} min" } ?: "Sleep", { extrasOpen = "sleep" }, icon = MoodyIcons.Timer, active = s.sleepAt != null)
                 ActionChip("Equalizer", onEqualizer, icon = MoodyIcons.Equalizer)
             }
-            BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().padding(vertical = 20.dp), contentAlignment = Alignment.Center) {
+            androidx.compose.animation.Crossfade(showLyrics && item != null, Modifier.weight(1f).fillMaxWidth(), animationSpec = Motion.base(), label = "art-lyrics") { lyricsOn ->
+            if (lyricsOn && item != null) {
+                LyricsPanel(
+                    lyrics = lyr.lyrics?.takeIf { lyr.uri == item.uri && !it.isEmpty },
+                    loading = lyr.uri != item.uri || lyr.loading,
+                    positionMs = s.positionMs,
+                    canRemove = lyr.added && lyr.uri == item.uri,
+                    onSeek = vm.music::seekTo,
+                    onAdd = { lyricsTarget = item.uri; pickLyrics.launch(arrayOf("text/*", "application/octet-stream")) },
+                    onRemove = { vm.removeLyrics(item.uri); toaster.show("Lyrics removed") },
+                    modifier = Modifier.fillMaxSize().padding(vertical = 12.dp),
+                )
+            } else
+            BoxWithConstraints(Modifier.fillMaxSize().padding(vertical = 20.dp), contentAlignment = Alignment.Center) {
                 val side = minOf(maxWidth, maxHeight).coerceAtMost(420.dp)
                 // null while loading, true with a cover, false when the song has none (then a disc turns).
                 var cover by remember(item?.uri, item?.cover) { mutableStateOf<Boolean?>(null) }
@@ -156,6 +207,7 @@ fun NowPlayingScreen(vm: NowPlayingViewModel, onClose: () -> Unit, onEqualizer: 
                     )
                 }
                 if (discAlpha > 0f) SpinningDisc(s.playing, Modifier.size(side * 0.92f).graphicsLayer { alpha = discAlpha })
+            }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -290,6 +342,31 @@ private fun QueueSheet(s: MusicState, music: MusicController, onDismiss: () -> U
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+/** Song or Lyrics, as a small two-part switch in the header. The lit part slides between the two. */
+@Composable
+private fun ViewSwitch(lyrics: Boolean, onChange: (Boolean) -> Unit) {
+    val c = MoodyTheme.colors
+    val seg = 76.dp
+    val x by androidx.compose.animation.core.animateDpAsState(if (lyrics) seg else 0.dp, Motion.base(), label = "switch")
+    Box(
+        Modifier.height(34.dp).clip(Radii.pill).background(c.surface).border(1.dp, c.line, Radii.pill).padding(3.dp),
+    ) {
+        Box(Modifier.offset(x = x).width(seg).fillMaxHeight().clip(Radii.pill).background(c.raised).border(1.dp, c.line2, Radii.pill))
+        Row {
+            listOf(false to "Song", true to "Lyrics").forEach { (v, label) ->
+                val on = v == lyrics
+                val tc by animateColorAsState(if (on) c.text else c.text3, Motion.base(), label = "switch-text")
+                Box(
+                    Modifier.width(seg).fillMaxHeight().clip(Radii.pill)
+                        .clickable(role = Role.Tab) { onChange(v) }
+                        .semantics { contentDescription = if (v) "Show lyrics" else "Show song" },
+                    contentAlignment = Alignment.Center,
+                ) { Text(label, style = MoodyTheme.type.label, color = tc) }
             }
         }
     }

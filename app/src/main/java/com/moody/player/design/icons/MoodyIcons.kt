@@ -130,6 +130,10 @@ object MoodyIcons {
     val ChevronUp by lazy { icon("chev-up", "M18 15l-6-6-6 6") }
     val ArrowBack by lazy { icon("arrow-back", "M19 12H5M12 19l-7-7 7-7") }
     val Plus by lazy { icon("plus", "M12 5v14M5 12h14") }
+    val Bookmark by lazy { icon("bookmark", "M18 21l-6-4.3L6 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z") }
+    val Chart by lazy { icon("chart", "M4 20h16", "M7 16v-4", "M12 16V7", "M17 16v-7") }
+    val Lyrics by lazy { icon("lyrics", "M3 6h11", "M3 11h11", "M3 16h6", "M20 16V4", "M15 16a2.5 2.5 0 1 0 5 0 2.5 2.5 0 0 0-5 0") }
+    val Sparkle by lazy { icon("sparkle", "M11 3l1.9 5.1L18 10l-5.1 1.9L11 17l-1.9-5.1L4 10l5.1-1.9z", "M19 15l.8 2.2 2.2.8-2.2.8L19 21l-.8-2.2-2.2-.8 2.2-.8z") }
     val Download by lazy { icon("download", "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", "M7 10l5 5 5-5", "M12 15V3") }
     val Queue by lazy { icon("queue", "M21 15V6", "M18.5 13a2.5 2.5 0 1 0 0 5a2.5 2.5 0 1 0 0-5z", "M12 12H3M16 6H3M12 18H3") }
     val Album by lazy { icon("album", CIRCLE10, "M12 10a2 2 0 1 0 0 4a2 2 0 1 0 0-4z") }

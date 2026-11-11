@@ -28,6 +28,8 @@ object AppModule {
     @Provides fun vault(db: MoodyDb) = db.vault()
     @Provides fun recentUrls(db: MoodyDb) = db.recentUrls()
     @Provides fun fileSettings(db: MoodyDb) = db.fileSettings()
+    @Provides fun bookmarks(db: MoodyDb) = db.bookmarks()
+    @Provides fun stats(db: MoodyDb) = db.stats()
 
     /** Long-lived scope for work that must outlive a screen (scans, vault moves, downloads). */
     @Provides @Singleton @AppScope

@@ -40,6 +40,8 @@ data class Settings(
     val gestures: Boolean = true,
     val disabledGestures: Set<com.moody.player.domain.PlayerGesture> = emptySet(),
     val resume: Boolean = true,
+    /** Seconds to step back when resuming a video (0 = off). */
+    val smartResumeSec: Int = 5,
     val perFileSettings: Boolean = false,
     val backgroundPlay: Boolean = true,
     val autoPip: Boolean = true,
@@ -49,6 +51,10 @@ data class Settings(
     val subColor: Long = 0xFFFFFAF2,
     // Music
     val gapless: Boolean = true,
+    /** The music sleep timer fades the sound out over its last minute. */
+    val sleepFade: Boolean = true,
+    /** Count play time for the Stats screen and mood mixes. */
+    val keepStats: Boolean = true,
     val minSongSec: Int = 30,
     // Library
     val hiddenFolders: Set<String> = emptySet(),
@@ -78,6 +84,9 @@ private object K {
     val gestures = booleanPreferencesKey("gestures")
     val gesturesOff = stringSetPreferencesKey("gestures_off")
     val resume = booleanPreferencesKey("resume")
+    val smartResume = intPreferencesKey("smart_resume_sec")
+    val sleepFade = booleanPreferencesKey("sleep_fade")
+    val keepStats = booleanPreferencesKey("keep_stats")
     val perFile = booleanPreferencesKey("per_file")
     val bgPlay = booleanPreferencesKey("bg_play")
     val autoPip = booleanPreferencesKey("auto_pip")
@@ -114,6 +123,9 @@ internal fun Preferences.toSettings(): Settings {
         gestures = this[K.gestures] ?: d.gestures,
         disabledGestures = this[K.gesturesOff]?.let { com.moody.player.domain.decodeGestures(it) } ?: d.disabledGestures,
         resume = this[K.resume] ?: d.resume,
+        smartResumeSec = this[K.smartResume] ?: d.smartResumeSec,
+        sleepFade = this[K.sleepFade] ?: d.sleepFade,
+        keepStats = this[K.keepStats] ?: d.keepStats,
         perFileSettings = this[K.perFile] ?: d.perFileSettings,
         backgroundPlay = this[K.bgPlay] ?: d.backgroundPlay,
         autoPip = this[K.autoPip] ?: d.autoPip,
@@ -147,6 +159,9 @@ internal fun MutablePreferences.write(s: Settings) {
     this[K.gestures] = s.gestures
     this[K.gesturesOff] = com.moody.player.domain.encodeGestures(s.disabledGestures)
     this[K.resume] = s.resume
+    this[K.smartResume] = s.smartResumeSec
+    this[K.sleepFade] = s.sleepFade
+    this[K.keepStats] = s.keepStats
     this[K.perFile] = s.perFileSettings
     this[K.bgPlay] = s.backgroundPlay
     this[K.autoPip] = s.autoPip

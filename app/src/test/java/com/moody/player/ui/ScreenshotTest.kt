@@ -114,7 +114,12 @@ class ScreenshotTest {
     }
 
     @Test fun musicSongsDark() = shot("music-songs-dark", ThemeMode.DARK) {
-        com.moody.player.ui.music.MusicContent(musicState(), com.moody.player.ui.music.MusicTab.SONGS, songs[0].uri.toString(), true, true, musicNav, {}, { _, _ -> }, {}, {}, {})
+        val mixes = listOf(
+            com.moody.player.domain.MoodMix("now", "Evening picks", "What you usually play around this time", songs),
+            com.moody.player.domain.MoodMix("loved", "Loved", "Your favourites, shuffled", songs.reversed(), shuffle = true),
+            com.moody.player.domain.MoodMix("focus", "Focus", "Long tracks, 5 minutes and up", songs.take(3)),
+        )
+        com.moody.player.ui.music.MusicContent(musicState().copy(mixes = mixes), com.moody.player.ui.music.MusicTab.SONGS, songs[0].uri.toString(), true, true, musicNav, {}, { _, _ -> }, {}, {}, {})
     }
     @Test fun musicAlbumsLight() = shot("music-albums-light", ThemeMode.LIGHT) {
         com.moody.player.ui.music.MusicContent(musicState(), com.moody.player.ui.music.MusicTab.ALBUMS, null, true, true, musicNav, {}, { _, _ -> }, {}, {}, {})
@@ -128,6 +133,22 @@ class ScreenshotTest {
         com.moody.player.data.prefs.SettingsStore(org.robolectric.RuntimeEnvironment.getApplication()),
         kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined),
     )
+
+    private fun statsUi(range: com.moody.player.ui.stats.StatsRange, empty: Boolean = false): com.moody.player.ui.stats.StatsUi {
+        val today = java.time.LocalDate.of(2026, 11, 11).toEpochDay()
+        val rows = if (empty) emptyList() else (0 until range.days).flatMap { d ->
+            val day = today - d
+            listOf(
+                com.moody.player.domain.StatRow(day, 21, "content://v/${d % 3}", com.moody.player.domain.StatKind.VIDEO, "Sample video ${d % 3 + 1}", ((d * 37) % 90 + 5) * 60_000L, 1),
+                com.moody.player.domain.StatRow(day, 8, "content://a/${d % 4}", com.moody.player.domain.StatKind.MUSIC, "Sample song ${d % 4 + 1}", ((d * 53) % 70) * 60_000L, 2),
+            )
+        }
+        val visible = (0..3).flatMap { listOf("content://v/$it", "content://a/$it") }.toSet()
+        return com.moody.player.ui.stats.StatsUi(range, com.moody.player.domain.summarize(rows, today - range.days + 1, today, visible))
+    }
+    @Test fun statsWeekDark() = bare("stats-week-dark", ThemeMode.DARK) { com.moody.player.ui.stats.StatsContent(statsUi(com.moody.player.ui.stats.StatsRange.WEEK), {}, {}, {}, {}) }
+    @Test fun statsMonthLight() = bare("stats-month-light", ThemeMode.LIGHT) { com.moody.player.ui.stats.StatsContent(statsUi(com.moody.player.ui.stats.StatsRange.MONTH), {}, {}, {}, {}) }
+    @Test fun statsEmptyMidnight() = bare("stats-empty-midnight", ThemeMode.MIDNIGHT) { com.moody.player.ui.stats.StatsContent(statsUi(com.moody.player.ui.stats.StatsRange.WEEK, empty = true), {}, {}, {}, {}) }
 
     @Test fun vaultSetupDark() = shot("vault-setup-dark", ThemeMode.DARK) { com.moody.player.ui.vault.VaultSetupScreen(lock(), {}) }
     @Test fun vaultUnlockLight() = shot("vault-unlock-light", ThemeMode.LIGHT) {

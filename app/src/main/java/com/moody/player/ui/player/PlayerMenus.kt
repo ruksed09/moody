@@ -97,6 +97,7 @@ enum class PlayerMenu(val title: String, val parent: PlayerMenu? = null) {
     AB("A-B repeat", MORE),
     LOOP("Loop", MORE),
     SLEEP("Sleep timer", MORE),
+    BOOKMARKS("Bookmarks", MORE),
     ASPECT("Aspect ratio", MORE),
     SHORTCUTS("Player shortcuts", MORE),
 }
@@ -202,6 +203,7 @@ fun PlayerMenus(menu: PlayerMenu, vm: PlayerViewModel, st: PlayerState, host: Pl
                     PlayerMenu.AB -> AbMenu(vm)
                     PlayerMenu.LOOP -> LoopMenu(vm)
                     PlayerMenu.SLEEP -> SleepMenu(vm, onDismiss)
+                    PlayerMenu.BOOKMARKS -> BookmarksMenu(vm, st, onDismiss)
                     PlayerMenu.ASPECT -> AspectMenu(vm, st)
                     PlayerMenu.SHORTCUTS -> {
                         val settings by vm.settings.collectAsStateWithLifecycle()
@@ -303,6 +305,10 @@ private fun MoreMenu(vm: PlayerViewModel, st: PlayerState, host: PlayerHost, go:
     GroupLabel("Playback")
     SheetRow(null, "A-B repeat", glyph = "AB", switch = ab.first != null) { vm.toggleAb() }
     SheetRow(MoodyIcons.Repeat, "Loop", loop.label) { go(PlayerMenu.LOOP) }
+    if (!vm.isVault) {
+        val marks = vm.bookmarks.collectAsStateWithLifecycle().value
+        SheetRow(MoodyIcons.Bookmark, "Bookmarks", if (marks.isEmpty()) "None yet" else "${marks.size}") { go(PlayerMenu.BOOKMARKS) }
+    }
     SheetRow(MoodyIcons.Timer, "Sleep timer", when { sleep == null -> "Off"; sleep == -1L -> "End of video"; else -> "${((sleep!! - System.currentTimeMillis()) / 60_000) + 1} min" }) { go(PlayerMenu.SLEEP) }
     SectionDivider()
     GroupLabel("Video")
@@ -481,4 +487,31 @@ private fun SleepMenu(vm: PlayerViewModel, close: () -> Unit) {
     OptionRow("Off", at == null) { vm.sleepIn(null); close() }
     listOf(15, 30, 45, 60).forEach { m -> OptionRow("$m minutes", false) { vm.sleepIn(m); close() } }
     OptionRow("End of this video", at == -1L) { vm.sleepIn(-1); close() }
+}
+
+/** Marked moments of this video: add one at the current time, tap one to jump there, remove with the cross. */
+@Composable
+private fun BookmarksMenu(vm: PlayerViewModel, st: PlayerState, close: () -> Unit) {
+    val c = MoodyTheme.colors
+    val marks by vm.bookmarks.collectAsStateWithLifecycle()
+    SheetRow(MoodyIcons.Plus, "Bookmark this moment", formatDuration(st.positionMs)) { vm.addBookmark() }
+    if (marks.isEmpty()) {
+        Note("Bookmarks show as small marks on the progress bar. Add the Bookmark shortcut to mark moments in one tap.")
+        return
+    }
+    Divider()
+    marks.forEachIndexed { i, b ->
+        Row(
+            Modifier.fillMaxWidth().height(48.dp).clip(Radii.md).clickable { vm.jumpTo(b); close() }.padding(start = 12.dp, end = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                formatDuration(b.positionMs), style = MoodyTheme.type.mono, color = c.accent,
+                modifier = Modifier.border(1.dp, c.line3, Radii.sm).padding(horizontal = 6.dp, vertical = 2.dp),
+            )
+            Spacer(Modifier.width(12.dp))
+            Text("Bookmark ${i + 1}", style = MoodyTheme.type.body, color = c.text, modifier = Modifier.weight(1f))
+            VideoIcon(MoodyIcons.Close, "Remove bookmark at ${formatDuration(b.positionMs)}", { vm.removeBookmark(b) }, size = 16.dp, box = 40.dp)
+        }
+    }
 }

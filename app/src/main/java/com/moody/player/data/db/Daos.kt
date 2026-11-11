@@ -82,3 +82,27 @@ interface FileSettingsDao {
     @Query("SELECT * FROM file_settings WHERE uri = :uri") suspend fun get(uri: String): FileSettings?
     @Upsert suspend fun save(s: FileSettings)
 }
+
+@Dao
+interface BookmarkDao {
+    @Query("SELECT * FROM bookmarks WHERE uri = :uri ORDER BY positionMs") fun forUri(uri: String): Flow<List<Bookmark>>
+    @Insert suspend fun add(b: Bookmark): Long
+    @Query("DELETE FROM bookmarks WHERE id = :id") suspend fun remove(id: Long)
+}
+
+@Dao
+interface StatsDao {
+    @Query("INSERT OR IGNORE INTO play_stats(day, hour, uri, kind, title, ms, plays) VALUES (:day, :hour, :uri, :kind, :title, 0, 0)")
+    suspend fun ensure(day: Long, hour: Int, uri: String, kind: String, title: String)
+
+    @Query("UPDATE play_stats SET ms = ms + :ms, plays = plays + :plays, title = :title WHERE day = :day AND hour = :hour AND uri = :uri")
+    suspend fun bump(day: Long, hour: Int, uri: String, title: String, ms: Long, plays: Int)
+
+    @Transaction suspend fun add(day: Long, hour: Int, uri: String, kind: String, title: String, ms: Long, plays: Int) {
+        ensure(day, hour, uri, kind, title)
+        bump(day, hour, uri, title, ms, plays)
+    }
+
+    @Query("SELECT * FROM play_stats WHERE day >= :fromDay") fun since(fromDay: Long): Flow<List<PlayStat>>
+    @Query("DELETE FROM play_stats") suspend fun clearAll()
+}

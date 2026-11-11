@@ -75,6 +75,7 @@ data class MusicNav(
     val openPlaylist: (Long) -> Unit,
     val openSettings: () -> Unit,
     val requestAccess: () -> Unit,
+    val openStats: () -> Unit = {},
 )
 
 const val FAVOURITES_ID = -1L
@@ -93,6 +94,7 @@ fun MusicScreen(vm: MusicViewModel, nav: MusicNav, hasAccess: Boolean, backgroun
         onShuffle = { vm.music.playQueue(s.songs, 0, shuffle = true) },
         onSongMore = { actionsFor = it },
         onNewPlaylist = { newPlaylist = true },
+        onMix = { m -> vm.music.playQueue(m.songs, 0, shuffle = m.shuffle) },
     )
     actionsFor?.let { song -> SongActionsSheet(song, vm, onDismiss = { actionsFor = null }) }
     if (newPlaylist) NameDialog("New playlist", "", "Create", onDismiss = { newPlaylist = false }) { vm.createPlaylist(it); newPlaylist = false }
@@ -112,6 +114,7 @@ fun MusicContent(
     onShuffle: () -> Unit,
     onSongMore: (AudioItem) -> Unit,
     onNewPlaylist: () -> Unit,
+    onMix: (com.moody.player.domain.MoodMix<AudioItem>) -> Unit = {},
 ) {
     val c = MoodyTheme.colors
     val grid = tab == MusicTab.ALBUMS
@@ -162,8 +165,11 @@ fun MusicContent(
                 s.songs.isEmpty() && tab != MusicTab.PLAYLISTS -> full {
                     EmptyState({ EmptyMusic() }, "No music on this phone yet", "Songs you download or copy into Music show up here. Clips under 30 seconds are left out")
                 }
-                tab == MusicTab.SONGS -> items(s.songs, key = { it.uri.toString() }, span = { GridItemSpan(maxLineSpan) }) { song ->
-                    SongRow(song, song.uri.toString() == currentUri, { onPlay(s.songs, s.songs.indexOf(song)) }, { onSongMore(song) })
+                tab == MusicTab.SONGS -> {
+                    if (s.mixes.isNotEmpty()) item(key = "mixes", span = { GridItemSpan(maxLineSpan) }) { MoodMixesRow(s.mixes, onMix) }
+                    items(s.songs, key = { it.uri.toString() }, span = { GridItemSpan(maxLineSpan) }) { song ->
+                        SongRow(song, song.uri.toString() == currentUri, { onPlay(s.songs, s.songs.indexOf(song)) }, { onSongMore(song) })
+                    }
                 }
                 tab == MusicTab.ALBUMS -> items(s.albums, key = { "${it.id}-${it.name}" }) { a ->
                     Column(Modifier.clip(Radii.md).clickable { nav.openAlbum(a.id) }) {
@@ -213,6 +219,7 @@ fun MusicContent(
         }
         CollapsingTopBar(bar, contentUnder = gridState.firstVisibleItemIndex > 0 || gridState.firstVisibleItemScrollOffset > 0, height = 56.dp) {
             com.moody.player.ui.components.AppTopBar(56.dp) {
+                IconAction(MoodyIcons.Chart, "Your stats", nav.openStats, tint = c.text, size = 20.dp)
                 IconAction(MoodyIcons.Settings, "Settings", nav.openSettings, tint = c.text, size = 20.dp)
             }
         }

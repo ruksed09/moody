@@ -8,6 +8,7 @@ enum class PlayerShortcut(val label: String) {
     AB_REPEAT("A–B repeat"),
     MUTE("Mute"),
     ROTATE("Rotate screen"),
+    BOOKMARK("Bookmark"),
 }
 
 val DEFAULT_SHORTCUTS = listOf(PlayerShortcut.LOOP, PlayerShortcut.MUTE)

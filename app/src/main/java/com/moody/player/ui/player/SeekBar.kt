@@ -21,6 +21,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.input.pointer.pointerInput
@@ -51,6 +52,7 @@ fun SeekBar(
     modifier: Modifier = Modifier,
     abA: Long? = null,
     abB: Long? = null,
+    marks: List<Long> = emptyList(),
     rail: androidx.compose.ui.graphics.Color = OnVideo.rail,
     tipBg: androidx.compose.ui.graphics.Color = OnVideo.ink,
     tipText: androidx.compose.ui.graphics.Color = OnVideo.text,
@@ -107,6 +109,10 @@ fun SeekBar(
                 val ax = abA / durationMs.toFloat() * size.width
                 val bx = (abB ?: positionMs) / durationMs.toFloat() * size.width
                 drawRect(accent.copy(alpha = 0.3f), Offset(ax, y - 3.dp.toPx()), Size((bx - ax).coerceAtLeast(2f), h + 6.dp.toPx()))
+            }
+            if (durationMs > 0) marks.forEach { m ->
+                val mx = (m / durationMs.toFloat()).coerceIn(0f, 1f) * size.width
+                drawRoundRect(Color.White.copy(alpha = 0.85f), Offset(mx - 1.5.dp.toPx(), y - 3.dp.toPx()), Size(3.dp.toPx(), h + 6.dp.toPx()), CornerRadius(1.5.dp.toPx()))
             }
             drawRoundRect(accent, Offset(0f, y), Size(size.width * frac, h), r)
             val knob = if (dragging) 9.dp.toPx() else 7.dp.toPx()

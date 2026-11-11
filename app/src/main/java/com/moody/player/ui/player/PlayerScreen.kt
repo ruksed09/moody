@@ -81,6 +81,7 @@ fun PlayerScreen(vm: PlayerViewModel, host: PlayerHost, inPip: Boolean) {
     var tracks by remember { mutableStateOf<TrackKind?>(null) }
     val settings by vm.settings.collectAsStateWithLifecycle()
     val loop by vm.loop.collectAsStateWithLifecycle()
+    val bookmarks by vm.bookmarks.collectAsStateWithLifecycle()
     val shuffle by vm.shuffle.collectAsStateWithLifecycle()
 
     // Controls hide 3 s after the last touch while playing.
@@ -137,7 +138,7 @@ fun PlayerScreen(vm: PlayerViewModel, host: PlayerHost, inPip: Boolean) {
                     }
                     Spacer(Modifier.weight(1f))
                     BottomControls(
-                        st = st, showRemaining = showRemaining, ab = ab,
+                        st = st, showRemaining = showRemaining, ab = ab, marks = bookmarks.map { it.positionMs },
                         canPrev = vm.hasPrev || st.positionMs > 5_000, hasNext = vm.hasNext || (shuffle && vm.queue.size > 1),
                         onPrev = { vm.prev(); poke++ },
                         onToggle = { vm.dismissResume(); vm.engine.toggle(); poke++ },
@@ -262,6 +263,7 @@ private fun ShortcutRow(
                 com.moody.player.domain.PlayerShortcut.AB_REPEAT -> Quad(MoodyIcons.AbRepeat, "A-B repeat", ab.first != null, vm::toggleAb)
                 com.moody.player.domain.PlayerShortcut.MUTE -> Quad(if (st.muted) MoodyIcons.VolumeMute else MoodyIcons.VolumeHigh, if (st.muted) "Unmute" else "Mute", st.muted, vm::toggleMute)
                 com.moody.player.domain.PlayerShortcut.ROTATE -> Quad(MoodyIcons.Rotate, "Rotate screen", false, onRotate)
+                com.moody.player.domain.PlayerShortcut.BOOKMARK -> Quad(MoodyIcons.Bookmark, "Bookmark this moment", false, vm::addBookmark)
             }
             Box(
                 Modifier.size(40.dp).clip(CircleShape).clickable(role = Role.Button) { action(); onUse() }.semantics { contentDescription = label },
@@ -282,6 +284,7 @@ private fun BottomControls(
     st: PlayerState,
     showRemaining: Boolean,
     ab: Pair<Long?, Long?>,
+    marks: List<Long>,
     canPrev: Boolean,
     hasNext: Boolean,
     onPrev: () -> Unit,
@@ -297,7 +300,7 @@ private fun BottomControls(
     val t = MoodyTheme.type
     val accent = MoodyTheme.colors.accent
     Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(bottom = 6.dp)) {
-        SeekBar(st.positionMs, st.durationMs, onSeek, onScrubbing, Modifier.fillMaxWidth().systemGestureExclusion(), ab.first, ab.second)
+        SeekBar(st.positionMs, st.durationMs, onSeek, onScrubbing, Modifier.fillMaxWidth().systemGestureExclusion(), ab.first, ab.second, marks)
         Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(formatDuration(st.positionMs).let { if (it == "--:--") "0:00" else it }, style = t.mono, color = OnVideo.text)
             Spacer(Modifier.weight(1f))

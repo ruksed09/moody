@@ -51,6 +51,9 @@ class PlayerViewModel @Inject constructor(
     private val fileSettings: FileSettingsDao,
     private val settingsStore: SettingsStore,
     private val media: MediaRepository,
+    private val bookmarkDao: com.moody.player.data.db.BookmarkDao,
+    private val stats: com.moody.player.data.stats.PlayStats,
+    @com.moody.player.di.AppScope private val appScope: kotlinx.coroutines.CoroutineScope,
 ) : ViewModel() {
     /** Identifies this screen to the shared engine (see [VlcEngine.claim]). */
     val token = Any()
@@ -90,6 +93,16 @@ class PlayerViewModel @Inject constructor(
 
     private var resumeChipJob: Job? = null
 
+    /** Bookmarks of the current video, by time. Always empty in the vault. */
+    private val _bookmarks = MutableStateFlow<List<com.moody.player.data.db.Bookmark>>(emptyList())
+    val bookmarks: StateFlow<List<com.moody.player.data.db.Bookmark>> = _bookmarks.asStateFlow()
+    private var bookmarkJob: Job? = null
+
+    // Play time not yet written to the stats, and the clock it is measured with.
+    private var statTickAt = 0L
+    private var statPending = 0L
+    private val sitting = com.moody.player.data.stats.SittingCounter()
+
     init {
         viewModelScope.launch {
             engine.events.collect { e ->
@@ -103,6 +116,10 @@ class PlayerViewModel @Inject constructor(
         viewModelScope.launch {
             var lastSave = 0L
             engine.state.collect { s ->
+                val now = android.os.SystemClock.elapsedRealtime()
+                if (s.playing && statTickAt > 0) statPending += (now - statTickAt).coerceIn(0, 2_000)
+                statTickAt = if (s.playing) now else 0L
+                if (statPending >= 5_000 || (!s.playing && statPending > 0)) flushStats()
                 val (a, b) = _ab.value
                 if (a != null && b != null && s.positionMs >= b) engine.seekTo(a)
                 if (s.playing && System.currentTimeMillis() - lastSave > 5_000) {
@@ -121,11 +138,13 @@ class PlayerViewModel @Inject constructor(
     fun open(i: Int, fromStart: Boolean = false, decoder: Decoder? = null) = viewModelScope.launch {
         val entry = queue.getOrNull(i) ?: return@launch
         dismissResume()
+        flushStats()
         savePosition()
         _index.value = i
         val s = settingsStore.settings.first()
         val saved = if (isVault || fromStart || !s.resume) null else positions.get(entry.uri.toString())
-        val start = saved?.let { resumePosition(it.positionMs, it.durationMs) } ?: 0L
+        // Smart resume steps back a few seconds, so the line that was cut off plays again.
+        val start = saved?.let { com.moody.player.domain.smartResume(resumePosition(it.positionMs, it.durationMs), s.smartResumeSec) } ?: 0L
         val perFile = if (s.perFileSettings && !isVault) fileSettings.get(entry.uri.toString()) else null
         engine.claim(token)
         engine.open(entry.uri, start, decoder ?: s.decoder, SubStyle(s.subSize, s.subBg, s.subColor), sidecarSubtitle(entry.uri))
@@ -134,6 +153,9 @@ class PlayerViewModel @Inject constructor(
             launch { delay(1200); if (f.audioTrack >= 0) engine.selectAudio(f.audioTrack); if (f.subTrack >= -1) engine.selectSub(f.subTrack) }
         }
         _ab.value = null to null
+        bookmarkJob?.cancel()
+        _bookmarks.value = emptyList()
+        if (!isPrivate(entry.uri)) bookmarkJob = launch { bookmarkDao.forUri(entry.uri.toString()).collect { _bookmarks.value = it } }
         if (start > 0 && saved != null) showResumeChip(entry.uri, start)
     }
 
@@ -212,6 +234,7 @@ class PlayerViewModel @Inject constructor(
     /** A new video arrived while this screen is open (another app, or the library): play it here. */
     fun load(newUris: List<Uri>, index: Int, newTitles: List<String>?, vault: Boolean) {
         if (newUris.isEmpty()) return
+        flushStats()
         viewModelScope.launch { savePosition() }
         isVault = vault
         queue = newUris.mapIndexed { i, u -> QueueEntry(u, newTitles?.getOrNull(i) ?: titleOf(u)) }
@@ -254,6 +277,38 @@ class PlayerViewModel @Inject constructor(
             // Loop off: stop at the end and let the screen offer Replay (shuffle keeps going).
             LoopMode.OFF -> if (_shuffle.value && queue.size > 1) next()
         }
+    }
+
+    /** Vault videos and videos in hidden folders leave no trace in bookmarks or stats. */
+    private fun isPrivate(uri: Uri): Boolean =
+        isVault || media.videos.value?.firstOrNull { it.uri == uri }?.relativePath?.let { it in settings.value.hiddenFolders } == true
+
+    /** Marks the current moment. Bookmarks are not kept for private videos. */
+    fun addBookmark() {
+        val e = current ?: return
+        if (isPrivate(e.uri)) { _toasts.tryEmit(if (isVault) "Bookmarks are off for vault videos" else "Bookmarks are off for hidden folders"); return }
+        val pos = engine.state.value.positionMs
+        if (_bookmarks.value.any { kotlin.math.abs(it.positionMs - pos) < 1_500 }) { _toasts.tryEmit("Already bookmarked here"); return }
+        viewModelScope.launch { bookmarkDao.add(com.moody.player.data.db.Bookmark(uri = e.uri.toString(), positionMs = pos, createdAt = System.currentTimeMillis())) }
+        _toasts.tryEmit("Bookmarked ${formatDuration(pos)}")
+    }
+
+    fun removeBookmark(b: com.moody.player.data.db.Bookmark) = viewModelScope.launch { bookmarkDao.remove(b.id) }
+
+    fun jumpTo(b: com.moody.player.data.db.Bookmark) {
+        dismissResume()
+        engine.seekTo(b.positionMs)
+        if (!engine.state.value.playing) engine.play()
+    }
+
+    /** Writes play time gathered so far. Vault videos and links are never counted. */
+    private fun flushStats() {
+        val ms = statPending
+        statPending = 0
+        val e = current ?: return
+        if (ms <= 0 || isPrivate(e.uri) || (e.uri.scheme != "content" && e.uri.scheme != "file")) return
+        val counts = sitting.add(e.uri.toString(), ms)
+        appScope.launch { stats.record(e.uri.toString(), com.moody.player.domain.StatKind.VIDEO, e.title, ms, counts) }
     }
 
     fun setLoop(m: LoopMode) {
@@ -342,6 +397,7 @@ class PlayerViewModel @Inject constructor(
     }
 
     override fun onCleared() {
+        flushStats()
         // The engine outlives this screen only when the background service has taken it.
         if (!VideoBackgroundState.active) engine.stopIfOwner(token)
     }

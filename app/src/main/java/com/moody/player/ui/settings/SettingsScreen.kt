@@ -135,9 +135,9 @@ typealias UpdatesRow = @Composable () -> Unit
 enum class SettingsSection(val id: String, val title: String, val summary: String, val icon: ImageVector) {
     APPEARANCE("appearance", "Appearance", "Theme, font, library layout", MoodyIcons.Moon),
     VIDEO("video", "Video player", "Shortcuts, gestures, picture-in-picture, subtitles", MoodyIcons.VideoTab),
-    MUSIC("music", "Music player", "Which audio files count as music", MoodyIcons.Music),
+    MUSIC("music", "Music player", "Which audio counts as music, sleep timer", MoodyIcons.Music),
     LIBRARY("library", "Library", "Scanning and hidden folders", MoodyIcons.Folder),
-    PLAYBACK("playback", "Playback", "Resume and watch history", MoodyIcons.Replay),
+    PLAYBACK("playback", "Playback", "Resume, watch history and stats", MoodyIcons.Replay),
     VAULT("vault", "Vault", "PIN, disguise and auto-lock", MoodyIcons.Lock),
     STORAGE("storage", "Storage & permissions", "Media access and cache", MoodyIcons.Shield),
     ADVANCED("advanced", "Advanced", "Decoder", MoodyIcons.Decoder),
@@ -175,8 +175,9 @@ fun SettingsPage(title: String, onBack: () -> Unit, content: LazyListScope.() ->
 
 /** Settings home: one row per category. */
 @Composable
-fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit, onSection: (SettingsSection) -> Unit) {
+fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit, onSection: (SettingsSection) -> Unit, onStats: () -> Unit = {}) {
     SettingsPage("Settings", onBack) {
+        item(key = "stats") { Action("Your stats", "Time spent watching and listening, top songs and videos", MoodyIcons.Chart, onStats) }
         SettingsSection.entries.forEach { sec ->
             item(key = sec.id) { Action(sec.title, sec.summary, sec.icon) { onSection(sec) } }
         }
@@ -259,6 +260,7 @@ fun SettingsSectionScreen(
                         listOf(0 to "Keep all", 30 to "30 s", 60 to "1 min").forEach { (n, l) -> ChoiceChip(l, s.minSongSec == n, { vm.update { it.copy(minSongSec = n) } }) }
                     }
                 }
+                item { Toggle("Fade out with the sleep timer", "The music gets quieter over the last minute instead of stopping all at once.", s.sleepFade, MoodyIcons.Timer) { v -> vm.update { it.copy(sleepFade = v) } } }
                 item { Note("The mini-player has a close button: it stops the music and hides the bar. Your queue stays.") }
             }
             SettingsSection.LIBRARY -> {
@@ -279,8 +281,15 @@ fun SettingsSectionScreen(
             }
             SettingsSection.PLAYBACK -> {
                 item { Toggle("Resume where you left off", "Videos pick up from the last position.", s.resume, MoodyIcons.Replay) { v -> vm.update { it.copy(resume = v) } } }
+                item {
+                    Choice("Smart resume", MoodyIcons.SeekBack, "Steps back a little when a video resumes, so you catch the line you stopped on.") {
+                        listOf(0 to "Off", 3 to "3 s", 5 to "5 s", 10 to "10 s").forEach { (n, l) -> ChoiceChip(l, s.smartResumeSec == n, { vm.update { it.copy(smartResumeSec = n) } }) }
+                    }
+                }
                 item { Toggle("Remember speed and tracks per video", null, s.perFileSettings, MoodyIcons.Speed) { v -> vm.update { it.copy(perFileSettings = v) } } }
                 item { Action("Clear watch history", "Forget saved positions and empty Continue watching", MoodyIcons.Timer) { dialog = "history" } }
+                item { Label("Stats") }
+                item { Toggle("Keep play stats", "Counts watching and listening time on this phone only. Vault videos are never counted.", s.keepStats, MoodyIcons.Chart) { v -> vm.update { it.copy(keepStats = v) } } }
             }
             SettingsSection.VAULT -> {
                 item { Toggle("Disguise the vault", "Hides the Vault button. Open it by pressing and holding the Moody logo on Videos.", s.disguiseVault, MoodyIcons.EyeOff) { v -> vm.update { it.copy(disguiseVault = v) } } }

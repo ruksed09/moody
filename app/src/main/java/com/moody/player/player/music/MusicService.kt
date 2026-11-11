@@ -68,6 +68,9 @@ fun AudioItem.toMediaItem(): MediaItem = MediaItem.Builder()
 @AndroidEntryPoint
 class MusicService : MediaSessionService() {
     @Inject lateinit var media: MediaRepository
+    @Inject lateinit var stats: com.moody.player.data.stats.PlayStats
+    private var statsJob: Job? = null
+    private val sitting = com.moody.player.data.stats.SittingCounter()
     private var session: MediaSession? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var saver: Job? = null
@@ -185,6 +188,31 @@ class MusicService : MediaSessionService() {
         })
         saver = scope.launch {
             while (isActive) { delay(10_000); if (player.isPlaying) save(player) }
+        }
+        statsJob = scope.launch {
+            var last = android.os.SystemClock.elapsedRealtime()
+            var pending = 0L
+            var pendingId: String? = null
+            var pendingTitle = ""
+            while (isActive) {
+                delay(1_000)
+                val now = android.os.SystemClock.elapsedRealtime()
+                val p = session?.player
+                val item = p?.currentMediaItem
+                val id = item?.mediaId
+                if (pendingId != null && (id != pendingId || pending >= 15_000 || p?.isPlaying != true) && pending > 0) {
+                    val counts = sitting.add(pendingId!!, pending)
+                    val (uri, title, ms) = Triple(pendingId!!, pendingTitle, pending)
+                    launch(Dispatchers.IO) { stats.record(uri, com.moody.player.domain.StatKind.MUSIC, title, ms, counts) }
+                    pending = 0
+                }
+                if (p?.isPlaying == true && id != null) {
+                    pendingId = id
+                    pendingTitle = media.audio.value?.firstOrNull { it.uri.toString() == id }?.title ?: item?.mediaMetadata?.title?.toString().orEmpty()
+                    pending += (now - last).coerceIn(0, 2_000)
+                }
+                last = now
+            }
         }
         scope.launch { restore(player) }
     }

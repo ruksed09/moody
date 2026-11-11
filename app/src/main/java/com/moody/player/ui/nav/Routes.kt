@@ -17,6 +17,7 @@ object Routes {
     const val ALBUM = "album/{key}"
     const val ARTIST = "artist/{key}"
     const val MUSIC_FOLDER = "music-folder/{key}"
+    const val STATS = "stats"
 
     /** Empty paths (files at the storage root) travel as "~" so the route still matches. */
     fun folder(path: String) = "folder/${Uri.encode(path.ifEmpty { "~" })}"

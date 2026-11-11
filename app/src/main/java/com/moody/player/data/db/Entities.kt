@@ -57,3 +57,27 @@ data class FileSettings(
     val audioTrack: Int = -1,
     val subTrack: Int = -1,
 )
+
+/** A moment the user marked in a video. Never written for vault videos. */
+@Entity(tableName = "bookmarks", indices = [androidx.room.Index("uri")])
+data class Bookmark(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val uri: String,
+    val positionMs: Long,
+    val createdAt: Long,
+)
+
+/**
+ * Play time for one file in one hour of one day (local time). Kept on the phone only, never for the
+ * vault; the Stats screen and mood mixes read it.
+ */
+@Entity(tableName = "play_stats", primaryKeys = ["day", "hour", "uri"])
+data class PlayStat(
+    val day: Long,
+    val hour: Int,
+    val uri: String,
+    val kind: String,
+    val title: String,
+    val ms: Long,
+    val plays: Int,
+)

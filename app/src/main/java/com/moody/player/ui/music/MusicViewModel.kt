@@ -15,6 +15,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -37,6 +39,8 @@ data class MusicUiState(
     val playlists: List<PlaylistRow> = emptyList(),
     val favorites: List<AudioItem> = emptyList(),
     val totalMs: Long = 0,
+    /** Mixes built from play history, favourites and the time of day. */
+    val mixes: List<com.moody.player.domain.MoodMix<AudioItem>> = emptyList(),
 )
 
 /** Groups the library for the Music tab's sub-tabs. Pure, so it can be tested. */
@@ -57,8 +61,21 @@ class MusicViewModel @Inject constructor(
     private val playlistDao: PlaylistDao,
     private val favoriteDao: FavoriteDao,
     val music: MusicController,
+    private val stats: com.moody.player.data.stats.PlayStats,
 ) : ViewModel() {
     val tab = MutableStateFlow(MusicTab.SONGS)
+
+    /**
+     * Mixes follow the library and favourites, but read play history only once per visit, so the cards
+     * stay put while music plays.
+     */
+    private fun mixesFlow() = combine(media.audio, favoriteDao.all(), stats.recent(30).take(1)) { audio, favs, rows ->
+        val songs = audio.orEmpty().sortedWith { a, b -> NaturalOrder.compare(a.title, b.title) }
+        com.moody.player.domain.buildMixes(
+            songs, { it.uri.toString() }, { it.durationMs }, rows, favs.map { it.audioUri }.toSet(),
+            java.time.LocalTime.now().hour, com.moody.player.data.stats.PlayStats.today(),
+        )
+    }.flowOn(kotlinx.coroutines.Dispatchers.Default)
 
     val state: StateFlow<MusicUiState> = combine(
         media.audio, playlistDao.all(), playlistDao.counts(), favoriteDao.all(),
@@ -74,7 +91,7 @@ class MusicViewModel @Inject constructor(
             favorites = favs.mapNotNull { byUri[it.audioUri] },
             totalMs = songs.sumOf { it.durationMs },
         )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MusicUiState())
+    }.combine(mixesFlow()) { s, mixes -> s.copy(mixes = mixes) }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MusicUiState())
 
     fun playlistSongs(id: Long): Flow<List<AudioItem>> = combine(playlistDao.entries(id), state) { entries, s ->
         val byUri = s.songs.associateBy { it.uri.toString() }

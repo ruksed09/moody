@@ -102,6 +102,7 @@ class MainActivity : ComponentActivity() {
                                 openPlaylist = { nav.navigate(Routes.playlist(it)) },
                                 openSettings = { nav.navigate(Routes.SETTINGS) { launchSingleTop = true } },
                                 requestAccess = { nav.navigate(Routes.PERMISSIONS) { launchSingleTop = true } },
+                                openStats = { nav.navigate(Routes.STATS) { launchSingleTop = true } },
                             ),
                             hasAccess = hasAudioAccess(this@MainActivity),
                             backgrounds = settings.backgrounds,
@@ -122,7 +123,10 @@ class MainActivity : ComponentActivity() {
                             PermissionsScreen(onContinue = { media.refreshAccess(); nav.popBackStack() }, onBack = { nav.popBackStack() })
                         }
                         composable(Routes.SETTINGS) {
-                            SettingsScreen(hiltViewModel(), onBack = { nav.popBackStack() }, onSection = { nav.navigate(Routes.settingsSection(it.id)) { launchSingleTop = true } })
+                            SettingsScreen(hiltViewModel(), onBack = { nav.popBackStack() }, onSection = { nav.navigate(Routes.settingsSection(it.id)) { launchSingleTop = true } }, onStats = { nav.navigate(Routes.STATS) { launchSingleTop = true } })
+                        }
+                        composable(Routes.STATS) {
+                            com.moody.player.ui.stats.StatsScreen(hiltViewModel(), onBack = { nav.popBackStack() })
                         }
                         composable(Routes.SETTINGS_SECTION) { entry ->
                             val section = com.moody.player.ui.settings.SettingsSection.of(entry.arguments?.getString("id"))
