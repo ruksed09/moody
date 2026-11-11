@@ -160,16 +160,19 @@ fun NowPlayingScreen(vm: NowPlayingViewModel, onClose: () -> Unit, onEqualizer: 
 
     Box(Modifier.fillMaxSize().background(c.bg)) {
         Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(horizontal = 24.dp)) {
-            Row(Modifier.fillMaxWidth().height(48.dp).offset(x = (-12).dp), verticalAlignment = Alignment.CenterVertically) {
-                IconAction(MoodyIcons.ChevronDown, "Close", onClose, tint = c.text)
-                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { ViewSwitch(mode) { mode = it } }
-                Box(Modifier.offset(x = 24.dp)) { IconAction(MoodyIcons.Queue, "Queue", { queueOpen = true }, tint = c.text) }
+            // The switch is centred on the screen, not between the icons; the icons' glyphs line up with the
+            // 24dp content edges (their touch boxes reach into the margin).
+            androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth().height(48.dp)) {
+                val seg = ((maxWidth - 88.dp) / 3).coerceIn(56.dp, 72.dp)
+                Box(Modifier.align(Alignment.CenterStart).offset(x = (-12).dp)) { IconAction(MoodyIcons.ChevronDown, "Close", onClose, tint = c.text) }
+                Box(Modifier.align(Alignment.Center)) { ViewSwitch(mode, seg) { mode = it } }
+                Box(Modifier.align(Alignment.CenterEnd).offset(x = 12.dp)) { IconAction(MoodyIcons.Queue, "Queue", { queueOpen = true }, tint = c.text) }
             }
             // Song, lyrics and visualizer share the disc's place and crossfade into each other.
             androidx.compose.animation.Crossfade(if (item == null) 0 else mode, Modifier.weight(1f).fillMaxWidth(), animationSpec = Motion.base(), label = "art-lyrics") { shown ->
             if (shown == 2 && item != null) {
                 VisualizerPanel(
-                    settings, s.playing, c.accentHi,
+                    settings, item, s.playing, c.accentHi,
                     onStyle = { v -> vm.updateViz { it.copy(vizStyle = v) } },
                     onTune = { tuneOpen = true },
                     onFullscreen = onFullscreenViz,
@@ -343,9 +346,8 @@ private fun QueueSheet(s: MusicState, music: MusicController, onDismiss: () -> U
 
 /** Song, Lyrics or Visual, as a small switch in the header. The lit part slides between them. */
 @Composable
-private fun ViewSwitch(mode: Int, onChange: (Int) -> Unit) {
+private fun ViewSwitch(mode: Int, seg: androidx.compose.ui.unit.Dp, onChange: (Int) -> Unit) {
     val c = MoodyTheme.colors
-    val seg = 72.dp
     val x by androidx.compose.animation.core.animateDpAsState(seg * mode, Motion.base(), label = "switch")
     Box(
         Modifier.height(34.dp).clip(Radii.pill).background(c.surface).border(1.dp, c.line, Radii.pill).padding(3.dp),
@@ -369,7 +371,7 @@ private fun ViewSwitch(mode: Int, onChange: (Int) -> Unit) {
 /** The visualizer in place of the artwork: the picture, style chips, tuning and fullscreen. */
 @Composable
 private fun VisualizerPanel(
-    settings: com.moody.player.data.prefs.Settings, playing: Boolean, tint: Color,
+    settings: com.moody.player.data.prefs.Settings, item: com.moody.player.data.media.AudioItem?, playing: Boolean, tint: Color,
     onStyle: (com.moody.player.domain.VizStyle) -> Unit, onTune: () -> Unit, onFullscreen: () -> Unit, modifier: Modifier = Modifier,
 ) {
     val c = MoodyTheme.colors
@@ -388,7 +390,7 @@ private fun VisualizerPanel(
                 ) { controls.toggle() },
         ) {
             if (fallback && sideFailed) VizUnavailable(Modifier.fillMaxSize())
-            else VisualizerCanvas(settings.vizStyle, frames, c.accent, tint, settings.vizIntensity, Modifier.fillMaxSize().padding(16.dp))
+            else VisualizerCanvas(settings.vizStyle, frames, c.accent, tint, settings.vizIntensity, Modifier.fillMaxSize().padding(16.dp), item = item, hole = c.surface)
             Row(Modifier.align(Alignment.TopEnd)) {
                 IconAction(MoodyIcons.Equalizer, "Tune the visualizer", onTune, tint = c.text2)
                 IconAction(MoodyIcons.Fullscreen, "Full screen visualizer", onFullscreen, tint = c.text2)

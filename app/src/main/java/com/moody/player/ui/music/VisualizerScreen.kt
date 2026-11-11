@@ -85,6 +85,7 @@ fun VisualizerScreen(vm: NowPlayingViewModel, onBack: () -> Unit) {
             settings.vizStyle, frames, c.accent, c.accentHi, settings.vizIntensity,
             // Centred between the top bar and the style picker, so the picture never runs under them.
             Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).padding(start = 24.dp, end = 24.dp, top = 64.dp, bottom = 88.dp),
+            item = s.current, hole = Color(0xFF040506),
         )
         AnimatedVisibility(chrome, enter = fadeIn(), exit = fadeOut()) {
             Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).padding(12.dp)) {

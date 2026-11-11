@@ -126,17 +126,31 @@ fun rememberVizFrames(active: Boolean, playing: Boolean, s: Settings): VizFrames
     return f
 }
 
-/** Draws [frames] in [style]. Colours come from the theme accent and the artwork's own tint. */
+/**
+ * Draws [frames] in [style]. Colours come from the theme accent and the artwork's own tint. In the Circle
+ * style the playing song's disc, with its cover, turns inside the ring; [hole] is the colour behind it.
+ */
 @Composable
-fun VisualizerCanvas(style: VizStyle, frames: VizFrames, a: Color, b: Color, intensity: Float, modifier: Modifier = Modifier) {
-    Canvas(modifier.semantics { contentDescription = "Music visualizer, ${style.label}" }) {
-        frames.tick // redraw every frame
-        when (style) {
-            VizStyle.BARS -> bars(frames, a, b)
-            VizStyle.CIRCLE -> circle(frames, a, b, intensity)
-            VizStyle.WAVE -> wave(frames, a, b)
-            VizStyle.RINGS -> rings(frames, a, b, intensity)
-            VizStyle.MINIMAL -> minimal(frames, a, b)
+fun VisualizerCanvas(
+    style: VizStyle, frames: VizFrames, a: Color, b: Color, intensity: Float, modifier: Modifier = Modifier,
+    item: com.moody.player.data.media.AudioItem? = null, hole: Color = Color.Black,
+) {
+    androidx.compose.foundation.layout.BoxWithConstraints(modifier, contentAlignment = androidx.compose.ui.Alignment.Center) {
+        Canvas(Modifier.matchParentSize().semantics { contentDescription = "Music visualizer, ${style.label}" }) {
+            frames.tick // redraw every frame
+            when (style) {
+                VizStyle.BARS -> bars(frames, a, b)
+                VizStyle.CIRCLE -> circle(frames, a, b, intensity)
+                VizStyle.WAVE -> wave(frames, a, b)
+                VizStyle.RINGS -> rings(frames, a, b, intensity)
+                VizStyle.MINIMAL -> minimal(frames, a, b)
+            }
+        }
+        if (style == VizStyle.CIRCLE && item != null) {
+            // Same radius rule as circle(): the disc fills the quiet middle, a small gap inside the spokes.
+            val r = minOf(minOf(maxWidth, maxHeight), 320.dp) / 2 - 4.dp
+            val d = (r * CIRCLE_INNER - 6.dp) * 2
+            if (d >= 24.dp) Disc(item, d, spinning = true, behind = hole)
         }
     }
 }
@@ -176,6 +190,9 @@ private fun updatePills(f: VizFrames) {
     }
 }
 
+/** Where the Circle style's spokes start, as a share of its radius; the disc sits inside. */
+private const val CIRCLE_INNER = 0.44f
+
 /** Radius every round style stays inside: the panel's short side, capped at the Now Playing disc (320 dp). */
 private fun DrawScope.safeR() = min(min(size.width, size.height), 320.dp.toPx()) / 2f - 4.dp.toPx()
 
@@ -187,7 +204,7 @@ private fun DrawScope.circle(f: VizFrames, a: Color, b: Color, intensity: Float)
     val stroke = (2 * PI * r * 0.46f / spokes * 0.55f).toFloat().coerceIn(1.5f, 5.dp.toPx())
     val tip = r - stroke / 2
     // The ring breathes a little with the music; the spokes' reach is fixed, so loud passages never flatten them.
-    val base = r * (0.44f + 0.04f * f.level * k)
+    val base = r * (CIRCLE_INNER + 0.04f * f.level * k)
     val lift = 3.dp.toPx()
     val reach = (tip - r * 0.48f - lift).coerceAtLeast(0f)
     drawCircle(a, base - 4.dp.toPx(), c, alpha = 0.08f + f.level * 0.12f)
