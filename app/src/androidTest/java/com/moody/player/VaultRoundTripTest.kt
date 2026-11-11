@@ -38,7 +38,7 @@ class VaultRoundTripTest {
     private val db = Room.inMemoryDatabaseBuilder(context, MoodyDb::class.java).build()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val settings = SettingsStore(context)
-    private val manager = VaultManager(context, db.vault(), MediaRepository(context, settings, db.vault(), scope))
+    private val manager = VaultManager(context, db.vault(), MediaRepository(context, settings, db.vault(), com.moody.player.data.media.SongEdits(context), scope))
     private val name = "moody-vault-test-${System.currentTimeMillis()}.mp4"
     private val bytes = ByteArray(256 * 1024) { (it % 251).toByte() }
 

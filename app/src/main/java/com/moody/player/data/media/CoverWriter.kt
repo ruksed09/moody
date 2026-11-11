@@ -1,14 +1,20 @@
 package com.moody.player.data.media
 
 import android.content.Context
+import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import com.moody.player.data.health.HealthProber
 import com.moody.player.domain.MediaKind
 import com.moody.player.domain.diagnose
 import org.jaudiotagger.audio.AudioFileIO
+import org.jaudiotagger.audio.flac.metadatablock.MetadataBlockDataPicture
 import org.jaudiotagger.tag.TagOptionSingleton
+import org.jaudiotagger.tag.flac.FlacTag
 import org.jaudiotagger.tag.images.AndroidArtwork
+import org.jaudiotagger.tag.vorbiscomment.VorbisCommentFieldKey
+import org.jaudiotagger.tag.vorbiscomment.VorbisCommentTag
+import org.jaudiotagger.tag.vorbiscomment.util.Base64Coder
 import java.io.File
 import java.io.InputStream
 import java.util.logging.Level
@@ -35,6 +41,7 @@ sealed interface CoverWrite {
  * Call from a background thread, after the user allowed Moody to change the file.
  */
 object CoverWriter {
+    private const val FRONT_COVER = 3
     private val formats = setOf("mp3", "m4a", "mp4", "aac", "flac", "ogg")
 
     /**
@@ -75,12 +82,25 @@ object CoverWriter {
             backup.copyTo(work, overwrite = true)
 
             // Tag the working copy. A file the library can't read (odd or mislabelled format) stays as it is.
+            val img = cover.readBytes()
+            val dims = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(img, 0, img.size, dims)
+            if (dims.outWidth <= 0 || dims.outHeight <= 0) return CoverWrite.Failed("The picture couldn't be read")
+            val mime = dims.outMimeType ?: "image/jpeg"
             quietLibrary()
             try {
                 val af = AudioFileIO.read(work)
                 val tag = af.tagOrCreateAndSetDefault
                 tag.deleteArtworkField()
-                tag.setField(AndroidArtwork.createArtworkFromFile(cover).apply { pictureType = 3 }) // 3 = front cover
+                // FLAC and Ogg pictures need the image size, which the library can't measure on Android.
+                when (tag) {
+                    is FlacTag -> tag.setField(tag.createArtworkField(img, FRONT_COVER, mime, "", dims.outWidth, dims.outHeight, 24, 0))
+                    is VorbisCommentTag -> {
+                        val block = MetadataBlockDataPicture(img, FRONT_COVER, mime, "", dims.outWidth, dims.outHeight, 24, 0)
+                        tag.setField(tag.createField(VorbisCommentFieldKey.METADATA_BLOCK_PICTURE, String(Base64Coder.encode(block.rawContent))))
+                    }
+                    else -> tag.setField(AndroidArtwork.createArtworkFromFile(cover).apply { pictureType = FRONT_COVER })
+                }
                 af.commit()
             } catch (e: Exception) {
                 return CoverWrite.Unsupported
