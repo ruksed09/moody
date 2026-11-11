@@ -376,9 +376,17 @@ private fun VisualizerPanel(
     val frames = rememberVizFrames(active = true, playing = playing, s = settings)
     val fallback by com.moody.player.player.music.AudioTap.onFallbackEngine.collectAsStateWithLifecycle()
     val sideFailed by com.moody.player.player.music.AudioTap.sidecarFailed.collectAsStateWithLifecycle()
+    val controls = rememberVizControls()
     Column(modifier) {
         // The picture sits in its own rounded panel, with room around it so round styles stay whole.
-        Box(Modifier.weight(1f).heightIn(min = 120.dp).fillMaxWidth().clip(Radii.xl).background(c.surface).border(1.dp, c.line, Radii.xl)) {
+        // A tap on it shows or puts away the style buttons below.
+        Box(
+            Modifier.weight(1f).heightIn(min = 120.dp).fillMaxWidth().clip(Radii.xl).background(c.surface).border(1.dp, c.line, Radii.xl)
+                .clickable(
+                    remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null,
+                    onClickLabel = if (controls.shown) "Hide styles" else "Show styles",
+                ) { controls.toggle() },
+        ) {
             if (fallback && sideFailed) VizUnavailable(Modifier.fillMaxSize())
             else VisualizerCanvas(settings.vizStyle, frames, c.accent, tint, settings.vizIntensity, Modifier.fillMaxSize().padding(16.dp))
             Row(Modifier.align(Alignment.TopEnd)) {
@@ -386,7 +394,17 @@ private fun VisualizerPanel(
                 IconAction(MoodyIcons.Fullscreen, "Full screen visualizer", onFullscreen, tint = c.text2)
             }
         }
-        Spacer(Modifier.height(12.dp))
-        VizStylePicker(settings.vizStyle, onStyle, Modifier.fillMaxWidth())
+        androidx.compose.animation.AnimatedVisibility(
+            controls.shown,
+            enter = androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(220)) +
+                androidx.compose.animation.expandVertically(androidx.compose.animation.core.tween(220, easing = com.moody.player.design.components.Motion.Ease)),
+            exit = androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(160)) +
+                androidx.compose.animation.shrinkVertically(androidx.compose.animation.core.tween(200, easing = com.moody.player.design.components.Motion.Ease)),
+        ) {
+            Column {
+                Spacer(Modifier.height(12.dp))
+                VizStylePicker(settings.vizStyle, { v -> onStyle(v); controls.touch() }, Modifier.fillMaxWidth())
+            }
+        }
     }
 }

@@ -69,7 +69,8 @@ fun VisualizerScreen(vm: NowPlayingViewModel, onBack: () -> Unit) {
             view.keepScreenOn = false
         }
     }
-    LaunchedEffect(chrome, poke, tuneOpen) { if (chrome && !tuneOpen) { delay(3_500); chrome = false } }
+    val keep = rememberKeepControls()
+    LaunchedEffect(chrome, poke, tuneOpen) { if (chrome && !tuneOpen && !keep) { delay(VIZ_CONTROLS_MS); chrome = false } }
 
     val frames = rememberVizFrames(active = true, playing = s.playing, s = settings)
     val fallback by com.moody.player.player.music.AudioTap.onFallbackEngine.collectAsStateWithLifecycle()
@@ -98,10 +99,18 @@ fun VisualizerScreen(vm: NowPlayingViewModel, onBack: () -> Unit) {
                 }
             }
         }
-        VizStylePicker(
-            settings.vizStyle, { v -> vm.updateViz { it.copy(vizStyle = v) } },
-            Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = 12.dp, vertical = 20.dp).widthIn(max = 420.dp).fillMaxWidth(),
-        )
+        // The style buttons come and go with the rest of the controls; a tap on the picture brings them back.
+        AnimatedVisibility(
+            chrome,
+            modifier = Modifier.align(Alignment.BottomCenter),
+            enter = fadeIn(androidx.compose.animation.core.tween(220)) + androidx.compose.animation.slideInVertically(androidx.compose.animation.core.tween(220, easing = com.moody.player.design.components.Motion.Ease)) { it / 3 },
+            exit = fadeOut(androidx.compose.animation.core.tween(160)) + androidx.compose.animation.slideOutVertically(androidx.compose.animation.core.tween(200)) { it / 3 },
+        ) {
+            VizStylePicker(
+                settings.vizStyle, { v -> vm.updateViz { it.copy(vizStyle = v) }; poke++ },
+                Modifier.windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = 12.dp, vertical = 20.dp).widthIn(max = 420.dp).fillMaxWidth(),
+            )
+        }
     }
     if (tuneOpen) VizTuneSheet(settings, { f -> vm.updateViz(f) }, onDismiss = { tuneOpen = false; poke++ })
     }

@@ -257,6 +257,42 @@ private fun DrawScope.minimal(f: VizFrames, a: Color, b: Color) {
 private fun lerpColor(a: Color, b: Color, t: Float) = androidx.compose.ui.graphics.lerp(a, b, t.coerceIn(0f, 1f))
 
 /** Style chips: switching is instant, the next frame draws the new style. */
+/** How long the style buttons stay up before they step aside. */
+internal const val VIZ_CONTROLS_MS = 3_500L
+
+/** True while TalkBack or a similar service explores by touch: then controls never hide on their own. */
+@Composable
+internal fun rememberKeepControls(): Boolean {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    return remember {
+        (context.getSystemService(android.content.Context.ACCESSIBILITY_SERVICE) as? android.view.accessibility.AccessibilityManager)
+            ?.isTouchExplorationEnabled == true
+    }
+}
+
+/**
+ * The style buttons under the visualizer: up when the tab opens, gone after a few seconds. A tap on the
+ * picture brings them back (or puts them away); picking a style keeps them up a little longer.
+ */
+@androidx.compose.runtime.Stable
+internal class VizControls(private val keep: Boolean) {
+    var shown by androidx.compose.runtime.mutableStateOf(true)
+        private set
+    var poke by androidx.compose.runtime.mutableIntStateOf(0)
+        private set
+    fun touch() { shown = true; poke++ }
+    fun toggle() { shown = !shown || keep; poke++ }
+    fun hide() { if (!keep) shown = false }
+}
+
+@Composable
+internal fun rememberVizControls(): VizControls {
+    val keep = rememberKeepControls()
+    val ctl = remember { VizControls(keep) }
+    LaunchedEffect(ctl.shown, ctl.poke) { if (ctl.shown) { kotlinx.coroutines.delay(VIZ_CONTROLS_MS); ctl.hide() } }
+    return ctl
+}
+
 @Composable
 fun VizStylePicker(style: VizStyle, onPick: (VizStyle) -> Unit, modifier: Modifier = Modifier) {
     // Five equal segments that always fit, never scroll: every style stays in view.
