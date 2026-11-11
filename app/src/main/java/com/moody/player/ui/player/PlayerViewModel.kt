@@ -168,7 +168,10 @@ class PlayerViewModel @Inject constructor(
         _ab.value = null to null
         bookmarkJob?.cancel()
         _bookmarks.value = emptyList()
-        if (!isPrivate(entry.uri)) bookmarkJob = launch { bookmarkDao.forUri(entry.uri.toString()).collect { _bookmarks.value = it } }
+        if (!isPrivate(entry.uri)) bookmarkJob = launch {
+            launch { runCatching { mergeMarksFromFile(entry.uri) } }
+            bookmarkDao.forUri(entry.uri.toString()).collect { _bookmarks.value = it }
+        }
         if (start > 0 && saved != null) showResumeChip(entry.uri, start)
     }
 
@@ -396,9 +399,87 @@ class PlayerViewModel @Inject constructor(
         if (!engine.state.value.playing) engine.play()
     }
 
-    /** Called after any bookmark change of the current video. */
-    private fun marksChanged() { marksDirty = true }
-    private var marksDirty = false
+    // ---- Bookmarks inside the video file (MP4, MOV, 3GP) ----
+
+    private val _fileWrite = MutableStateFlow<Uri?>(null)
+    /** A video whose bookmarks should now be saved into the file; the screen gets Android's permission first. */
+    val fileWrite: StateFlow<Uri?> = _fileWrite.asStateFlow()
+    private val _consent29 = MutableStateFlow<android.content.IntentSender?>(null)
+    /** Android 10 only: the prompt to allow changing one file. */
+    val consent29: StateFlow<android.content.IntentSender?> = _consent29.asStateFlow()
+    private val declined = mutableSetOf<Uri>()
+    private val unsupported = mutableSetOf<Uri>()
+    private var marksJob: kotlinx.coroutines.Job? = null
+
+    private fun canCarry(uri: Uri) = !isPrivate(uri) && uri.scheme == "content" && uri !in declined && uri !in unsupported
+
+    /** Called after any bookmark change of the current video: save into the file a moment later. */
+    private fun marksChanged() {
+        val u = current?.uri ?: return
+        if (!canCarry(u)) return
+        marksJob?.cancel()
+        marksJob = viewModelScope.launch { delay(1_500); _fileWrite.value = u }
+    }
+
+    /** Android's answer to "allow Moody to modify this video?". */
+    fun onFileConsent(ok: Boolean) {
+        val u = _fileWrite.value ?: return
+        _consent29.value = null
+        if (ok) saveMarksToFile(u, asked = true)
+        else { _fileWrite.value = null; declined += u; _toasts.tryEmit("Bookmarks kept in Moody only") }
+    }
+
+    /** Writes this video's bookmarks into its file. Runs to the end even if the player closes. */
+    fun saveMarksToFile(uri: Uri, asked: Boolean = false) {
+        appScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val rows = bookmarkDao.allForUri(uri.toString()).map { b ->
+                if (b.uid.isEmpty()) b.copy(uid = java.util.UUID.randomUUID().toString(), updatedAt = maxOf(b.updatedAt, b.createdAt)).also { bookmarkDao.update(it) } else b
+            }
+            val marks = rows.map { com.moody.player.data.media.FileMark(it.uid, it.positionMs, it.endMs, it.name, it.updatedAt, it.deleted) }
+            val result = try {
+                com.moody.player.data.media.MarksInFile.write(context, uri, marks)
+            } catch (e: android.app.RecoverableSecurityException) {
+                _consent29.value = e.userAction.actionIntent.intentSender
+                return@launch
+            } catch (e: SecurityException) {
+                com.moody.player.data.media.MarksWrite.Failed("Moody isn't allowed to change this video")
+            } catch (e: Exception) {
+                com.moody.player.data.media.MarksWrite.Failed("Saving into the file failed")
+            }
+            if (_fileWrite.value == uri) _fileWrite.value = null
+            when (result) {
+                com.moody.player.data.media.MarksWrite.Done -> if (asked) _toasts.tryEmit("Bookmarks saved into the video")
+                com.moody.player.data.media.MarksWrite.NotSupported -> {
+                    unsupported += uri
+                    _toasts.tryEmit("This video type can't carry bookmarks. They stay in Moody")
+                }
+                is com.moody.player.data.media.MarksWrite.Failed -> _toasts.tryEmit("${result.why}. Bookmarks stay in Moody")
+            }
+        }
+    }
+
+    /** Reads bookmarks stored in the file (someone may have sent it) and adds the ones Moody doesn't have. */
+    private suspend fun mergeMarksFromFile(uri: Uri) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        if (isPrivate(uri) || uri.scheme != "content") return@withContext
+        val inFile = com.moody.player.data.media.MarksInFile.read(context, uri) ?: return@withContext
+        val known = bookmarkDao.allForUri(uri.toString()).filter { it.uid.isNotEmpty() }.associateBy { it.uid }
+        var changed = false
+        for (m in inFile) {
+            val have = known[m.uid]
+            if (have == null) {
+                if (m.deleted) continue
+                bookmarkDao.add(com.moody.player.data.db.Bookmark(
+                    uri = uri.toString(), positionMs = m.startMs, endMs = m.endMs, name = m.name, uid = m.uid,
+                    createdAt = m.updatedAt.takeIf { it > 0 } ?: System.currentTimeMillis(), updatedAt = m.updatedAt,
+                ))
+                changed = true
+            } else if (m.updatedAt > have.updatedAt) {
+                bookmarkDao.update(have.copy(positionMs = m.startMs, endMs = m.endMs, name = m.name, deleted = m.deleted, updatedAt = m.updatedAt))
+                changed = true
+            }
+        }
+        if (changed) _toasts.tryEmit("Bookmarks found in this video")
+    }
 
     /** Writes play time gathered so far. Vault videos and links are never counted. */
     private fun flushStats() {

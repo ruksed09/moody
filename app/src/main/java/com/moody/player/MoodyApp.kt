@@ -11,6 +11,12 @@ import dagger.hilt.android.HiltAndroidApp
 
 @HiltAndroidApp
 class MoodyApp : Application(), ImageLoaderFactory {
+    override fun onCreate() {
+        super.onCreate()
+        // A bookmark write cut short (Moody closed mid-way) is put back before anything reads the file.
+        Thread({ runCatching { com.moody.player.data.media.MarksInFile.recover(this) } }, "marks-recover").start()
+    }
+
     override fun newImageLoader(): ImageLoader = ImageLoader.Builder(this)
         .components {
             add(MediaThumbFetcher.Factory(this@MoodyApp))

@@ -240,6 +240,20 @@ fun SettingsSectionScreen(
                     val offCount = s.disabledGestures.size
                     Action("Gestures", if (!s.gestures) "Off" else if (offCount == 0) "All on · double-tap jumps ${s.doubleTapSeekSec} s" else "${PlayerGesture.entries.size - offCount} of ${PlayerGesture.entries.size} on", MoodyIcons.Hand, onGestures)
                 }
+                if (android.os.Build.VERSION.SDK_INT >= 31) item {
+                    var allowed by remember { mutableStateOf(android.provider.MediaStore.canManageMedia(context)) }
+                    androidx.lifecycle.compose.LifecycleResumeEffect(Unit) { allowed = android.provider.MediaStore.canManageMedia(context); onPauseOrDispose {} }
+                    Action(
+                        "Save bookmarks without asking",
+                        if (allowed) "Allowed. Bookmarks go into MP4 videos straight away"
+                        else "Bookmarks are saved inside MP4 videos so they travel when shared. Android asks once per video; allow Media management to skip that.",
+                        MoodyIcons.Bookmark,
+                    ) {
+                        runCatching {
+                            context.startActivity(android.content.Intent(android.provider.Settings.ACTION_REQUEST_MANAGE_MEDIA, android.net.Uri.parse("package:" + context.packageName)))
+                        }
+                    }
+                }
                 item { Toggle("Seek bar while locked", "A thin progress line stays visible when the controls are locked. In the player, hold the lock button to change this.", s.seekBarWhenLocked, MoodyIcons.Lock) { v -> vm.update { it.copy(seekBarWhenLocked = v) } } }
                 item { Label("Leaving the player") }
                 item { Toggle("Picture-in-picture on Home", "Going Home while a video plays shrinks it to a small window.", s.autoPip, MoodyIcons.Pip) { v -> vm.update { it.copy(autoPip = v) } } }

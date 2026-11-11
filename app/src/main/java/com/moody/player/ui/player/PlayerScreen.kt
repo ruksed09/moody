@@ -93,6 +93,27 @@ fun PlayerScreen(vm: PlayerViewModel, host: PlayerHost, inPip: Boolean) {
     val studioOn by vm.studioOn.collectAsStateWithLifecycle()
     var transcript by remember { mutableStateOf(false) }
 
+    // Bookmarks go into the video file too: Android asks once per video (never, with Media management allowed).
+    val fileWrite by vm.fileWrite.collectAsStateWithLifecycle()
+    val consent29 by vm.consent29.collectAsStateWithLifecycle()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val consent = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.StartIntentSenderForResult()) { r ->
+        vm.onFileConsent(r.resultCode == android.app.Activity.RESULT_OK)
+    }
+    LaunchedEffect(fileWrite) {
+        val u = fileWrite ?: return@LaunchedEffect
+        val granted = context.checkUriPermission(u, android.os.Process.myPid(), android.os.Process.myUid(), android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (android.os.Build.VERSION.SDK_INT >= 30 && !granted) {
+            runCatching {
+                consent.launch(androidx.activity.result.IntentSenderRequest.Builder(android.provider.MediaStore.createWriteRequest(context.contentResolver, listOf(u)).intentSender).build())
+            }.onFailure { vm.onFileConsent(false) }
+        } else vm.saveMarksToFile(u)
+    }
+    LaunchedEffect(consent29) {
+        consent29?.let { consent.launch(androidx.activity.result.IntentSenderRequest.Builder(it).build()) }
+    }
+
     // Controls hide 3 s after the last touch while playing.
     LaunchedEffect(controls, st.playing, scrubbing, menu, tracks, poke, transcript) {
         if (controls && st.playing && !scrubbing && menu == null && tracks == null && !transcript) { delay(3_000); controls = false }
