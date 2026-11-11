@@ -2,7 +2,6 @@ package com.moody.player.ui.health
 
 import android.content.Context
 import android.net.Uri
-import android.os.SystemClock
 import android.provider.OpenableColumns
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -30,7 +29,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -182,17 +180,9 @@ class HealthViewModel @Inject constructor(
 fun HealthScreen(vm: HealthViewModel, onBack: () -> Unit) {
     val s by vm.state.collectAsStateWithLifecycle()
     val openUri by vm.open.collectAsStateWithLifecycle()
-    // A tap that closes a sheet or its dialog must not also open the row that ends up under the finger.
-    var closedAt by remember { mutableLongStateOf(0L) }
-    var wasOpen by remember { mutableStateOf(false) }
-    LaunchedEffect(openUri) {
-        if (openUri == null && wasOpen) closedAt = SystemClock.uptimeMillis()
-        wasOpen = openUri != null
-    }
     HealthContent(
         s, onBack = onBack, onScan = vm::scan, onStop = vm::stop, onFilter = vm::setFilter,
-        onOpen = { if (vm.open.value == null && SystemClock.uptimeMillis() - closedAt > 300) vm.open.value = it.uri },
-        onRestore = { vm.restore(it) },
+        onOpen = { vm.open.value = it.uri }, onRestore = { vm.restore(it) },
     )
     val report = openUri?.let { u -> s.reports.firstOrNull { it.uri == u } }
     val checkingOpen = openUri != null && openUri in s.checking
