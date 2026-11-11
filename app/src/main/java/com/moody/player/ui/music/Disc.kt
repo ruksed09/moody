@@ -2,6 +2,10 @@ package com.moody.player.ui.music
 
 import android.content.Context
 import android.provider.Settings
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionScope
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,7 +18,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
@@ -37,6 +43,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.moody.player.design.MoodyTheme
+import com.moody.player.design.components.Motion
 import com.moody.player.data.media.AudioItem
 import kotlinx.coroutines.isActive
 
@@ -90,13 +97,36 @@ fun coverRequestPx(size: Dp): Int = when {
     else -> 768
 }
 
+/** The shared-transition scope around the app's screens, so a disc can travel between them. */
+@OptIn(ExperimentalSharedTransitionApi::class)
+val LocalSharedScope = staticCompositionLocalOf<SharedTransitionScope?> { null }
+
+/** The enter/exit scope of the screen a disc sits on. */
+val LocalNavScope = compositionLocalOf<AnimatedVisibilityScope?> { null }
+
+/** Lets the disc tagged [key] on one screen grow into the disc with the same key on the next. */
+@OptIn(ExperimentalSharedTransitionApi::class)
+@Composable
+private fun Modifier.sharedDisc(key: String?): Modifier {
+    val shared = LocalSharedScope.current
+    val scope = LocalNavScope.current
+    if (key == null || shared == null || scope == null) return this
+    return with(shared) {
+        this@sharedDisc.sharedElement(
+            rememberSharedContentState(key),
+            scope,
+            boundsTransform = { _, _ -> tween(DISC_TRAVEL_MS, easing = Motion.Ease) },
+        )
+    }
+}
+
 /**
  * A picture disc: the song's cover printed on a CD, with a clear hub and a spindle hole. Without a cover
  * it is a plain dark disc with a tinted label. [spinning] makes it follow the [DiscClock] (only the song
  * that is playing should). [behind] is the colour showing through the hole.
  */
 @Composable
-fun Disc(item: AudioItem?, size: Dp, modifier: Modifier = Modifier, spinning: Boolean = false, behind: Color = MoodyTheme.colors.bg) {
+fun Disc(item: AudioItem?, size: Dp, modifier: Modifier = Modifier, spinning: Boolean = false, behind: Color = MoodyTheme.colors.bg, sharedKey: String? = null) {
     val c = MoodyTheme.colors
     if (spinning) {
         DisposableEffect(Unit) {
@@ -108,7 +138,7 @@ fun Disc(item: AudioItem?, size: Dp, modifier: Modifier = Modifier, spinning: Bo
     val labels = listOf(c.accentDeep, c.accent.copy(alpha = 0.55f), c.text3, c.line3)
     val label = labels[((item?.album?.hashCode() ?: 0) and 0x7fffffff) % labels.size]
     val detailed = size >= 96.dp
-    Box(modifier.size(size)) {
+    Box(modifier.sharedDisc(sharedKey).size(size)) {
         // Disc body and the label for songs without a cover; this part turns.
         Box(Modifier.fillMaxSize().graphicsLayer { rotationZ = if (spinning) DiscClock.angle else 0f }) {
             Canvas(Modifier.fillMaxSize()) {
@@ -163,3 +193,7 @@ fun Disc(item: AudioItem?, size: Dp, modifier: Modifier = Modifier, spinning: Bo
 }
 
 private const val DEG_PER_SEC = 36f
+private const val DISC_TRAVEL_MS = 320
+
+/** Shared key of the playing song's disc (mini player and Now Playing). */
+const val NOW_PLAYING_DISC = "disc"

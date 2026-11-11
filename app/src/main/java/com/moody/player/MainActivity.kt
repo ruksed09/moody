@@ -156,9 +156,16 @@ class MainActivity : ComponentActivity() {
                         composable(Routes.VAULT) {
                             VaultRoute(hiltViewModel(), onBack = { nav.popBackStack() })
                         }
-                        composable(Routes.NOW_PLAYING) {
+                        composable(
+                            Routes.NOW_PLAYING,
+                            // A plain fade, so the disc growing out of the mini player carries the motion.
+                            enterTransition = { androidx.compose.animation.fadeIn(com.moody.player.design.components.Motion.enter()) },
+                            popExitTransition = { androidx.compose.animation.fadeOut(com.moody.player.design.components.Motion.base()) },
+                        ) {
                             var eq by remember { mutableStateOf(false) }
-                            NowPlayingScreen(hiltViewModel(), onClose = { nav.popBackStack() }, onEqualizer = { eq = true }, onFullscreenViz = { nav.navigate(Routes.VISUALIZER) { launchSingleTop = true } })
+                            androidx.compose.runtime.CompositionLocalProvider(com.moody.player.ui.music.LocalNavScope provides this) {
+                                NowPlayingScreen(hiltViewModel(), onClose = { nav.popBackStack() }, onEqualizer = { eq = true }, onFullscreenViz = { nav.navigate(Routes.VISUALIZER) { launchSingleTop = true } })
+                            }
                             if (eq) EqualizerSheet(music, onDismiss = { eq = false })
                         }
                         composable(Routes.VISUALIZER) {

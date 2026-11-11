@@ -2,6 +2,7 @@ package com.moody.player.ui
 
 import android.net.Uri
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -59,6 +60,7 @@ data class AppSlots(
     val overlay: @Composable (NavHostController) -> Unit = {},
 )
 
+@OptIn(androidx.compose.animation.ExperimentalSharedTransitionApi::class)
 @Composable
 fun MoodyRoot(settings: Settings, slots: AppSlots, toaster: Toaster = remember { Toaster() }) {
     MoodyTheme(settings.themeMode, settings.fontMode) {
@@ -67,6 +69,8 @@ fun MoodyRoot(settings: Settings, slots: AppSlots, toaster: Toaster = remember {
             val openHealth = remember(nav) { { uri: android.net.Uri -> nav.navigate(Routes.health(uri)) { launchSingleTop = true } } }
             CompositionLocalProvider(com.moody.player.ui.health.LocalOpenHealth provides openHealth) {
             Box(Modifier.fillMaxSize().background(MoodyTheme.colors.bg)) {
+                SharedTransitionLayout {
+                CompositionLocalProvider(com.moody.player.ui.music.LocalSharedScope provides this) {
                 NavHost(
                     nav,
                     startDestination = slots.startRoute,
@@ -75,12 +79,16 @@ fun MoodyRoot(settings: Settings, slots: AppSlots, toaster: Toaster = remember {
                     popEnterTransition = { fadeIn(Motion.enter()) + slideInHorizontally(Motion.enter()) { -it / 10 } },
                     popExitTransition = { fadeOut(Motion.fast()) + slideOutHorizontally(Motion.fast()) { it / 10 } },
                 ) {
-                    composable(Routes.MAIN) { MainScreen(nav, slots) }
+                    composable(Routes.MAIN) {
+                        CompositionLocalProvider(com.moody.player.ui.music.LocalNavScope provides this) { MainScreen(nav, slots) }
+                    }
                     composable(Routes.FOLDER, arguments = listOf(navArgument("path") { type = NavType.StringType })) { entry ->
                         val vm: VideoViewModel = hiltViewModel(nav.getBackStackEntry(Routes.MAIN))
                         FolderScreen(Routes.decodePath(entry.arguments?.getString("path")), vm, slots.videoNav(nav), onBack = { nav.popBackStack() })
                     }
                     slots.extraRoutes(this, nav)
+                }
+                }
                 }
                 slots.overlay(nav)
                 ToastHost(toaster)
