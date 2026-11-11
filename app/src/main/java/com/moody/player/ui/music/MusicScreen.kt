@@ -134,19 +134,10 @@ fun MusicContent(
                 if (backgrounds) MoodBackdrop(BackdropKind.MUSIC, Modifier.matchParentSize())
                 Column(Modifier.padding(horizontal = if (grid) 0.dp else 16.dp)) {
                     Spacer(Modifier.height(12.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        MoodyLogo(size = 48.dp)
-                        Spacer(Modifier.width(14.dp))
-                        Box(Modifier.width(1.dp).height(40.dp).background(c.line2))
-                        Spacer(Modifier.width(14.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text("Music", style = MoodyTheme.type.hero, color = c.text)
-                            Text(
-                                if (s.loading) "Looking through your phone" else "${s.songs.size} ${if (s.songs.size == 1) "song" else "songs"}  ·  ${s.albums.size} ${if (s.albums.size == 1) "album" else "albums"}  ·  ${formatDuration(s.totalMs)}",
-                                style = MoodyTheme.type.caption, color = c.text2,
-                            )
-                        }
-                    }
+                    com.moody.player.ui.components.SectionTitle(
+                        MoodyIcons.Music, "Music",
+                        if (s.loading) "Looking through your phone" else "${s.songs.size} ${if (s.songs.size == 1) "song" else "songs"}  ·  ${s.albums.size} ${if (s.albums.size == 1) "album" else "albums"}  ·  ${formatDuration(s.totalMs)}",
+                    )
                     Spacer(Modifier.height(16.dp))
                     // Shuffle leads the chip row as an action (outlined, with its icon, like Folders on the Videos tab);
                     // a hairline separates it from the tabs, which are choices.
@@ -221,10 +212,7 @@ fun MusicContent(
             full { com.moody.player.ui.components.CreditFooter() }
         }
         CollapsingTopBar(bar, contentUnder = gridState.firstVisibleItemIndex > 0 || gridState.firstVisibleItemScrollOffset > 0, height = 56.dp) {
-            Row(Modifier.fillMaxWidth().height(56.dp).padding(start = 16.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                MoodyLogo(size = 32.dp)
-                Spacer(Modifier.width(10.dp))
-                Text("Moody", style = MoodyTheme.type.display, color = c.text, modifier = Modifier.weight(1f))
+            com.moody.player.ui.components.AppTopBar(56.dp) {
                 IconAction(MoodyIcons.Settings, "Settings", nav.openSettings, tint = c.text, size = 20.dp)
             }
         }

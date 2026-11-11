@@ -46,6 +46,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -157,7 +158,7 @@ fun VideoLibraryContent(
     }
     val selectedItems = s.all.filter { it.uri.toString() in selected }
     val grid = s.layout == LayoutMode.GRID
-    val side = if (grid) 16.dp else 0.dp
+    val side = if (grid) GridSide else 0.dp
     val topPad = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + BarHeight + 1.dp
     val bottomPad = LocalBottomInset.current + 24.dp
     val ptr = rememberPullToRefreshState()
@@ -227,7 +228,7 @@ fun VideoLibraryContent(
 
         CollapsingTopBar(bar, contentUnder = gridState.firstVisibleItemIndex > 0 || gridState.firstVisibleItemScrollOffset > 0, height = BarHeight) {
             AnimatedContent(selecting to searching, transitionSpec = { fadeIn(Motion.fast()) togetherWith fadeOut(Motion.fast()) }, label = "bar") { (sel, srch) ->
-                Box(Modifier.padding(horizontal = 8.dp)) {
+                Box(Modifier.padding(horizontal = if (!sel && !srch) 0.dp else 8.dp)) {
                     when {
                         sel -> SelectionBar(selectedItems.size, onClose = { selected = emptySet() }, onAll = { selected = s.shown.map { it.uri.toString() }.toSet() }) { a ->
                             nav.onSelection(a, selectedItems) { selected = emptySet() }
@@ -266,6 +267,9 @@ fun VideoLibraryContent(
     }
 }
 
+/** Side margin of the grid layout; full-width rows that should reach the edges step out by this much. */
+private val GridSide = 16.dp
+
 private fun LazyGridScope.full(content: @Composable () -> Unit) = item(span = { GridItemSpan(maxLineSpan) }) { content() }
 
 private fun LazyGridScope.skeletons(grid: Boolean) {
@@ -275,9 +279,16 @@ private fun LazyGridScope.skeletons(grid: Boolean) {
 private fun LazyGridScope.continueRow(s: VideoUiState, nav: VideoNav) {
     if (s.continueWatching.isEmpty()) return
     full {
-        Column {
-            SectionLabel("Continue watching", inset = if (s.layout == LayoutMode.GRID) 0.dp else 16.dp)
-            LazyRow(contentPadding = PaddingValues(horizontal = if (s.layout == LayoutMode.GRID) 0.dp else 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        val bleed = if (s.layout == LayoutMode.GRID) GridSide else 0.dp
+        Column(
+            Modifier.layout { m, c ->
+                val extra = bleed.roundToPx()
+                val p = m.measure(c.copy(minWidth = c.minWidth + extra * 2, maxWidth = c.maxWidth + extra * 2))
+                layout(c.maxWidth, p.height) { p.place(-extra, 0) }
+            },
+        ) {
+            SectionLabel("Continue watching", inset = 16.dp)
+            LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 items(s.continueWatching, key = { it.video.uri.toString() }) { item ->
                     ContinueCard(item, onClick = {
                         val sorted = s.shown.takeIf { s.query.isBlank() && item.video in it } ?: s.continueWatching.map { it.video }
@@ -294,20 +305,7 @@ private fun LazyGridScope.continueRow(s: VideoUiState, nav: VideoNav) {
 @Composable
 private fun TopRow(onLogoLong: () -> Unit, onSearch: () -> Unit, onSort: () -> Unit, onStream: () -> Unit, onSettings: () -> Unit) {
     val c = MoodyTheme.colors
-    Row(Modifier.fillMaxWidth().height(BarHeight), verticalAlignment = Alignment.CenterVertically) {
-        Row(
-            Modifier
-                .clip(Radii.md)
-                .combinedClickable(onClick = {}, onLongClick = onLogoLong)
-                .padding(vertical = 8.dp, horizontal = 8.dp)
-                .semantics { contentDescription = "Moody" },
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            MoodyLogo(size = 32.dp)
-            Spacer(Modifier.width(10.dp))
-            Text("Moody", style = MoodyTheme.type.display, color = c.text)
-        }
-        Spacer(Modifier.weight(1f))
+    com.moody.player.ui.components.AppTopBar(BarHeight, Modifier.padding(horizontal = 0.dp), onLogoLong = onLogoLong) {
         IconAction(MoodyIcons.Search, "Search", onSearch, tint = c.text, size = 20.dp)
         IconAction(MoodyIcons.Link, "Play a link", onStream, tint = c.text, size = 20.dp)
         IconAction(MoodyIcons.Sort, "Sort and view", onSort, tint = c.text, size = 20.dp)
@@ -319,19 +317,10 @@ private fun TopRow(onLogoLong: () -> Unit, onSearch: () -> Unit, onSort: () -> U
 private fun Header(s: VideoUiState, onView: (VideoView) -> Unit, onVault: () -> Unit) {
     val c = MoodyTheme.colors
     Column(Modifier.padding(top = 12.dp, bottom = 4.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            MoodyLogo(size = 48.dp)
-            Spacer(Modifier.width(14.dp))
-            Box(Modifier.width(1.dp).height(40.dp).background(c.line2))
-            Spacer(Modifier.width(14.dp))
-            Column {
-                Text("Videos", style = MoodyTheme.type.hero, color = c.text)
-                Text(
-                    if (s.loading) "Looking through your phone" else "${s.all.size} ${if (s.all.size == 1) "video" else "videos"}  \u00b7  ${formatBytes(s.totalBytes)}",
-                    style = MoodyTheme.type.caption, color = c.text2,
-                )
-            }
-        }
+        com.moody.player.ui.components.SectionTitle(
+            MoodyIcons.Film, "Videos",
+            if (s.loading) "Looking through your phone" else "${s.all.size} ${if (s.all.size == 1) "video" else "videos"}  \u00b7  ${formatBytes(s.totalBytes)}",
+        )
         Spacer(Modifier.height(16.dp))
         androidx.compose.foundation.layout.BoxWithConstraints {
         val narrow = maxWidth < 340.dp
