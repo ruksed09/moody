@@ -1,6 +1,15 @@
 package com.moody.player.ui.music
 
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import kotlinx.coroutines.launch
+import androidx.compose.foundation.gestures.detectTapGestures
 import android.app.Activity
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -57,6 +66,13 @@ fun VisualizerScreen(vm: NowPlayingViewModel, onBack: () -> Unit) {
     var chrome by remember { mutableStateOf(true) }
     var poke by remember { mutableIntStateOf(0) }
     var tuneOpen by remember { mutableStateOf(false) }
+    // Locked: only the picture shows and touches do nothing; a tap brings up a chip to hold for unlocking.
+    var locked by remember { mutableStateOf(false) }
+    var chip by remember { mutableStateOf(false) }
+    var chipPoke by remember { mutableIntStateOf(0) }
+    var holding by remember { mutableStateOf(false) }
+    LaunchedEffect(chip, chipPoke, holding) { if (chip && !holding) { delay(3_000); chip = false } }
+    androidx.activity.compose.BackHandler(locked) { chip = true; chipPoke++ }
 
     DisposableEffect(Unit) {
         val window = (view.context as? Activity)?.window
@@ -78,7 +94,9 @@ fun VisualizerScreen(vm: NowPlayingViewModel, onBack: () -> Unit) {
     androidx.compose.runtime.CompositionLocalProvider(com.moody.player.design.LocalMoodyColors provides c) {
     Box(
         Modifier.fillMaxSize().background(Color(0xFF040506))
-            .clickable(remember { MutableInteractionSource() }, indication = null) { chrome = !chrome; poke++ },
+            .clickable(remember { MutableInteractionSource() }, indication = null) {
+                if (locked) { chip = true; chipPoke++ } else { chrome = !chrome; poke++ }
+            },
     ) {
         if (fallback && sideFailed) VizUnavailable(Modifier.fillMaxSize())
         else VisualizerCanvas(
@@ -87,7 +105,7 @@ fun VisualizerScreen(vm: NowPlayingViewModel, onBack: () -> Unit) {
             Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).padding(start = 24.dp, end = 24.dp, top = 64.dp, bottom = 88.dp),
             item = s.current, hole = Color(0xFF040506),
         )
-        AnimatedVisibility(chrome, enter = fadeIn(), exit = fadeOut()) {
+        AnimatedVisibility(chrome && !locked, enter = fadeIn(), exit = fadeOut()) {
             Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).padding(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconAction(MoodyIcons.ArrowBack, "Back", onBack, tint = c.text)
@@ -97,12 +115,13 @@ fun VisualizerScreen(vm: NowPlayingViewModel, onBack: () -> Unit) {
                     }
                     IconAction(if (s.playing) MoodyIcons.Pause else MoodyIcons.Play, if (s.playing) "Pause" else "Play", { vm.music.toggle(); poke++ }, tint = c.text)
                     IconAction(MoodyIcons.Equalizer, "Tune the visualizer", { tuneOpen = true }, tint = c.text)
+                    IconAction(MoodyIcons.Lock, "Lock: show only the visual", { locked = true; chrome = false; chip = true; chipPoke++ }, tint = c.text)
                 }
             }
         }
         // The style buttons come and go with the rest of the controls; a tap on the picture brings them back.
         AnimatedVisibility(
-            chrome,
+            chrome && !locked,
             modifier = Modifier.align(Alignment.BottomCenter),
             enter = fadeIn(androidx.compose.animation.core.tween(220)) + androidx.compose.animation.slideInVertically(androidx.compose.animation.core.tween(220, easing = com.moody.player.design.components.Motion.Ease)) { it / 3 },
             exit = fadeOut(androidx.compose.animation.core.tween(160)) + androidx.compose.animation.slideOutVertically(androidx.compose.animation.core.tween(200)) { it / 3 },
@@ -113,6 +132,67 @@ fun VisualizerScreen(vm: NowPlayingViewModel, onBack: () -> Unit) {
             )
         }
     }
+    AnimatedVisibility(
+        locked && chip,
+        modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).padding(bottom = 32.dp),
+        enter = fadeIn(), exit = fadeOut(),
+    ) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
+            HoldToUnlockChip(onHolding = { holding = it }) { locked = false; chip = false; chrome = true; poke++ }
+        }
+    }
     if (tuneOpen) VizTuneSheet(settings, { f -> vm.updateViz(f) }, onDismiss = { tuneOpen = false; poke++ })
+    }
+}
+
+/**
+ * "Hold to unlock": a ring fills while the chip is held and unlocks after 0.8 s, with a tick. Letting go
+ * early empties the ring. Screen readers get a plain Unlock action.
+ */
+@Composable
+internal fun HoldToUnlockChip(onHolding: (Boolean) -> Unit = {}, onUnlock: () -> Unit) {
+    val c = MoodyTheme.colors
+    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
+    val progress = remember { androidx.compose.animation.core.Animatable(0f) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    Row(
+        Modifier
+            .clip(com.moody.player.design.Radii.pill)
+            .background(Color(0xE6101214))
+            .semantics(mergeDescendants = true) {
+                role = androidx.compose.ui.semantics.Role.Button
+                onClick("Unlock") { onUnlock(); true }
+            }
+            .pointerInput(Unit) {
+                detectTapGestures(onPress = {
+                    onHolding(true)
+                    val run = scope.launch {
+                        progress.animateTo(1f, androidx.compose.animation.core.tween(800, easing = androidx.compose.animation.core.LinearEasing))
+                        haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                        onUnlock()
+                    }
+                    tryAwaitRelease()
+                    onHolding(false)
+                    if (progress.value < 1f) { run.cancel(); scope.launch { progress.animateTo(0f, androidx.compose.animation.core.tween(200)) } }
+                })
+            }
+            .padding(start = 12.dp, end = 18.dp, top = 10.dp, bottom = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(28.dp), contentAlignment = Alignment.Center) {
+            androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
+                val w = 2.dp.toPx()
+                drawCircle(Color.White.copy(alpha = 0.18f), radius = size.minDimension / 2 - w / 2, style = androidx.compose.ui.graphics.drawscope.Stroke(w))
+                drawArc(
+                    c.accent, -90f, 360f * progress.value, useCenter = false,
+                    topLeft = androidx.compose.ui.geometry.Offset(w / 2, w / 2),
+                    size = androidx.compose.ui.geometry.Size(size.width - w, size.height - w),
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(w, cap = androidx.compose.ui.graphics.StrokeCap.Round),
+                )
+            }
+            androidx.compose.material3.Icon(MoodyIcons.Unlock, null, Modifier.size(14.dp), tint = Color.White)
+        }
+        Spacer(Modifier.width(10.dp))
+        Text("Hold to unlock", style = MoodyTheme.type.label, color = Color.White)
     }
 }
