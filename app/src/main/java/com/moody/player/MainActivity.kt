@@ -151,8 +151,11 @@ class MainActivity : ComponentActivity() {
                         }
                         composable(Routes.NOW_PLAYING) {
                             var eq by remember { mutableStateOf(false) }
-                            NowPlayingScreen(hiltViewModel(), onClose = { nav.popBackStack() }, onEqualizer = { eq = true })
+                            NowPlayingScreen(hiltViewModel(), onClose = { nav.popBackStack() }, onEqualizer = { eq = true }, onFullscreenViz = { nav.navigate(Routes.VISUALIZER) { launchSingleTop = true } })
                             if (eq) EqualizerSheet(music, onDismiss = { eq = false })
+                        }
+                        composable(Routes.VISUALIZER) {
+                            com.moody.player.ui.music.VisualizerScreen(hiltViewModel(), onBack = { nav.popBackStack() })
                         }
                         listOf(
                             Routes.ALBUM to SongListKind.ALBUM, Routes.ARTIST to SongListKind.ARTIST,

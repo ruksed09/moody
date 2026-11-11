@@ -37,6 +37,7 @@ class VlcAudioPlayer(private val context: Context) : SimpleBasePlayer(Looper.get
     private var shuffle = false
     private var speed = 1f
     private var volume = 1f
+    private val sidecar = VlcPcmSidecar(context, lib)
 
     init {
         mp.setEventListener { e ->
@@ -50,7 +51,16 @@ class VlcAudioPlayer(private val context: Context) : SimpleBasePlayer(Looper.get
                 MediaPlayer.Event.EncounteredError -> onEnded()
             }
             invalidateState()
+            publish()
         }
+    }
+
+    /** Tells the visualizer where playback is, and keeps its decoded copy of the song lined up. */
+    private fun publish() {
+        val playing = playWhenReady && state == Player.STATE_READY
+        AudioTap.setClock(positionMs, positionAt, speed, playing)
+        val item = items.getOrNull(index)
+        sidecar.follow(item?.let { it.localConfiguration?.uri ?: android.net.Uri.parse(it.mediaId) }, positionMs)
     }
 
     private fun mark(ms: Long) { positionMs = ms.coerceAtLeast(0); positionAt = android.os.SystemClock.elapsedRealtime() }
@@ -130,6 +140,7 @@ class VlcAudioPlayer(private val context: Context) : SimpleBasePlayer(Looper.get
             if (state == Player.STATE_ENDED) load(order.firstOrNull() ?: 0, 0, true)
             else if (mp.hasMedia()) mp.play() else load(index, positionMs, true)
         } else mp.pause()
+        publish()
         return done()
     }
 
@@ -138,9 +149,10 @@ class VlcAudioPlayer(private val context: Context) : SimpleBasePlayer(Looper.get
         return done()
     }
 
-    override fun handleStop(): ListenableFuture<*> { mp.stop(); state = Player.STATE_IDLE; playWhenReady = false; return done() }
+    override fun handleStop(): ListenableFuture<*> { mp.stop(); sidecar.stop(); state = Player.STATE_IDLE; playWhenReady = false; publish(); return done() }
 
     override fun handleRelease(): ListenableFuture<*> {
+        sidecar.stop(); AudioTap.setClock(0, 0, 1f, false)
         mp.setEventListener(null); mp.stop(); mp.release(); lib.release(); fd?.close()
         return done()
     }
@@ -202,6 +214,7 @@ class VlcAudioPlayer(private val context: Context) : SimpleBasePlayer(Looper.get
             }
             else -> if (target != index || !mp.hasMedia()) load(target, pos, playWhenReady) else { mp.setTime(pos, false); mark(pos) }
         }
+        publish()
         return done()
     }
 
@@ -214,6 +227,6 @@ class VlcAudioPlayer(private val context: Context) : SimpleBasePlayer(Looper.get
     override fun handleSetRepeatMode(repeatMode: Int): ListenableFuture<*> { repeat = repeatMode; return done() }
     override fun handleSetShuffleModeEnabled(shuffleModeEnabled: Boolean): ListenableFuture<*> { shuffle = shuffleModeEnabled; rebuildOrder(); return done() }
     override fun handleSetPlaybackParameters(playbackParameters: PlaybackParameters): ListenableFuture<*> {
-        speed = playbackParameters.speed; mp.rate = speed; return done()
+        speed = playbackParameters.speed; mp.rate = speed; publish(); return done()
     }
 }

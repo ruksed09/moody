@@ -96,7 +96,10 @@ class NowPlayingViewModel @Inject constructor(
     private val favorites: FavoriteDao,
     private val media: com.moody.player.data.media.MediaRepository,
     private val lyricsStore: com.moody.player.data.media.LyricsStore,
+    private val settingsStore: com.moody.player.data.prefs.SettingsStore,
 ) : ViewModel() {
+    val settings = settingsStore.settings.stateIn(viewModelScope, SharingStarted.Eagerly, com.moody.player.data.prefs.Settings())
+    fun updateViz(f: (com.moody.player.data.prefs.Settings) -> com.moody.player.data.prefs.Settings) = viewModelScope.launch { settingsStore.update(f) }
     fun originalSong(song: com.moody.player.data.media.AudioItem) = media.originalSong(song.uri) ?: song
     fun editSong(song: com.moody.player.data.media.AudioItem, edit: com.moody.player.data.media.SongEdit?) = viewModelScope.launch { media.editSong(song.uri, edit) }
     val state = music.state
@@ -130,7 +133,7 @@ class NowPlayingViewModel @Inject constructor(
 }
 
 @Composable
-fun NowPlayingScreen(vm: NowPlayingViewModel, onClose: () -> Unit, onEqualizer: () -> Unit) {
+fun NowPlayingScreen(vm: NowPlayingViewModel, onClose: () -> Unit, onEqualizer: () -> Unit, onFullscreenViz: () -> Unit = {}) {
     val s by vm.state.collectAsStateWithLifecycle()
     val favs by vm.favoriteUris.collectAsStateWithLifecycle()
     val c = MoodyTheme.colors
@@ -140,7 +143,11 @@ fun NowPlayingScreen(vm: NowPlayingViewModel, onClose: () -> Unit, onEqualizer: 
     var queueOpen by remember { mutableStateOf(false) }
     var extrasOpen by remember { mutableStateOf<String?>(null) }
     var infoOpen by remember { mutableStateOf(false) }
-    var showLyrics by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    // 0 song (artwork), 1 lyrics, 2 visualizer.
+    var mode by androidx.compose.runtime.saveable.rememberSaveable { mutableIntStateOf(0) }
+    val showLyrics = mode == 1
+    val settings by vm.settings.collectAsStateWithLifecycle()
+    var tuneOpen by remember { mutableStateOf(false) }
     val item = s.current
     val lyr by vm.lyrics.collectAsStateWithLifecycle()
     androidx.compose.runtime.LaunchedEffect(showLyrics, item?.uri) { if (showLyrics && item != null) vm.loadLyrics(item.uri) }
@@ -162,7 +169,7 @@ fun NowPlayingScreen(vm: NowPlayingViewModel, onClose: () -> Unit, onEqualizer: 
         Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(horizontal = 24.dp)) {
             Row(Modifier.fillMaxWidth().height(56.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconAction(MoodyIcons.ChevronDown, "Close", onClose, tint = c.text)
-                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { ViewSwitch(showLyrics) { showLyrics = it } }
+                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { ViewSwitch(mode) { mode = it } }
                 IconAction(MoodyIcons.Queue, "Queue", { queueOpen = true }, tint = c.text)
             }
             // Speed, sleep and equalizer sit right under the header, where they are easy to reach and read.
@@ -171,8 +178,16 @@ fun NowPlayingScreen(vm: NowPlayingViewModel, onClose: () -> Unit, onEqualizer: 
                 ActionChip(s.sleepAt?.let { "${((it - System.currentTimeMillis()) / 60_000) + 1} min" } ?: "Sleep", { extrasOpen = "sleep" }, icon = MoodyIcons.Timer, active = s.sleepAt != null)
                 ActionChip("Equalizer", onEqualizer, icon = MoodyIcons.Equalizer)
             }
-            androidx.compose.animation.Crossfade(showLyrics && item != null, Modifier.weight(1f).fillMaxWidth(), animationSpec = Motion.base(), label = "art-lyrics") { lyricsOn ->
-            if (lyricsOn && item != null) {
+            androidx.compose.animation.Crossfade(if (item == null) 0 else mode, Modifier.weight(1f).fillMaxWidth(), animationSpec = Motion.base(), label = "art-lyrics") { shown ->
+            if (shown == 2 && item != null) {
+                VisualizerPanel(
+                    settings, s.playing, tint ?: c.accentHi,
+                    onStyle = { v -> vm.updateViz { it.copy(vizStyle = v) } },
+                    onTune = { tuneOpen = true },
+                    onFullscreen = onFullscreenViz,
+                    modifier = Modifier.fillMaxSize().padding(vertical = 12.dp),
+                )
+            } else if (shown == 1 && item != null) {
                 LyricsPanel(
                     lyrics = lyr.lyrics?.takeIf { lyr.uri == item.uri && !it.isEmpty },
                     loading = lyr.uri != item.uri || lyr.loading,
@@ -259,6 +274,7 @@ fun NowPlayingScreen(vm: NowPlayingViewModel, onClose: () -> Unit, onEqualizer: 
     if (infoOpen && item != null) SongInfoDialog(item, vm.originalSong(item), onSave = { vm.editSong(item, it) }, onDismiss = { infoOpen = false })
     if (queueOpen) QueueSheet(s, vm.music, onDismiss = { queueOpen = false })
     extrasOpen?.let { which -> ExtrasSheet(which, s, vm.music, onDismiss = { extrasOpen = null }) }
+    if (tuneOpen) VizTuneSheet(settings, { f -> vm.updateViz(f) }, onDismiss = { tuneOpen = false })
 }
 
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
@@ -347,27 +363,50 @@ private fun QueueSheet(s: MusicState, music: MusicController, onDismiss: () -> U
     }
 }
 
-/** Song or Lyrics, as a small two-part switch in the header. The lit part slides between the two. */
+/** Song, Lyrics or Visual, as a small switch in the header. The lit part slides between them. */
 @Composable
-private fun ViewSwitch(lyrics: Boolean, onChange: (Boolean) -> Unit) {
+private fun ViewSwitch(mode: Int, onChange: (Int) -> Unit) {
     val c = MoodyTheme.colors
-    val seg = 76.dp
-    val x by androidx.compose.animation.core.animateDpAsState(if (lyrics) seg else 0.dp, Motion.base(), label = "switch")
+    val seg = 72.dp
+    val x by androidx.compose.animation.core.animateDpAsState(seg * mode, Motion.base(), label = "switch")
     Box(
         Modifier.height(34.dp).clip(Radii.pill).background(c.surface).border(1.dp, c.line, Radii.pill).padding(3.dp),
     ) {
         Box(Modifier.offset(x = x).width(seg).fillMaxHeight().clip(Radii.pill).background(c.raised).border(1.dp, c.line2, Radii.pill))
         Row {
-            listOf(false to "Song", true to "Lyrics").forEach { (v, label) ->
-                val on = v == lyrics
+            listOf("Song", "Lyrics", "Visual").forEachIndexed { v, label ->
+                val on = v == mode
                 val tc by animateColorAsState(if (on) c.text else c.text3, Motion.base(), label = "switch-text")
                 Box(
                     Modifier.width(seg).fillMaxHeight().clip(Radii.pill)
                         .clickable(role = Role.Tab) { onChange(v) }
-                        .semantics { contentDescription = if (v) "Show lyrics" else "Show song" },
+                        .semantics { contentDescription = "Show ${label.lowercase()}" },
                     contentAlignment = Alignment.Center,
                 ) { Text(label, style = MoodyTheme.type.label, color = tc) }
             }
         }
+    }
+}
+
+/** The visualizer in place of the artwork: the picture, style chips, tuning and fullscreen. */
+@Composable
+private fun VisualizerPanel(
+    settings: com.moody.player.data.prefs.Settings, playing: Boolean, tint: Color,
+    onStyle: (com.moody.player.domain.VizStyle) -> Unit, onTune: () -> Unit, onFullscreen: () -> Unit, modifier: Modifier = Modifier,
+) {
+    val c = MoodyTheme.colors
+    val frames = rememberVizFrames(active = true, playing = playing, s = settings)
+    val fallback by com.moody.player.player.music.AudioTap.onFallbackEngine.collectAsStateWithLifecycle()
+    val sideFailed by com.moody.player.player.music.AudioTap.sidecarFailed.collectAsStateWithLifecycle()
+    Column(modifier) {
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+            if (fallback && sideFailed) VizUnavailable(Modifier.fillMaxSize())
+            else VisualizerCanvas(settings.vizStyle, frames, c.accent, tint, settings.vizIntensity, Modifier.fillMaxSize())
+            Row(Modifier.align(Alignment.TopEnd)) {
+                IconAction(MoodyIcons.Equalizer, "Tune the visualizer", onTune, tint = c.text2, size = 20.dp)
+                IconAction(MoodyIcons.Fullscreen, "Full screen visualizer", onFullscreen, tint = c.text2, size = 20.dp)
+            }
+        }
+        VizStylePicker(settings.vizStyle, onStyle, Modifier.fillMaxWidth())
     }
 }

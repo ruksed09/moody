@@ -123,6 +123,7 @@ class MusicService : MediaSessionService() {
         val s = session ?: return
         val wantVlc = items.any { it.mediaMetadata.extras?.getBoolean(EXTRA_VLC) == true }
         val target: Player = if (wantVlc) (vlc ?: VlcAudioPlayer(this).also { vlc = it }) else exo
+        AudioTap.setFallback(target !== exo)
         if (s.player !== target) {
             s.player.pause()
             s.player.stop()
@@ -167,7 +168,20 @@ class MusicService : MediaSessionService() {
         super.onCreate()
         // Closing the mini-player stops the player; a stopped (idle) player must not keep a notification.
         setShowNotificationForIdlePlayer(SHOW_NOTIFICATION_FOR_IDLE_PLAYER_NEVER)
-        val player = ExoPlayer.Builder(this)
+        // The audio sink carries a pass-through tap so the visualizer can see the music's own samples.
+        val renderers = object : androidx.media3.exoplayer.DefaultRenderersFactory(this) {
+            override fun buildAudioSink(context: Context, enableFloatOutput: Boolean, enableAudioTrackPlaybackParams: Boolean): androidx.media3.exoplayer.audio.AudioSink =
+                androidx.media3.exoplayer.audio.DefaultAudioSink.Builder(context)
+                    .setEnableFloatOutput(enableFloatOutput)
+                    .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+                    .setAudioProcessors(arrayOf(TapProcessor()))
+                    .build()
+        }
+        // ADTS (.aac) files carry no length or seek table; constant-bitrate seeking gives them both.
+        val extractors = androidx.media3.extractor.DefaultExtractorsFactory()
+            .setAdtsExtractorFlags(androidx.media3.extractor.ts.AdtsExtractor.FLAG_ENABLE_CONSTANT_BITRATE_SEEKING)
+        val player = ExoPlayer.Builder(this, renderers)
+            .setMediaSourceFactory(androidx.media3.exoplayer.source.DefaultMediaSourceFactory(this, extractors))
             .setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), true)
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(C.WAKE_MODE_LOCAL)

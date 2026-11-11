@@ -16,4 +16,12 @@ class AudioRoutingTest {
         assertTrue(needsVlc("audio/ac3", "e.ac3"))
         assertTrue(needsVlc("audio/vnd.dts", "f.dts"))
     }
+    @Test fun adtsAac_staysOnMedia3() = assertFalse(needsVlc("audio/aac-adts", "x.aac"))
+    @Test fun relatedMimes_stillGoToVlc() {
+        assertTrue(needsVlc("audio/eac3", "g.bin"))
+        assertTrue(needsVlc("audio/vnd.dts.hd", "h.bin"))
+        assertTrue(needsVlc("audio/amr-wb", "i.bin"))
+        assertTrue(needsVlc("audio/x-ape", "j.bin"))
+        assertTrue(needsVlc("audio/x-matroska", "k.bin"))
+    }
 }
