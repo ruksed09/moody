@@ -36,6 +36,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.ripple
@@ -110,35 +111,17 @@ fun ReelLine(progress: Float?, modifier: Modifier = Modifier, height: Dp = 2.dp,
 
 /* ---------- skeletons ---------- */
 
-/** Loading block with a slow, low-contrast sheen. Shaped like the real content it stands in for. */
+/** Loading block: a still, quiet shape like the real content it stands in for. No shimmer. */
 @Composable
 fun Skeleton(modifier: Modifier = Modifier, shape: androidx.compose.ui.graphics.Shape = Radii.sm) {
-    val c = MoodyTheme.colors
-    val t by rememberInfiniteTransition(label = "sk").animateFloat(
-        -1f, 2f, infiniteRepeatable(tween(1400, easing = LinearEasing)), label = "sk-t",
-    )
-    Box(
-        modifier
-            .clip(shape)
-            .background(c.raised)
-            .drawWithContent {
-                val w = size.width
-                drawRect(
-                    Brush.horizontalGradient(
-                        listOf(Color.Transparent, c.text.copy(alpha = if (c.isDark) 0.045f else 0.06f), Color.Transparent),
-                        startX = w * t - w * 0.5f, endX = w * t + w * 0.5f,
-                    ),
-                )
-            }
-            .semantics { contentDescription = "Loading" },
-    )
+    Box(modifier.clip(shape).background(MoodyTheme.colors.raised).semantics { contentDescription = "Loading" })
 }
 
 @Composable
 fun VideoRowSkeleton(modifier: Modifier = Modifier) {
     Row(modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Skeleton(Modifier.width(128.dp).aspectRatio(16f / 9f), Radii.md)
-        Spacer(Modifier.width(16.dp))
+        Skeleton(Modifier.width(96.dp).height(54.dp), Radii.sm)
+        Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Skeleton(Modifier.fillMaxWidth(0.8f).height(14.dp))
             Skeleton(Modifier.fillMaxWidth(0.4f).height(10.dp))
@@ -149,7 +132,7 @@ fun VideoRowSkeleton(modifier: Modifier = Modifier) {
 @Composable
 fun VideoGridSkeleton(modifier: Modifier = Modifier) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Skeleton(Modifier.fillMaxWidth().aspectRatio(16f / 9f), Radii.lg)
+        Skeleton(Modifier.fillMaxWidth().aspectRatio(16f / 9f), Radii.md)
         Skeleton(Modifier.fillMaxWidth(0.85f).height(14.dp))
         Skeleton(Modifier.fillMaxWidth(0.45f).height(10.dp))
     }
@@ -158,7 +141,7 @@ fun VideoGridSkeleton(modifier: Modifier = Modifier) {
 @Composable
 fun SongRowSkeleton(modifier: Modifier = Modifier) {
     Row(modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Skeleton(Modifier.size(48.dp), Radii.md)
+        Skeleton(Modifier.size(44.dp), CircleShape)
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Skeleton(Modifier.fillMaxWidth(0.7f).height(14.dp))
@@ -233,7 +216,7 @@ fun SecondaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modi
     Row(
         modifier
             .scale(pressScale(src))
-            .height(38.dp)
+            .height(40.dp)
             .clip(Radii.md)
             .border(BorderStroke(1.dp, c.line2), Radii.md)
             .clickable(src, ripple(), role = Role.Button, onClick = onClick)
@@ -258,7 +241,7 @@ fun QuietButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier
     ) { Text(text, style = MoodyTheme.type.label, color = color) }
 }
 
-/** 40 dp touch target around the icon (compact, per the owner's mockups). */
+/** 48 dp touch target; the press ripple is a 40 dp circle round the icon. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun IconAction(
@@ -267,16 +250,17 @@ fun IconAction(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     tint: Color = MoodyTheme.colors.text2,
-    size: Dp = 22.dp,
+    size: Dp = 20.dp,
     onLongClick: (() -> Unit)? = null,
 ) {
+    val src = remember { MutableInteractionSource() }
+    val ripple = ripple(bounded = false, radius = 20.dp)
     Box(
         modifier
-            .size(40.dp)
-            .clip(Radii.pill)
+            .size(48.dp)
             .then(
-                if (onLongClick != null) Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
-                else Modifier.clickable(role = Role.Button, onClick = onClick)
+                if (onLongClick != null) Modifier.combinedClickable(src, ripple, role = Role.Button, onClick = onClick, onLongClick = onLongClick)
+                else Modifier.clickable(src, ripple, role = Role.Button, onClick = onClick)
             )
             .semantics { this.contentDescription = contentDescription },
         contentAlignment = Alignment.Center,
@@ -305,7 +289,7 @@ fun ChoiceChip(text: String, selected: Boolean, onClick: () -> Unit, modifier: M
             if (text.isNotEmpty()) Spacer(Modifier.width(6.dp))
         }
         if (text.isNotEmpty()) {
-            Text(text, style = MoodyTheme.type.label, color = if (selected) (if (c.isDark) c.text else c.accent) else c.text2, maxLines = 1, softWrap = false)
+            Text(text, style = MoodyTheme.type.label, color = if (selected) c.text else c.text2, maxLines = 1, softWrap = false)
         }
     }
 }
@@ -342,15 +326,15 @@ fun ActionChip(
             Icon(icon, null, Modifier.size(16.dp), tint = if (lit) c.accent else c.text2)
             if (text.isNotEmpty()) Spacer(Modifier.width(6.dp))
         }
-        if (text.isNotEmpty()) Text(text, style = MoodyTheme.type.label, color = if (lit) (if (c.isDark) c.text else c.accent) else c.text2, maxLines = 1, softWrap = false)
+        if (text.isNotEmpty()) Text(text, style = MoodyTheme.type.label, color = if (lit) c.text else c.text2, maxLines = 1, softWrap = false)
     }
 }
 
 /** Muted sentence-case section label. */
 @Composable
 fun SectionLabel(text: String, modifier: Modifier = Modifier, inset: Dp = 16.dp, trailing: @Composable (() -> Unit)? = null) {
-    Row(modifier.fillMaxWidth().padding(start = inset, end = 8.dp, top = 24.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(text, style = MoodyTheme.type.section, color = MoodyTheme.colors.text3, modifier = Modifier.weight(1f))
+    Row(modifier.fillMaxWidth().padding(start = inset, end = 8.dp, top = 20.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(text, style = MoodyTheme.type.section, color = MoodyTheme.colors.text2, modifier = Modifier.weight(1f))
         trailing?.invoke()
     }
 }
