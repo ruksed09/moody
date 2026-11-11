@@ -138,8 +138,6 @@ fun NowPlayingScreen(vm: NowPlayingViewModel, onClose: () -> Unit, onEqualizer: 
     val favs by vm.favoriteUris.collectAsStateWithLifecycle()
     val c = MoodyTheme.colors
     val toaster = LocalToaster.current
-    var tint by remember { mutableStateOf<Color?>(null) }
-    val wash by animateColorAsState(tint ?: c.raised, Motion.enter(), label = "wash")
     var queueOpen by remember { mutableStateOf(false) }
     var extrasOpen by remember { mutableStateOf<String?>(null) }
     var infoOpen by remember { mutableStateOf(false) }
@@ -160,28 +158,17 @@ fun NowPlayingScreen(vm: NowPlayingViewModel, onClose: () -> Unit, onEqualizer: 
     }
 
     Box(Modifier.fillMaxSize().background(c.bg)) {
-        // Backdrop: the artwork itself, blurred, under a wash of its own dominant colour.
-        if (item != null && Build.VERSION.SDK_INT >= 31) {
-            Artwork(item, Modifier.fillMaxWidth().aspectRatio(1f).graphicsLayer { alpha = 0.35f }.blur(48.dp), shape = Radii.sm, iconSize = 0.dp)
-        }
-        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to wash.copy(alpha = 0.45f), 0.55f to c.bg.copy(alpha = 0.92f), 1f to c.bg)))
-
         Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(horizontal = 24.dp)) {
-            Row(Modifier.fillMaxWidth().height(56.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().height(48.dp).offset(x = (-12).dp), verticalAlignment = Alignment.CenterVertically) {
                 IconAction(MoodyIcons.ChevronDown, "Close", onClose, tint = c.text)
                 Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { ViewSwitch(mode) { mode = it } }
-                IconAction(MoodyIcons.Queue, "Queue", { queueOpen = true }, tint = c.text)
+                Box(Modifier.offset(x = 24.dp)) { IconAction(MoodyIcons.Queue, "Queue", { queueOpen = true }, tint = c.text) }
             }
-            // Speed, sleep and equalizer sit right under the header, where they are easy to reach and read.
-            Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)) {
-                ActionChip(if (s.speed == 1f) "Speed" else rateLabel(s.speed), { extrasOpen = "speed" }, icon = MoodyIcons.Speed, active = s.speed != 1f)
-                ActionChip(s.sleepAt?.let { "${((it - System.currentTimeMillis()) / 60_000) + 1} min" } ?: "Sleep", { extrasOpen = "sleep" }, icon = MoodyIcons.Timer, active = s.sleepAt != null)
-                ActionChip("Equalizer", onEqualizer, icon = MoodyIcons.Equalizer)
-            }
+            // Song, lyrics and visualizer share the disc's place and crossfade into each other.
             androidx.compose.animation.Crossfade(if (item == null) 0 else mode, Modifier.weight(1f).fillMaxWidth(), animationSpec = Motion.base(), label = "art-lyrics") { shown ->
             if (shown == 2 && item != null) {
                 VisualizerPanel(
-                    settings, s.playing, tint ?: c.accentHi,
+                    settings, s.playing, c.accentHi,
                     onStyle = { v -> vm.updateViz { it.copy(vizStyle = v) } },
                     onTune = { tuneOpen = true },
                     onFullscreen = onFullscreenViz,
@@ -199,35 +186,16 @@ fun NowPlayingScreen(vm: NowPlayingViewModel, onClose: () -> Unit, onEqualizer: 
                     modifier = Modifier.fillMaxSize().padding(vertical = 12.dp),
                 )
             } else
-            BoxWithConstraints(Modifier.fillMaxSize().padding(vertical = 20.dp), contentAlignment = Alignment.Center) {
-                val side = minOf(maxWidth, maxHeight).coerceAtMost(420.dp)
-                // null while loading, true with a cover, false when the song has none (then a disc turns).
-                var cover by remember(item?.uri, item?.cover) { mutableStateOf<Boolean?>(null) }
-                val coverAlpha by animateFloatAsState(if (cover == true) 1f else 0f, Motion.enter(), label = "cover")
-                val discAlpha by animateFloatAsState(if (cover == false || item == null) 1f else 0f, Motion.enter(), label = "disc")
-                if (cover != false && item != null) {
-                    Artwork(
-                        item,
-                        Modifier.size(side).graphicsLayer { alpha = coverAlpha }.shadow(24.dp, Radii.xl, ambientColor = Color.Black, spotColor = Color.Black),
-                        shape = Radii.xl, iconSize = 0.dp,
-                        onLoaded = { d ->
-                            cover = true
-                            val bmp = (d as? BitmapDrawable)?.bitmap ?: return@Artwork
-                            Palette.from(bmp).maximumColorCount(12).generate { p ->
-                                val sw = p?.dominantSwatch ?: p?.vibrantSwatch
-                                tint = sw?.let { Color(it.rgb) }
-                            }
-                        },
-                        onMissing = { cover = false; tint = null },
-                    )
-                }
-                if (discAlpha > 0f) Disc(null, side * 0.92f, Modifier.graphicsLayer { alpha = discAlpha }, spinning = s.playing)
+            BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                // The song's disc, as large as fits, turning while it plays.
+                val side = minOf(maxWidth - 48.dp, maxHeight - 32.dp).coerceIn(120.dp, 320.dp)
+                Disc(item, side, spinning = s.playing)
             }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(item?.title ?: "Nothing playing", style = MoodyTheme.type.display, color = c.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    Spacer(Modifier.height(4.dp))
+                    Spacer(Modifier.height(2.dp))
                     Text(listOfNotNull(item?.artist, item?.album?.takeIf { it.isNotBlank() }).joinToString(" · "), style = MoodyTheme.type.body, color = c.text2, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 if (item != null) {
@@ -239,14 +207,14 @@ fun NowPlayingScreen(vm: NowPlayingViewModel, onClose: () -> Unit, onEqualizer: 
                     }, tint = if (fav) c.accent else c.text2)
                 }
             }
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(12.dp))
             SeekBar(s.positionMs, s.durationMs, vm.music::seekTo, {}, rail = c.line2, tipBg = c.text, tipText = c.bg)
             Row(Modifier.fillMaxWidth()) {
                 Text(formatDuration(s.positionMs).let { if (it == "--:--") "0:00" else it }, style = MoodyTheme.type.mono, color = c.text3)
                 Spacer(Modifier.weight(1f))
                 Text(formatDuration(s.durationMs), style = MoodyTheme.type.mono, color = c.text3)
             }
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(8.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 IconAction(MoodyIcons.Shuffle, if (s.shuffle) "Shuffle on" else "Shuffle off", { vm.music.setShuffle(!s.shuffle); toaster.show(if (s.shuffle) "Shuffle off" else "Shuffle on") }, tint = if (s.shuffle) c.accent else c.text2)
                 IconAction(MoodyIcons.Prev, "Previous", vm.music::prev, tint = c.text, size = 28.dp)
@@ -254,11 +222,11 @@ fun NowPlayingScreen(vm: NowPlayingViewModel, onClose: () -> Unit, onEqualizer: 
                 val playPressed by playSrc.collectIsPressedAsState()
                 val playScale by animateFloatAsState(if (playPressed) 0.94f else 1f, Motion.fast(), label = "play")
                 Box(
-                    Modifier.size(72.dp).graphicsLayer { scaleX = playScale; scaleY = playScale }.clip(CircleShape).background(c.accent)
+                    Modifier.size(64.dp).graphicsLayer { scaleX = playScale; scaleY = playScale }.clip(CircleShape).background(c.accent)
                         .clickable(playSrc, androidx.compose.material3.ripple(color = c.accentInk), role = Role.Button, onClick = vm.music::toggle)
                         .semantics { contentDescription = if (s.playing) "Pause" else "Play" },
                     contentAlignment = Alignment.Center,
-                ) { Icon(if (s.playing) MoodyIcons.Pause else MoodyIcons.Play, null, Modifier.size(30.dp), tint = c.accentInk) }
+                ) { Icon(if (s.playing) MoodyIcons.Pause else MoodyIcons.Play, null, Modifier.size(28.dp), tint = c.accentInk) }
                 IconAction(MoodyIcons.Next, "Next", vm.music::next, tint = c.text, size = 28.dp)
                 IconAction(
                     if (s.repeat == RepeatMode.ONE) MoodyIcons.RepeatOne else MoodyIcons.Repeat,
@@ -267,7 +235,12 @@ fun NowPlayingScreen(vm: NowPlayingViewModel, onClose: () -> Unit, onEqualizer: 
                     tint = if (s.repeat != RepeatMode.OFF) c.accent else c.text2,
                 )
             }
-            Spacer(Modifier.height(28.dp))
+            // Speed, sleep and equalizer sit under the controls: secondary, but one tap away.
+            Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)) {
+                ActionChip(if (s.speed == 1f) "Speed" else rateLabel(s.speed), { extrasOpen = "speed" }, icon = MoodyIcons.Speed, active = s.speed != 1f)
+                ActionChip(s.sleepAt?.let { "${((it - System.currentTimeMillis()) / 60_000) + 1} min" } ?: "Sleep", { extrasOpen = "sleep" }, icon = MoodyIcons.Timer, active = s.sleepAt != null)
+                ActionChip("Equalizer", onEqualizer, icon = MoodyIcons.Equalizer)
+            }
         }
     }
 
@@ -335,7 +308,7 @@ private fun QueueSheet(s: MusicState, music: MusicController, onDismiss: () -> U
                             Modifier.fillMaxWidth().height(rowH).background(if (dragging) c.raised else c.surface).clickable { music.skipTo(i) }.padding(start = 24.dp, end = 4.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            ArtworkSquare(song, 44.dp)
+                            Disc(song, 44.dp, behind = if (dragging) c.raised else c.surface)
                             Spacer(Modifier.width(12.dp))
                             Column(Modifier.weight(1f)) {
                                 Text(song.title, style = MoodyTheme.type.bodyStrong, color = if (i == s.index) c.accent else c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -372,7 +345,7 @@ private fun ViewSwitch(mode: Int, onChange: (Int) -> Unit) {
     Box(
         Modifier.height(34.dp).clip(Radii.pill).background(c.surface).border(1.dp, c.line, Radii.pill).padding(3.dp),
     ) {
-        Box(Modifier.offset(x = x).width(seg).fillMaxHeight().clip(Radii.pill).background(c.raised).border(1.dp, c.line2, Radii.pill))
+        Box(Modifier.offset(x = x).width(seg).fillMaxHeight().clip(Radii.pill).background(c.raised))
         Row {
             listOf("Song", "Lyrics", "Visual").forEachIndexed { v, label ->
                 val on = v == mode
@@ -403,8 +376,8 @@ private fun VisualizerPanel(
             if (fallback && sideFailed) VizUnavailable(Modifier.fillMaxSize())
             else VisualizerCanvas(settings.vizStyle, frames, c.accent, tint, settings.vizIntensity, Modifier.fillMaxSize())
             Row(Modifier.align(Alignment.TopEnd)) {
-                IconAction(MoodyIcons.Equalizer, "Tune the visualizer", onTune, tint = c.text2, size = 20.dp)
-                IconAction(MoodyIcons.Fullscreen, "Full screen visualizer", onFullscreen, tint = c.text2, size = 20.dp)
+                IconAction(MoodyIcons.Equalizer, "Tune the visualizer", onTune, tint = c.text2)
+                IconAction(MoodyIcons.Fullscreen, "Full screen visualizer", onFullscreen, tint = c.text2)
             }
         }
         VizStylePicker(settings.vizStyle, onStyle, Modifier.fillMaxWidth())
