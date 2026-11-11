@@ -207,13 +207,16 @@ fun StatsContent(s: StatsUi, onRange: (StatsRange) -> Unit, onKeep: (Boolean) ->
 @Composable
 private fun Tile(label: String, value: String, swatch: Color, modifier: Modifier) {
     val c = MoodyTheme.colors
-    Column(modifier.background(c.surface, Radii.lg).border(1.dp, c.line, Radii.lg).padding(16.dp)) {
+    Column(
+        modifier.height(72.dp).background(c.surface, Radii.lg).border(1.dp, c.line, Radii.lg).padding(horizontal = 14.dp),
+        verticalArrangement = Arrangement.Center,
+    ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(10.dp).background(swatch, Radii.sm))
-            Spacer(Modifier.width(8.dp))
-            Text(label, style = MoodyTheme.type.label, color = c.text2)
+            Box(Modifier.size(8.dp).background(swatch, Radii.sm))
+            Spacer(Modifier.width(6.dp))
+            Text(label, style = MoodyTheme.type.caption, color = c.text2, maxLines = 1)
         }
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(4.dp))
         Text(value, style = MoodyTheme.type.display, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
@@ -269,14 +272,14 @@ private fun DayChart(days: List<DayTotal>, range: StatsRange) {
         Spacer(Modifier.height(10.dp))
         val desc = days.joinToString("; ") { "${dayLong(it.day)}: watched ${formatSpent(it.videoMs)}, listened ${formatSpent(it.musicMs)}" }
         Canvas(
-            Modifier.fillMaxWidth().height(160.dp)
+            Modifier.fillMaxWidth().height(176.dp)
                 .semantics { contentDescription = "Play time by day. $desc" }
                 .pointerInput(days) {
                     detectTapGestures { o -> picked = (o.x / (size.width / days.size.toFloat())).toInt().coerceIn(0, days.lastIndex) }
                 },
         ) {
             val slot = size.width / days.size
-            val barW = minOf(24.dp.toPx(), slot * 0.62f)
+            val barW = minOf(20.dp.toPx(), slot * 0.62f)
             val gap = 2.dp.toPx()
             val r = minOf(4.dp.toPx(), barW / 2)
             // Recessive guide at the top value and the baseline.
