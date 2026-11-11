@@ -114,6 +114,26 @@ fun PlayerScreen(vm: PlayerViewModel, host: PlayerHost, inPip: Boolean) {
             CircularProgressIndicator(Modifier.align(Alignment.Center).size(40.dp), color = MoodyTheme.colors.accent, strokeWidth = 2.dp, trackColor = OnVideo.rail)
         }
 
+        // A video without a sound track (a silent screen recording, say) still plays; say so once, in the middle.
+        val silent = st.uri != null && st.error == null && st.videoWidth > 0 && st.positionMs >= 1_200 && st.audioTracks.none { it.id >= 0 }
+        var noAudio by remember(st.uri) { mutableStateOf(false) }
+        LaunchedEffect(st.uri, silent) { if (silent) { noAudio = true; delay(2_500); noAudio = false } }
+        AnimatedVisibility(
+            noAudio && !st.buffering, Modifier.align(Alignment.Center),
+            enter = fadeIn(Motion.base()) + androidx.compose.animation.scaleIn(Motion.base(), initialScale = 0.92f),
+            exit = fadeOut(Motion.base()),
+        ) {
+            Row(
+                Modifier.clip(Radii.pill).background(OnVideo.ink).padding(start = 16.dp, end = 20.dp, top = 12.dp, bottom = 12.dp)
+                    .semantics(mergeDescendants = true) {},
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(MoodyIcons.VolumeMute, null, Modifier.size(22.dp), tint = OnVideo.text)
+                androidx.compose.foundation.layout.Spacer(Modifier.width(10.dp))
+                Text("No audio", style = MoodyTheme.type.label, color = OnVideo.text)
+            }
+        }
+
         // Finished with Loop off: a Replay button in the centre; the top controls step away, the bottom row stays usable.
         val ended = st.ended && st.error == null
         AnimatedVisibility(ended && !locked, Modifier.align(Alignment.Center), enter = fadeIn(Motion.base()), exit = fadeOut(Motion.fast())) {
