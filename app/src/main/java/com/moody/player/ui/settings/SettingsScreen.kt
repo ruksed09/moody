@@ -158,7 +158,7 @@ fun SettingsPage(title: String, onBack: () -> Unit, content: LazyListScope.() ->
     val list = rememberLazyListState()
     val lineAlpha by animateFloatAsState(if (list.canScrollBackward) 1f else 0f, label = "header-line")
     Column(Modifier.fillMaxSize()) {
-        Row(Modifier.statusBarsPadding().fillMaxWidth().height(52.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.statusBarsPadding().fillMaxWidth().height(48.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             IconAction(MoodyIcons.ArrowBack, "Back", onBack, tint = c.text, size = 22.dp)
             Spacer(Modifier.width(4.dp))
             Text(title, style = MoodyTheme.type.title, color = c.text, maxLines = 1)
@@ -273,7 +273,7 @@ fun SettingsSectionScreen(
                 } else {
                     s.hiddenFolders.sorted().forEach { path ->
                         item(key = path) {
-                            Row(Modifier.fillMaxWidth().height(48.dp).padding(start = 52.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Row(Modifier.fillMaxWidth().height(48.dp).padding(start = 60.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Text(folderName(path), style = MoodyTheme.type.body, color = c.text, modifier = Modifier.weight(1f), maxLines = 1)
                                 QuietButton("Show again", { vm.update { it.copy(hiddenFolders = it.hiddenFolders - path) } }, color = c.accent)
                             }
@@ -390,12 +390,12 @@ private fun Context.openAppDetails() {
 
 @Composable
 private fun Label(text: String) {
-    Text(text, style = MoodyTheme.type.label, color = MoodyTheme.colors.accent, modifier = Modifier.padding(start = 52.dp, end = 16.dp, top = 16.dp, bottom = 4.dp))
+    Text(text, style = MoodyTheme.type.label, color = MoodyTheme.colors.accent, modifier = Modifier.padding(start = 60.dp, end = 16.dp, top = 16.dp, bottom = 4.dp))
 }
 
 @Composable
 private fun Note(text: String) {
-    Text(text, style = MoodyTheme.type.caption, color = MoodyTheme.colors.text3, modifier = Modifier.padding(start = 52.dp, end = 16.dp, top = 8.dp, bottom = 8.dp))
+    Text(text, style = MoodyTheme.type.caption, color = MoodyTheme.colors.text3, modifier = Modifier.padding(start = 60.dp, end = 16.dp, top = 8.dp, bottom = 8.dp))
 }
 
 /** A compact row: plain icon, content, hairline divider aligned with the text. */
@@ -404,19 +404,19 @@ private fun RowShell(icon: ImageVector?, onClick: (() -> Unit)?, glyph: String? 
     val c = MoodyTheme.colors
     Column(Modifier.fillMaxWidth().then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier)) {
         Row(
-            Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(start = 16.dp, end = 12.dp, top = 10.dp, bottom = 10.dp),
+            Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(start = 8.dp, end = 12.dp, top = 10.dp, bottom = 10.dp),
             verticalAlignment = if (top) Alignment.Top else Alignment.CenterVertically,
         ) {
-            Box(Modifier.width(20.dp), contentAlignment = Alignment.Center) {
+            Box(Modifier.width(40.dp), contentAlignment = Alignment.Center) {
                 when {
                     glyph != null -> Text(glyph, style = MoodyTheme.type.label, color = c.text2)
                     icon != null -> Icon(icon, null, Modifier.size(20.dp), tint = c.text2)
                 }
             }
-            Spacer(Modifier.width(16.dp))
+            Spacer(Modifier.width(12.dp))
             content()
         }
-        Box(Modifier.padding(start = 52.dp).fillMaxWidth().height(1.dp).background(c.line))
+        Box(Modifier.padding(start = 60.dp).fillMaxWidth().height(1.dp).background(c.line))
     }
 }
 
