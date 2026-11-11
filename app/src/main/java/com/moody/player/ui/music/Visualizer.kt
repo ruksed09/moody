@@ -150,8 +150,9 @@ private fun DrawScope.bars(f: VizFrames, a: Color, b: Color) {
 private fun DrawScope.circle(f: VizFrames, a: Color, b: Color, intensity: Float) {
     val c = center
     val m = min(size.width, size.height)
-    val base = m * 0.24f * (1f + f.level * 0.10f * intensity)
-    val reach = m * 0.22f
+    // Kept inside the panel: the longest spoke stops short of the edge at any level and motion setting.
+    val base = m * 0.22f * (1f + f.level * 0.08f * intensity.coerceAtMost(2f))
+    val reach = (m * 0.46f - base - 3.dp.toPx()).coerceAtLeast(0f)
     drawCircle(a, base * 0.92f, c, alpha = 0.08f + f.level * 0.12f)
     val spokes = BANDS * 2
     val stroke = (2 * PI * base / spokes * 0.55f).toFloat().coerceIn(1.5f, 6.dp.toPx())
@@ -191,22 +192,22 @@ private fun DrawScope.rings(f: VizFrames, a: Color, b: Color, intensity: Float) 
     for (g in 0 until groups) {
         var v = 0f
         for (i in g * per until (g + 1) * per) v = maxOf(v, f.levels[i])
-        val r = m * (0.18f + 0.13f * g) * (1f + v * 0.22f * intensity)
+        // Rest radii leave room to swell; nothing passes the panel's edge.
+        val r = (m * (0.16f + 0.11f * g) * (1f + v * 0.15f * intensity.coerceAtMost(2f))).coerceAtMost(m * 0.94f)
         drawCircle(lerpColor(a, b, g / (groups - 1f)), r, c, alpha = (0.85f - g * 0.11f) * (0.35f + v * 0.65f), style = Stroke((1.5f + v * 5f).dp.toPx()))
     }
-    drawCircle(a, m * 0.10f * (1f + f.levels[2] * 0.8f * intensity), c, alpha = 0.55f)
+    drawCircle(a, m * 0.09f * (1f + f.levels[2] * 0.6f * intensity.coerceAtMost(2f)), c, alpha = 0.55f)
 }
 
 private fun DrawScope.minimal(f: VizFrames, a: Color, b: Color) {
-    val pills = 5
-    val per = BANDS / pills
-    val w = 10.dp.toPx()
-    val gap = 12.dp.toPx()
+    val pills = 9
+    val w = 8.dp.toPx()
+    val gap = 8.dp.toPx()
     val total = pills * w + (pills - 1) * gap
     val maxH = size.height * 0.42f
     for (p in 0 until pills) {
         var v = 0f
-        for (i in p * per until (p + 1) * per) v = maxOf(v, f.levels[i])
+        for (i in p * BANDS / pills until (p + 1) * BANDS / pills) v = maxOf(v, f.levels[i])
         val h = (w + v * maxH)
         val x = center.x - total / 2 + p * (w + gap)
         drawRoundRect(lerpColor(a, b, p / (pills - 1f)), Offset(x, center.y - h / 2), Size(w, h), CornerRadius(w / 2, w / 2))

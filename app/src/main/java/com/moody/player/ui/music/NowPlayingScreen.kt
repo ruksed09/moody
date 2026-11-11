@@ -372,14 +372,16 @@ private fun VisualizerPanel(
     val fallback by com.moody.player.player.music.AudioTap.onFallbackEngine.collectAsStateWithLifecycle()
     val sideFailed by com.moody.player.player.music.AudioTap.sidecarFailed.collectAsStateWithLifecycle()
     Column(modifier) {
-        Box(Modifier.weight(1f).fillMaxWidth()) {
+        // The picture sits in its own rounded panel, with room around it so round styles stay whole.
+        Box(Modifier.weight(1f).fillMaxWidth().clip(Radii.lg).background(c.surface)) {
             if (fallback && sideFailed) VizUnavailable(Modifier.fillMaxSize())
-            else VisualizerCanvas(settings.vizStyle, frames, c.accent, tint, settings.vizIntensity, Modifier.fillMaxSize())
+            else VisualizerCanvas(settings.vizStyle, frames, c.accent, tint, settings.vizIntensity, Modifier.fillMaxSize().padding(16.dp))
             Row(Modifier.align(Alignment.TopEnd)) {
                 IconAction(MoodyIcons.Equalizer, "Tune the visualizer", onTune, tint = c.text2)
                 IconAction(MoodyIcons.Fullscreen, "Full screen visualizer", onFullscreen, tint = c.text2)
             }
         }
+        Spacer(Modifier.height(12.dp))
         VizStylePicker(settings.vizStyle, onStyle, Modifier.fillMaxWidth())
     }
 }

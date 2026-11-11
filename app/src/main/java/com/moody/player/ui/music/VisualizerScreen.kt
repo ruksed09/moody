@@ -44,7 +44,7 @@ import kotlinx.coroutines.delay
 
 /**
  * The visualizer across the whole screen. System bars hide and the screen stays on; a tap brings the song
- * title, style chips and controls back for a few seconds.
+ * title and controls back for a few seconds. The style chips stay on screen.
  */
 @Composable
 fun VisualizerScreen(vm: NowPlayingViewModel, onBack: () -> Unit) {
@@ -89,11 +89,12 @@ fun VisualizerScreen(vm: NowPlayingViewModel, onBack: () -> Unit) {
                     IconAction(if (s.playing) MoodyIcons.Pause else MoodyIcons.Play, if (s.playing) "Pause" else "Play", { vm.music.toggle(); poke++ }, tint = c.text)
                     IconAction(MoodyIcons.Equalizer, "Tune the visualizer", { tuneOpen = true }, tint = c.text)
                 }
-                Spacer(Modifier.weight(1f))
-                VizStylePicker(settings.vizStyle, { v -> vm.updateViz { it.copy(vizStyle = v) }; poke++ }, Modifier.fillMaxWidth())
-                Spacer(Modifier.height(8.dp))
             }
         }
+        VizStylePicker(
+            settings.vizStyle, { v -> vm.updateViz { it.copy(vizStyle = v) } },
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = 12.dp, vertical = 20.dp),
+        )
     }
     if (tuneOpen) VizTuneSheet(settings, { f -> vm.updateViz(f) }, onDismiss = { tuneOpen = false; poke++ })
 }
