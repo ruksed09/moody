@@ -19,6 +19,7 @@ import com.moody.player.data.media.CoverWriter
 import com.moody.player.design.components.LocalToaster
 import com.moody.player.player.music.MusicController
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -46,7 +47,8 @@ fun rememberCoverWriter(music: MusicController): (AudioItem, String) -> Unit {
             toaster.show("Saving the cover into the file")
             var resume: MusicController.Resume? = null
             val result = try {
-                withContext(Dispatchers.IO) {
+                // Not cancelled when the screen closes: the player must be resumed and the file left whole.
+                withContext(NonCancellable + Dispatchers.IO) {
                     CoverWriter.embed(
                         context, song, path,
                         releasePlayer = { resume = withContext(Dispatchers.Main) { music.releaseIfCurrent(song.uri) } },

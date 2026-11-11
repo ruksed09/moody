@@ -42,7 +42,7 @@ sealed interface CoverWrite {
  */
 object CoverWriter {
     private const val FRONT_COVER = 3
-    private val formats = setOf("mp3", "m4a", "mp4", "aac", "flac", "ogg")
+    private val formats = setOf("mp3", "m4a", "mp4", "flac", "ogg", "oga")
 
     /**
      * Throws [SecurityException] (on Android 10 a RecoverableSecurityException with a consent prompt) when
@@ -71,7 +71,13 @@ object CoverWriter {
         checkWritable(context, song.uri)
 
         val size = resolver.openFileDescriptor(song.uri, "r")?.use { it.statSize } ?: return CoverWrite.Failed("Couldn't open the song")
-        val dir = File(context.cacheDir, "cover-write").apply { deleteRecursively(); mkdirs() }
+        val dir = File(context.cacheDir, "cover-write")
+        // A backup left from a write that never finished (Moody was closed mid-way) may be the only intact copy.
+        dir.listFiles { f -> f.name.startsWith("original.") }?.forEach { left ->
+            val keep = File(context.filesDir, "cover-backup").apply { mkdirs() }
+            runCatching { left.copyTo(File(keep, "unfinished-${left.lastModified()}.${left.extension}"), overwrite = true) }
+        }
+        dir.deleteRecursively(); dir.mkdirs()
         if (dir.usableSpace < size * 2 + cover.length() + (16L shl 20)) return CoverWrite.Failed("Not enough free space")
         val backup = File(dir, "original.$ext")
         val work = File(dir, "tagged.$ext")
