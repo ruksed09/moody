@@ -41,6 +41,8 @@ data class MusicUiState(
     val totalMs: Long = 0,
     /** Mixes built from play history, favourites and the time of day. */
     val mixes: List<com.moody.player.domain.MoodMix<AudioItem>> = emptyList(),
+    /** Covers picked for mixes, by mix id. */
+    val mixCovers: Map<String, String> = emptyMap(),
 )
 
 /** Groups the library for the Music tab's sub-tabs. Pure, so it can be tested. */
@@ -62,6 +64,8 @@ class MusicViewModel @Inject constructor(
     private val favoriteDao: FavoriteDao,
     val music: MusicController,
     private val stats: com.moody.player.data.stats.PlayStats,
+    private val mixCovers: com.moody.player.data.media.MixCovers,
+    @dagger.hilt.android.qualifiers.ApplicationContext private val appContext: android.content.Context,
 ) : ViewModel() {
     val tab = MutableStateFlow(MusicTab.SONGS)
 
@@ -91,7 +95,26 @@ class MusicViewModel @Inject constructor(
             favorites = favs.mapNotNull { byUri[it.audioUri] },
             totalMs = songs.sumOf { it.durationMs },
         )
-    }.combine(mixesFlow()) { s, mixes -> s.copy(mixes = mixes) }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MusicUiState())
+    }.combine(mixesFlow()) { s, mixes -> s.copy(mixes = mixes) }
+        .combine(mixCovers.all) { s, covers -> s.copy(mixCovers = covers) }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MusicUiState())
+
+    /** Copies [picked] into Moody's storage and uses it as the cover of mix [mixId]. */
+    fun setMixCover(mixId: String, picked: android.net.Uri, done: (Boolean) -> Unit) = viewModelScope.launch {
+        val path = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { com.moody.player.data.media.storeCover(appContext, picked) }
+        if (path != null) {
+            val old = state.value.mixCovers[mixId]
+            mixCovers.set(mixId, path)
+            if (old != null && old != path) com.moody.player.data.media.deleteCover(appContext, old)
+        }
+        done(path != null)
+    }
+
+    /** Goes back to the mix's own album discs. */
+    fun clearMixCover(mixId: String) = viewModelScope.launch {
+        val old = state.value.mixCovers[mixId]
+        mixCovers.set(mixId, null)
+        com.moody.player.data.media.deleteCover(appContext, old)
+    }
 
     fun playlistSongs(id: Long): Flow<List<AudioItem>> = combine(playlistDao.entries(id), state) { entries, s ->
         val byUri = s.songs.associateBy { it.uri.toString() }

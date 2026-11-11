@@ -54,6 +54,21 @@ class SongEdits @Inject constructor(@ApplicationContext private val context: Con
     }.getOrNull()
 }
 
+private val Context.mixCoverStore by preferencesDataStore("mix_covers")
+
+/** Covers the user picked for mood mixes, keyed by the mix's id: a path to Moody's own copy of the picture. */
+@Singleton
+class MixCovers @Inject constructor(@ApplicationContext private val context: Context) {
+    val all: Flow<Map<String, String>> = context.mixCoverStore.data.map { prefs ->
+        prefs.asMap().mapNotNull { (k, v) -> (v as? String)?.let { k.name to it } }.toMap()
+    }
+
+    suspend fun set(mixId: String, path: String?) {
+        val key = stringPreferencesKey(mixId)
+        context.mixCoverStore.edit { if (path == null) it.remove(key) else it[key] = path }
+    }
+}
+
 /**
  * Copies a picked picture into Moody's own storage (scaled to at most 1024 px, JPEG), so the cover
  * keeps working after the picker's permission ends. Returns the stored file's path, or null.

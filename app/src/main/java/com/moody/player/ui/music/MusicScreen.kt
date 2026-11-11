@@ -92,6 +92,8 @@ fun MusicScreen(vm: MusicViewModel, nav: MusicNav, hasAccess: Boolean, backgroun
     // Long-press a song to start selecting; tap the count to select every song.
     var selected by remember { mutableStateOf(setOf<String>()) }
     var batch by remember { mutableStateOf<SongBatchRequest?>(null) }
+    var coverFor by remember { mutableStateOf<com.moody.player.domain.MoodMix<AudioItem>?>(null) }
+    val toaster = com.moody.player.design.components.LocalToaster.current
     androidx.activity.compose.BackHandler(selected.isNotEmpty()) { selected = emptySet() }
     androidx.compose.runtime.LaunchedEffect(tab) { selected = emptySet() }
     MusicContent(
@@ -112,7 +114,13 @@ fun MusicScreen(vm: MusicViewModel, nav: MusicNav, hasAccess: Boolean, backgroun
         onSongMore = { actionsFor = it },
         onNewPlaylist = { newPlaylist = true },
         onMix = { m -> vm.music.playQueue(m.songs, 0, shuffle = m.shuffle) },
+        onMixCover = { coverFor = it },
     )
+    coverFor?.let { m ->
+        MixCoverSheet(m.title, hasCover = m.id in s.mixCovers, onDismiss = { coverFor = null }, onRemove = { vm.clearMixCover(m.id) }) { picked ->
+            vm.setMixCover(m.id, picked) { ok -> if (!ok) toaster.show("That picture couldn't be opened") }
+        }
+    }
     val writeCover = rememberCoverWriter(vm.music)
     actionsFor?.let { song -> SongActionsSheet(song, vm, onDismiss = { actionsFor = null }, onCoverSaved = writeCover) }
     SongBatchHost(vm, batch) { done -> batch = null; if (done) selected = emptySet() }
@@ -134,6 +142,7 @@ fun MusicContent(
     onSongMore: (AudioItem) -> Unit,
     onNewPlaylist: () -> Unit,
     onMix: (com.moody.player.domain.MoodMix<AudioItem>) -> Unit = {},
+    onMixCover: ((com.moody.player.domain.MoodMix<AudioItem>) -> Unit)? = null,
     playing: Boolean = false,
     selected: Set<String> = emptySet(),
     onToggle: ((AudioItem) -> Unit)? = null,
@@ -189,7 +198,7 @@ fun MusicContent(
                     EmptyState({ EmptyMusic() }, "No music on this phone yet", "Songs you download or copy into Music show up here. Clips under 30 seconds are left out")
                 }
                 tab == MusicTab.SONGS -> {
-                    if (s.mixes.isNotEmpty()) item(key = "mixes", span = { GridItemSpan(maxLineSpan) }) { MoodMixesRow(s.mixes, onMix) }
+                    if (s.mixes.isNotEmpty()) item(key = "mixes", span = { GridItemSpan(maxLineSpan) }) { MoodMixesRow(s.mixes, onMix, s.mixCovers, onMixCover) }
                     items(s.songs, key = { it.uri.toString() }, span = { GridItemSpan(maxLineSpan) }) { song ->
                         val current = song.uri.toString() == currentUri
                         val picking = selected.isNotEmpty()
@@ -313,5 +322,25 @@ fun GroupRow(leading: @Composable () -> Unit, title: String, meta: String, onCli
             Text(meta, style = MoodyTheme.type.caption, color = c.text3, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         Icon(MoodyIcons.ChevronRight, null, Modifier.size(18.dp), tint = c.text3)
+    }
+}
+
+/** Pick a picture for a mood mix, or go back to its album discs. */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun MixCoverSheet(title: String, hasCover: Boolean, onDismiss: () -> Unit, onRemove: () -> Unit, onPicked: (android.net.Uri) -> Unit) {
+    val c = MoodyTheme.colors
+    val pick = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) onPicked(uri)
+        onDismiss()
+    }
+    androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss, containerColor = c.surface) {
+        Column(Modifier.padding(bottom = 24.dp)) {
+            Text(title, style = MoodyTheme.type.title, color = c.text, modifier = Modifier.padding(horizontal = 24.dp).padding(bottom = 8.dp))
+            SheetRow(MoodyIcons.Image, if (hasCover) "Change cover" else "Choose a cover") {
+                pick.launch(androidx.activity.result.PickVisualMediaRequest(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly))
+            }
+            if (hasCover) SheetRow(MoodyIcons.Close, "Use the album covers") { onRemove(); onDismiss() }
+        }
     }
 }

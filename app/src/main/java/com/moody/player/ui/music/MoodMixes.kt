@@ -2,7 +2,7 @@ package com.moody.player.ui.music
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -32,6 +32,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -50,7 +51,10 @@ private val DiscSide = 116.dp
  * on the phone; each card says what it is built from.
  */
 @Composable
-fun MoodMixesRow(mixes: List<MoodMix<AudioItem>>, onPlay: (MoodMix<AudioItem>) -> Unit) {
+fun MoodMixesRow(
+    mixes: List<MoodMix<AudioItem>>, onPlay: (MoodMix<AudioItem>) -> Unit,
+    covers: Map<String, String> = emptyMap(), onCover: ((MoodMix<AudioItem>) -> Unit)? = null,
+) {
     val c = MoodyTheme.colors
     Column(Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -58,14 +62,15 @@ fun MoodMixesRow(mixes: List<MoodMix<AudioItem>>, onPlay: (MoodMix<AudioItem>) -
             Text("Made on this phone", style = MoodyTheme.type.caption, color = c.text3)
         }
         LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            items(mixes, key = { it.id }) { m -> MixCard(m) { onPlay(m) } }
+            items(mixes, key = { it.id }) { m -> MixCard(m, covers[m.id], onCover?.let { f -> { f(m) } }) { onPlay(m) } }
         }
         Spacer(Modifier.height(16.dp))
     }
 }
 
 @Composable
-private fun MixCard(m: MoodMix<AudioItem>, onClick: () -> Unit) {
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+private fun MixCard(m: MoodMix<AudioItem>, cover: String?, onCover: (() -> Unit)?, onClick: () -> Unit) {
     val c = MoodyTheme.colors
     val src = remember { MutableInteractionSource() }
     val pressed by src.collectIsPressedAsState()
@@ -75,12 +80,19 @@ private fun MixCard(m: MoodMix<AudioItem>, onClick: () -> Unit) {
             .width(CardSide)
             .graphicsLayer { scaleX = scale; scaleY = scale }
             .clip(Radii.lg)
-            .clickable(src, ripple(), role = Role.Button, onClick = onClick)
-            .semantics(mergeDescendants = true) { contentDescription = "Play ${m.title}, ${m.songs.size} songs. ${m.basis}" },
+            // Hold a card to give the mix a cover of your own.
+            .combinedClickable(src, ripple(), role = Role.Button, onLongClickLabel = "Change cover", onLongClick = onCover, onClick = onClick)
+            .semantics(mergeDescendants = true) {
+                contentDescription = "Play ${m.title}, ${m.songs.size} songs. ${m.basis}"
+                if (onCover != null) customActions = listOf(androidx.compose.ui.semantics.CustomAccessibilityAction("Change cover") { onCover(); true })
+            },
     ) {
         Box(Modifier.size(CardSide).clip(Radii.lg).background(c.surface)) {
             // A small stack of discs: the mix's first album in front, the next ones peeking out behind it.
-            val covers = remember(m.songs) { m.songs.distinctBy { it.albumId }.take(3) }
+            // A cover of your own goes on the front disc; the albums still peek out behind it.
+            val covers = remember(m.songs, cover) {
+                m.songs.distinctBy { it.albumId }.take(3).let { l -> if (cover != null && l.isNotEmpty()) listOf(l[0].copy(cover = cover)) + l.drop(1) else l }
+            }
             covers.indices.reversed().forEach { i ->
                 Disc(covers[i], DiscSide, Modifier.align(Alignment.CenterStart).offset(x = 4.dp + 6.dp * i), behind = c.surface)
             }
