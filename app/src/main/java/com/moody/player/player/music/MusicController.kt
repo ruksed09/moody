@@ -137,6 +137,26 @@ class MusicController @Inject constructor(
         }
     }
 
+    /** Where to pick up after a song's file was rewritten under the player. */
+    data class Resume(val positionMs: Long, val play: Boolean)
+
+    /** If [uri] is the song loaded now, stops playback so its file is closed; returns how to resume. */
+    fun releaseIfCurrent(uri: Uri): Resume? {
+        val c = controller ?: return null
+        if (c.currentMediaItem?.mediaId != uri.toString()) return null
+        val r = Resume(c.currentPosition.coerceAtLeast(0), c.playWhenReady)
+        c.stop()
+        return r
+    }
+
+    /** Reopens the song stopped by [releaseIfCurrent] at the same place. */
+    fun resume(r: Resume) {
+        val c = controller ?: return
+        c.prepare()
+        c.seekTo(r.positionMs)
+        c.playWhenReady = r.play
+    }
+
     private fun sync() {
         val c = controller ?: return
         val queue = (0 until c.mediaItemCount).map { lookup(c.getMediaItemAt(it)) }

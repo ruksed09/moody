@@ -245,7 +245,11 @@ fun NowPlayingScreen(vm: NowPlayingViewModel, onClose: () -> Unit, onEqualizer: 
         }
     }
 
-    if (infoOpen && item != null) SongInfoDialog(item, vm.originalSong(item), onSave = { vm.editSong(item, it) }, onDismiss = { infoOpen = false })
+    val writeCover = rememberCoverWriter(vm.music)
+    if (infoOpen && item != null) SongInfoDialog(item, vm.originalSong(item), onSave = { e ->
+        vm.editSong(item, e)
+        e?.cover?.takeIf { it != item.cover }?.let { writeCover(item, it) }
+    }, onDismiss = { infoOpen = false })
     if (queueOpen) QueueSheet(s, vm.music, onDismiss = { queueOpen = false })
     extrasOpen?.let { which -> ExtrasSheet(which, s, vm.music, onDismiss = { extrasOpen = null }) }
     if (tuneOpen) VizTuneSheet(settings, { f -> vm.updateViz(f) }, onDismiss = { tuneOpen = false })

@@ -102,6 +102,8 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.coil.compose)
     implementation(libs.coil.video)
+    // Writes a cover picked in Moody into the song file (MP3, M4A, FLAC, OGG).
+    implementation(libs.jaudiotagger)
     implementation(libs.okhttp)
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)

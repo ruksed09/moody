@@ -132,9 +132,10 @@ fun SongListScreen(vm: MusicViewModel, kind: SongListKind, key: String, onBack: 
         }
     }
 
+    val writeCover = rememberCoverWriter(vm.music)
     actionsFor?.let { song ->
         SongActionsSheet(
-            song, vm, onDismiss = { actionsFor = null },
+            song, vm, onDismiss = { actionsFor = null }, onCoverSaved = writeCover,
             playlistActions = if (editable) {
                 {
                     val idx = songs.indexOf(song)
@@ -154,7 +155,11 @@ fun SongListScreen(vm: MusicViewModel, kind: SongListKind, key: String, onBack: 
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SongActionsSheet(song: AudioItem, vm: MusicViewModel, onDismiss: () -> Unit, playlistActions: (@Composable () -> Unit)? = null) {
+fun SongActionsSheet(
+    song: AudioItem, vm: MusicViewModel, onDismiss: () -> Unit, playlistActions: (@Composable () -> Unit)? = null,
+    /** Called with a newly picked cover, to also write it into the file (see [rememberCoverWriter]). */
+    onCoverSaved: ((AudioItem, String) -> Unit)? = null,
+) {
     val c = MoodyTheme.colors
     val toaster = LocalToaster.current
     val s by vm.state.collectAsStateWithLifecycle()
@@ -169,7 +174,10 @@ fun SongActionsSheet(song: AudioItem, vm: MusicViewModel, onDismiss: () -> Unit,
     // Info is a centred modal, not part of the sheet: the sheet steps aside while it shows.
     if (showInfo) {
         val live = s.songs.firstOrNull { it.uri == song.uri } ?: song
-        SongInfoDialog(live, vm.originalSong(live), onSave = { vm.editSong(live, it) }, onDismiss = onDismiss)
+        SongInfoDialog(live, vm.originalSong(live), onSave = { e ->
+            vm.editSong(live, e)
+            e?.cover?.takeIf { it != live.cover }?.let { onCoverSaved?.invoke(live, it) }
+        }, onDismiss = onDismiss)
         return
     }
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = c.surface) {

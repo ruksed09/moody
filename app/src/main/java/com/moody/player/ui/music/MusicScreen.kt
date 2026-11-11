@@ -113,7 +113,8 @@ fun MusicScreen(vm: MusicViewModel, nav: MusicNav, hasAccess: Boolean, backgroun
         onNewPlaylist = { newPlaylist = true },
         onMix = { m -> vm.music.playQueue(m.songs, 0, shuffle = m.shuffle) },
     )
-    actionsFor?.let { song -> SongActionsSheet(song, vm, onDismiss = { actionsFor = null }) }
+    val writeCover = rememberCoverWriter(vm.music)
+    actionsFor?.let { song -> SongActionsSheet(song, vm, onDismiss = { actionsFor = null }, onCoverSaved = writeCover) }
     SongBatchHost(vm, batch) { done -> batch = null; if (done) selected = emptySet() }
     if (newPlaylist) NameDialog("New playlist", "", "Create", onDismiss = { newPlaylist = false }) { vm.createPlaylist(it); newPlaylist = false }
 }
