@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Launcher foreground: the logo artwork, inset so its rounded tile sits inside the adaptive-icon mask. -->
+<!-- Launcher foreground: the owner's app-icon artwork (teal), sized so its tile fills the adaptive-icon mask
+     and the mark inside stays clear of every launcher shape. -->
 <inset xmlns:android="http://schemas.android.com/apk/res/android"
-    android:drawable="@drawable/moody_logo"
-    android:inset="10%" />
+    android:drawable="@drawable/moody_icon_art"
+    android:inset="4%" />
