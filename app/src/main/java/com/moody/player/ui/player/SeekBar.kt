@@ -115,22 +115,22 @@ fun SeekBar(
             if (durationMs > 0 && marks.isNotEmpty()) {
                 fun xOf(ms: Long) = (ms / durationMs.toFloat()).coerceIn(0f, 1f) * size.width
                 // Ranges first, see-through so the progress shows under them.
-                val lineH = h + 4.dp.toPx()
+                val lineH = h + 2.dp.toPx()
                 marks.forEach { (s, e) ->
                     if (e != null && e > s) {
                         val sx = xOf(s)
                         drawRoundRect(
-                            Color.White.copy(alpha = 0.34f), Offset(sx, size.height / 2 - lineH / 2),
+                            Color.White.copy(alpha = 0.2f), Offset(sx, size.height / 2 - lineH / 2),
                             Size((xOf(e) - sx).coerceAtLeast(lineH), lineH), CornerRadius(lineH / 2),
                         )
                     }
                 }
                 // A dot at every start, with a dark edge so it reads on the fill and on the rail.
-                val dot = 2.5.dp.toPx()
+                val dot = 2.dp.toPx()
                 marks.forEach { (s, _) ->
                     val c = Offset(xOf(s), size.height / 2)
-                    drawCircle(Color.Black.copy(alpha = 0.45f), dot + 1.dp.toPx(), c)
-                    drawCircle(Color.White, dot, c)
+                    drawCircle(Color.Black.copy(alpha = 0.3f), dot + 1.dp.toPx(), c)
+                    drawCircle(Color.White.copy(alpha = 0.7f), dot, c)
                 }
             }
             val knob = if (dragging) 9.dp.toPx() else 7.dp.toPx()
