@@ -78,11 +78,20 @@ fun SongListScreen(vm: MusicViewModel, kind: SongListKind, key: String, onBack: 
         else (s.playlists.firstOrNull { it.playlist.id == playlistId }?.playlist?.name ?: "Playlist") to playlistSongs
     }
     val editable = kind == SongListKind.PLAYLIST && playlistId != FAVOURITES_ID
+    // Long-press a song to select; the header turns into the selection bar.
+    var selected by remember { mutableStateOf(setOf<Int>()) }
+    var batch by remember { mutableStateOf<SongBatchRequest?>(null) }
+    androidx.activity.compose.BackHandler(selected.isNotEmpty()) { selected = emptySet() }
+    fun toggle(i: Int) { selected = if (i in selected) selected - i else selected + i }
 
     LazyColumn(Modifier.fillMaxSize()) {
         item {
             Column(Modifier.statusBarsPadding().padding(horizontal = 16.dp)) {
-                Row(Modifier.fillMaxWidth().height(48.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (selected.isNotEmpty()) Box {
+                    SongSelectionBar(selected.size, { selected = emptySet() }, { selected = songs.indices.toSet() }) { a ->
+                        batch = SongBatchRequest(a, selected.sorted().mapNotNull { songs.getOrNull(it) })
+                    }
+                } else Row(Modifier.fillMaxWidth().height(48.dp), verticalAlignment = Alignment.CenterVertically) {
                     IconAction(MoodyIcons.ArrowBack, "Back", onBack, tint = c.text)
                     Spacer(Modifier.weight(1f))
                     if (editable) {
@@ -117,7 +126,9 @@ fun SongListScreen(vm: MusicViewModel, kind: SongListKind, key: String, onBack: 
         }
         itemsIndexed(songs, key = { i, it -> "$i-${it.uri}" }) { i, song ->
             val current = song.uri.toString() == playing.current?.uri?.toString()
-            SongRow(song, current, { vm.music.playQueue(songs, i) }, { actionsFor = song }, spinning = current && playing.playing, leadingIndex = if (kind == SongListKind.ALBUM) (song.trackNo.takeIf { it > 0 } ?: (i + 1)) else null)
+            SongRow(
+                song, current, { if (selected.isNotEmpty()) toggle(i) else vm.music.playQueue(songs, i) }, { actionsFor = song },
+                spinning = current && playing.playing, selected = i in selected, onLongClick = { toggle(i) }, leadingIndex = if (kind == SongListKind.ALBUM) (song.trackNo.takeIf { it > 0 } ?: (i + 1)) else null)
         }
     }
 
@@ -134,6 +145,7 @@ fun SongListScreen(vm: MusicViewModel, kind: SongListKind, key: String, onBack: 
             } else null,
         )
     }
+    SongBatchHost(vm, batch) { done -> batch = null; if (done) selected = emptySet() }
     if (renaming) NameDialog("Rename playlist", title, "Rename", onDismiss = { renaming = false }) { vm.renamePlaylist(playlistId!!, it); renaming = false }
     if (deleting) ConfirmDialog("Delete “$title”?", "The playlist goes away. The songs stay on your phone.", "Delete", onDismiss = { deleting = false }) {
         vm.deletePlaylist(playlistId!!); deleting = false; onBack()

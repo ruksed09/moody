@@ -46,6 +46,7 @@ import com.moody.player.design.Radii
 import com.moody.player.design.components.ChoiceChip
 import com.moody.player.design.components.ActionChip
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import com.moody.player.design.components.EmptyState
 import com.moody.player.design.components.IconAction
@@ -88,9 +89,23 @@ fun MusicScreen(vm: MusicViewModel, nav: MusicNav, hasAccess: Boolean, backgroun
     val playing by vm.music.state.collectAsStateWithLifecycle()
     var actionsFor by remember { mutableStateOf<AudioItem?>(null) }
     var newPlaylist by remember { mutableStateOf(false) }
+    // Long-press a song to start selecting; tap the count to select every song.
+    var selected by remember { mutableStateOf(setOf<String>()) }
+    var batch by remember { mutableStateOf<SongBatchRequest?>(null) }
+    androidx.activity.compose.BackHandler(selected.isNotEmpty()) { selected = emptySet() }
+    androidx.compose.runtime.LaunchedEffect(tab) { selected = emptySet() }
     MusicContent(
         s, tab, playing.current?.uri?.toString(), hasAccess, backgrounds, nav,
         playing = playing.playing,
+        selected = selected,
+        onToggle = { song -> val k = song.uri.toString(); selected = if (k in selected) selected - k else selected + k },
+        selectionBar = if (selected.isEmpty()) null else {
+            {
+                SongSelectionBar(selected.size, { selected = emptySet() }, { selected = s.songs.map { it.uri.toString() }.toSet() }) { a ->
+                    batch = SongBatchRequest(a, s.songs.filter { it.uri.toString() in selected })
+                }
+            }
+        },
         onTab = { vm.tab.value = it },
         onPlay = { list, i -> vm.music.playQueue(list, i) },
         onShuffle = { vm.music.playQueue(s.songs, 0, shuffle = true) },
@@ -99,6 +114,7 @@ fun MusicScreen(vm: MusicViewModel, nav: MusicNav, hasAccess: Boolean, backgroun
         onMix = { m -> vm.music.playQueue(m.songs, 0, shuffle = m.shuffle) },
     )
     actionsFor?.let { song -> SongActionsSheet(song, vm, onDismiss = { actionsFor = null }) }
+    SongBatchHost(vm, batch) { done -> batch = null; if (done) selected = emptySet() }
     if (newPlaylist) NameDialog("New playlist", "", "Create", onDismiss = { newPlaylist = false }) { vm.createPlaylist(it); newPlaylist = false }
 }
 
@@ -118,6 +134,9 @@ fun MusicContent(
     onNewPlaylist: () -> Unit,
     onMix: (com.moody.player.domain.MoodMix<AudioItem>) -> Unit = {},
     playing: Boolean = false,
+    selected: Set<String> = emptySet(),
+    onToggle: ((AudioItem) -> Unit)? = null,
+    selectionBar: (@Composable () -> Unit)? = null,
 ) {
     val c = MoodyTheme.colors
     val grid = tab == MusicTab.ALBUMS
@@ -172,7 +191,13 @@ fun MusicContent(
                     if (s.mixes.isNotEmpty()) item(key = "mixes", span = { GridItemSpan(maxLineSpan) }) { MoodMixesRow(s.mixes, onMix) }
                     items(s.songs, key = { it.uri.toString() }, span = { GridItemSpan(maxLineSpan) }) { song ->
                         val current = song.uri.toString() == currentUri
-                        SongRow(song, current, { onPlay(s.songs, s.songs.indexOf(song)) }, { onSongMore(song) }, spinning = current && playing)
+                        val picking = selected.isNotEmpty()
+                        SongRow(
+                            song, current,
+                            { if (picking && onToggle != null) onToggle(song) else onPlay(s.songs, s.songs.indexOf(song)) },
+                            { onSongMore(song) }, spinning = current && playing,
+                            selected = song.uri.toString() in selected, onLongClick = onToggle?.let { t -> { t(song) } },
+                        )
                     }
                 }
                 tab == MusicTab.ALBUMS -> items(s.albums, key = { "${it.id}-${it.name}" }) { a ->
@@ -226,7 +251,8 @@ fun MusicContent(
             full { com.moody.player.ui.components.CreditFooter() }
         }
         CollapsingTopBar(bar, contentUnder = gridState.firstVisibleItemIndex > 0 || gridState.firstVisibleItemScrollOffset > 0, height = 48.dp) {
-            com.moody.player.ui.components.AppTopBar(48.dp) {
+            if (selectionBar != null) selectionBar()
+            else com.moody.player.ui.components.AppTopBar(48.dp) {
                 IconAction(MoodyIcons.Chart, "Your stats", nav.openStats, tint = c.text)
                 IconAction(MoodyIcons.Settings, "Settings", nav.openSettings, tint = c.text)
             }
@@ -236,14 +262,32 @@ fun MusicContent(
 
 private fun LazyGridScope.full(content: @Composable () -> Unit) = item(span = { GridItemSpan(maxLineSpan) }) { content() }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun SongRow(song: AudioItem, current: Boolean, onClick: () -> Unit, onMore: () -> Unit, leadingIndex: Int? = null, spinning: Boolean = false) {
+fun SongRow(
+    song: AudioItem, current: Boolean, onClick: () -> Unit, onMore: () -> Unit, leadingIndex: Int? = null, spinning: Boolean = false,
+    selected: Boolean = false, onLongClick: (() -> Unit)? = null,
+) {
     val c = MoodyTheme.colors
+    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
     Row(
-        Modifier.fillMaxWidth().height(60.dp).clickable(onClick = onClick).padding(start = 16.dp, end = 4.dp),
+        Modifier.fillMaxWidth().height(60.dp)
+            .background(if (selected) c.accentWash else androidx.compose.ui.graphics.Color.Transparent)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick?.let { l -> { haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress); l() } },
+            )
+            .semantics { this.selected = selected }
+            .padding(start = 16.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (leadingIndex != null) {
+        if (selected) {
+            // A selected song shows a check in place of its disc or number.
+            Box(Modifier.size(if (leadingIndex != null) 24.dp else 44.dp).clip(CircleShape).background(c.accent), contentAlignment = Alignment.Center) {
+                Icon(MoodyIcons.Check, "Selected", Modifier.size(18.dp), tint = c.accentInk)
+            }
+            Spacer(Modifier.width(if (leadingIndex != null) 8.dp else 12.dp))
+        } else if (leadingIndex != null) {
             Text("$leadingIndex", style = MoodyTheme.type.mono, color = if (current) c.accent else c.text3, modifier = Modifier.width(32.dp))
         } else {
             Disc(song, 44.dp, spinning = spinning)

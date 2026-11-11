@@ -107,11 +107,16 @@ class MusicViewModel @Inject constructor(
     fun editSong(song: AudioItem, edit: com.moody.player.data.media.SongEdit?) = viewModelScope.launch { media.editSong(song.uri, edit) }
 
     /** A song's file was deleted: drop it from playlists, favourites and the queue, then refresh the library. */
-    fun forgetDeleted(song: AudioItem) = viewModelScope.launch {
-        val u = song.uri.toString()
-        playlistDao.removeEverywhere(u)
-        favoriteDao.remove(u)
-        music.removeUri(song.uri)
+    fun forgetDeleted(song: AudioItem) = forgetDeleted(listOf(song))
+
+    /** Several files were deleted at once: one library refresh at the end. */
+    fun forgetDeleted(songs: List<AudioItem>) = viewModelScope.launch {
+        songs.forEach { song ->
+            val u = song.uri.toString()
+            playlistDao.removeEverywhere(u)
+            favoriteDao.remove(u)
+            music.removeUri(song.uri)
+        }
         media.rescan()
     }
 
