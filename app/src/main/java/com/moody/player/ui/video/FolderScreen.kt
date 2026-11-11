@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -69,7 +70,7 @@ fun FolderScreen(path: String, vm: VideoViewModel, nav: VideoNav, onBack: () -> 
                         nav.onSelection(a, videos.filter { it.uri.toString() in selected }) { selected = emptySet() }
                     }
                 } else {
-                    Row(Modifier.fillMaxWidth().height(56.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().height(48.dp), verticalAlignment = Alignment.CenterVertically) {
                         IconAction(MoodyIcons.ArrowBack, "Back", onBack, tint = c.text)
                     }
                 }
@@ -93,6 +94,6 @@ fun FolderScreen(path: String, vm: VideoViewModel, nav: VideoNav, onBack: () -> 
             if (grid) VideoGridCard(v, s.positions[v.uri.toString()], sel, onClick, onLong)
             else VideoListRow(v, s.positions[v.uri.toString()], sel, onClick, onLong)
         }
-        item(span = { GridItemSpan(maxLineSpan) }) { Column(Modifier.padding(bottom = 24.dp)) {} }
+        item(span = { GridItemSpan(maxLineSpan) }) { Column(Modifier.navigationBarsPadding().padding(bottom = 24.dp)) {} }
     }
 }

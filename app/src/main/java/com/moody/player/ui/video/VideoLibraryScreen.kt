@@ -317,12 +317,12 @@ private fun TopRow(onLogoLong: () -> Unit, onSearch: () -> Unit, onSort: () -> U
 @Composable
 private fun Header(s: VideoUiState, onView: (VideoView) -> Unit, onVault: () -> Unit) {
     val c = MoodyTheme.colors
-    Column(Modifier.padding(top = 12.dp, bottom = 4.dp)) {
+    Column(Modifier.padding(top = 4.dp, bottom = 4.dp)) {
         com.moody.player.ui.components.SectionTitle(
             "Videos",
             if (s.loading) "Looking through your phone" else "${s.all.size} ${if (s.all.size == 1) "video" else "videos"}  \u00b7  ${formatBytes(s.totalBytes)}",
         )
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(12.dp))
         androidx.compose.foundation.layout.BoxWithConstraints {
         val narrow = maxWidth < 340.dp
         Row(verticalAlignment = Alignment.CenterVertically) {
