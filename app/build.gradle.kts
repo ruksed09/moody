@@ -61,6 +61,8 @@ android {
         buildConfig = true
     }
     testOptions { unitTests { isReturnDefaultValues = true; isIncludeAndroidResources = true } }
+    // Room's exported schemas, so device tests can build an old database and migrate it.
+    sourceSets { getByName("androidTest").assets.srcDir("$projectDir/schemas") }
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
         jniLibs.useLegacyPackaging = true // compress .so files: libvlc.so is 43 MB raw
@@ -122,6 +124,7 @@ dependencies {
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.kotlinx.coroutines.test)
+    androidTestImplementation(libs.androidx.room.testing)
 }
 
 kotlin { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) } }

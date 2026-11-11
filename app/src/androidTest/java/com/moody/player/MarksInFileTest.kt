@@ -30,7 +30,9 @@ import kotlin.math.PI
 import kotlin.math.sin
 
 /**
- * Bookmarks written into real MediaStore MP4 files the test makes itself (Movies/MoodyTest/, deleted after).
+ * Bookmarks written into real MediaStore MP4 files the test makes itself (Music/MoodyTest/, deleted after).
+ * The files hold only sound, so they live in the audio collection: Android rescans a file after it is
+ * written and files a sound-only MP4 as audio, which would hide it from a video URI.
  * Checks that the video bytes never change, that removing the bookmarks gives back the original file
  * exactly, that odd files are refused untouched, and that a half-done write is undone.
  */
@@ -132,11 +134,11 @@ class MarksInFileTest {
 
     private fun insert(bytes: ByteArray): Uri {
         val values = ContentValues().apply {
-            put(MediaStore.MediaColumns.DISPLAY_NAME, "moody-marks-test-$stamp-${made.size}.mp4")
-            put(MediaStore.MediaColumns.MIME_TYPE, "video/mp4")
-            put(MediaStore.MediaColumns.RELATIVE_PATH, "Movies/MoodyTest/")
+            put(MediaStore.MediaColumns.DISPLAY_NAME, "moody-marks-test-$stamp-${made.size}.m4a")
+            put(MediaStore.MediaColumns.MIME_TYPE, "audio/mp4")
+            put(MediaStore.MediaColumns.RELATIVE_PATH, "Music/MoodyTest/")
         }
-        val uri = context.contentResolver.insert(MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY), values)!!
+        val uri = context.contentResolver.insert(MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY), values)!!
         made += uri
         context.contentResolver.openOutputStream(uri)!!.use { it.write(bytes) }
         return uri
