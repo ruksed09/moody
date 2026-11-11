@@ -369,7 +369,7 @@ private fun SubStyleMenu(vm: PlayerViewModel) {
     // Live preview: a small dark frame with a sample line, drawn exactly as on the video.
     Box(
         Modifier.padding(horizontal = 12.dp, vertical = 8.dp).fillMaxWidth().height(132.dp).clip(Radii.md)
-            .background(Brush.verticalGradient(listOf(Color(0xFF2A2F3A), Color(0xFF14161C), Color(0xFF0A0B0E))))
+            .background(Brush.verticalGradient(listOf(Color(0xFF262B2F), Color(0xFF14171A), Color(0xFF0A0C0E))))
             .border(1.dp, c.line, Radii.md)
             .semantics { contentDescription = "Subtitle preview" },
     ) {
