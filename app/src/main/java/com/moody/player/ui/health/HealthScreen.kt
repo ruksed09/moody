@@ -286,14 +286,16 @@ private fun Summary(s: HealthUi, onScan: () -> Unit, onStop: () -> Unit) {
 @Composable
 private fun CountTile(sev: Severity, n: Int, modifier: Modifier) {
     val c = MoodyTheme.colors
-    Column(modifier.background(c.bg, Radii.md).border(1.dp, c.line, Radii.md).padding(12.dp).semantics(mergeDescendants = true) {}) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(sev.icon(), null, Modifier.size(14.dp), tint = sev.color())
-            Spacer(Modifier.width(6.dp))
-            Text(sev.label, style = MoodyTheme.type.label, color = c.text2, maxLines = 1)
-        }
-        Spacer(Modifier.height(6.dp))
+    Column(
+        modifier.height(64.dp).background(c.raised, Radii.md).padding(horizontal = 12.dp).semantics(mergeDescendants = true) {},
+        verticalArrangement = Arrangement.Center,
+    ) {
         Text("$n", style = MoodyTheme.type.display, color = c.text)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(sev.icon(), null, Modifier.size(12.dp), tint = sev.color())
+            Spacer(Modifier.width(4.dp))
+            Text(sev.label, style = MoodyTheme.type.caption, color = c.text2, maxLines = 1)
+        }
     }
 }
 
@@ -302,7 +304,7 @@ private fun ReportRow(r: HealthReport, checking: Boolean, onClick: () -> Unit) {
     val c = MoodyTheme.colors
     val sev = r.severity
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).heightIn(min = 64.dp).padding(horizontal = 16.dp, vertical = 10.dp),
+        Modifier.fillMaxWidth().clickable(onClick = onClick).heightIn(min = 60.dp).padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.size(36.dp).background(sev.color().copy(alpha = 0.14f), Radii.md), contentAlignment = Alignment.Center) {
@@ -310,7 +312,7 @@ private fun ReportRow(r: HealthReport, checking: Boolean, onClick: () -> Unit) {
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(r.name, style = MoodyTheme.type.body, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(r.name, style = MoodyTheme.type.bodyStrong, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(sev.icon(), null, Modifier.size(12.dp), tint = sev.color())
                 Spacer(Modifier.width(4.dp))
@@ -330,7 +332,7 @@ private fun ReportSheet(r: HealthReport?, checking: Boolean, onDismiss: () -> Un
     val c = MoodyTheme.colors
     val toaster = LocalToaster.current
     var confirm by remember { mutableStateOf(false) }
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = c.surface) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = c.surface, shape = androidx.compose.foundation.shape.RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).navigationBarsPadding().padding(horizontal = 24.dp).padding(bottom = 24.dp)) {
             if (r == null) {
                 Text("Checking file", style = MoodyTheme.type.title, color = c.text)
@@ -358,7 +360,7 @@ private fun ReportSheet(r: HealthReport?, checking: Boolean, onDismiss: () -> Un
                 )
             }
             r.findings.forEach { f ->
-                Column(Modifier.padding(bottom = 16.dp).fillMaxWidth().border(1.dp, c.line, Radii.md).padding(14.dp)) {
+                Column(Modifier.padding(bottom = 12.dp).fillMaxWidth().background(c.raised, Radii.md).padding(14.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(f.severity.icon(), null, Modifier.size(16.dp), tint = f.severity.color())
                         Spacer(Modifier.width(8.dp))
