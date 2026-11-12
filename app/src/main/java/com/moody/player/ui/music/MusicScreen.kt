@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -234,6 +235,16 @@ fun MusicContent(
                     if (s.mixes.isNotEmpty() || s.hiddenMixes.isNotEmpty()) item(key = "mixes", span = { GridItemSpan(maxLineSpan) }) {
                         MoodMixesRow(s.mixes, onMix, s.mixCovers, onMixCover, hidden = s.hiddenMixes.size, onBringBack = onBringBackMixes)
                     }
+                    // "Songs" with its sort button on the right, where Videos keeps sort beside the grid / list switch.
+                    item(key = "songs-header", span = { GridItemSpan(maxLineSpan) }) {
+                        Row(
+                            Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(start = 16.dp, end = 7.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text("Songs", style = MoodyTheme.type.title, color = c.text, modifier = Modifier.weight(1f))
+                            if (onSort != null) com.moody.player.design.components.SortButton("Sort songs", onSort)
+                        }
+                    }
                     items(s.songs, key = { it.uri.toString() }, span = { GridItemSpan(maxLineSpan) }) { song ->
                         val current = song.uri.toString() == currentUri
                         val picking = selected.isNotEmpty()
@@ -298,8 +309,6 @@ fun MusicContent(
         CollapsingTopBar(bar, contentUnder = gridState.firstVisibleItemIndex > 0 || gridState.firstVisibleItemScrollOffset > 0, height = 48.dp) {
             if (selectionBar != null) selectionBar()
             else com.moody.player.ui.components.AppTopBar(48.dp) {
-                // Sorting applies to the Songs list; albums, artists and folders keep their own order.
-                if (onSort != null && tab == MusicTab.SONGS && s.songs.isNotEmpty()) IconAction(MoodyIcons.Sort, "Sort songs", onSort, tint = c.text)
                 IconAction(MoodyIcons.Chart, "Your stats", nav.openStats, tint = c.text)
                 IconAction(MoodyIcons.Settings, "Settings", nav.openSettings, tint = c.text)
             }

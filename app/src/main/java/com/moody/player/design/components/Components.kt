@@ -199,6 +199,23 @@ fun RoundIconAction(icon: ImageVector, contentDescription: String, onClick: () -
     }
 }
 
+/** Sort, as a quiet 30 dp outlined circle that sits beside a section's grid / list switch; a 48 dp touch target. */
+@Composable
+fun SortButton(contentDescription: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val c = MoodyTheme.colors
+    Box(
+        modifier
+            .size(48.dp)
+            .clickable(role = Role.Button, onClick = onClick, interactionSource = remember { MutableInteractionSource() }, indication = ripple(bounded = false, radius = 20.dp))
+            .semantics { this.contentDescription = contentDescription },
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(Modifier.size(30.dp).border(1.dp, c.line2, androidx.compose.foundation.shape.CircleShape), contentAlignment = Alignment.Center) {
+            Icon(com.moody.player.design.icons.MoodyIcons.Sort, null, Modifier.size(16.dp), tint = c.text2)
+        }
+    }
+}
+
 /* ---------- buttons ---------- */
 
 @Composable

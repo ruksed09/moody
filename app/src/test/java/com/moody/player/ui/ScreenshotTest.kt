@@ -121,7 +121,7 @@ class ScreenshotTest {
             com.moody.player.domain.MoodMix("loved", "Loved", "Your favourites, shuffled", songs.reversed(), shuffle = true),
             com.moody.player.domain.MoodMix("focus", "Focus", "Long tracks, 5 minutes and up", songs.take(3)),
         )
-        com.moody.player.ui.music.MusicContent(musicState().copy(mixes = mixes), com.moody.player.ui.music.MusicTab.SONGS, songs[0].uri.toString(), true, true, musicNav, {}, { _, _ -> }, {}, {}, {})
+        com.moody.player.ui.music.MusicContent(musicState().copy(mixes = mixes), com.moody.player.ui.music.MusicTab.SONGS, songs[0].uri.toString(), true, true, musicNav, {}, { _, _ -> }, {}, {}, {}, onSort = {})
     }
     @Test fun musicAlbumsLight() = shot("music-albums-light", ThemeMode.LIGHT) {
         com.moody.player.ui.music.MusicContent(musicState(), com.moody.player.ui.music.MusicTab.ALBUMS, null, true, true, musicNav, {}, { _, _ -> }, {}, {}, {})

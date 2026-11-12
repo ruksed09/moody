@@ -380,18 +380,19 @@ private fun VisualizerPanel(
     val sideFailed by com.moody.player.player.music.AudioTap.sidecarFailed.collectAsStateWithLifecycle()
     val controls = rememberVizControls()
     Column(modifier) {
-        // The picture sits in its own rounded panel, with room around it so round styles stay whole.
+        // The picture sits straight on the screen, with room around it so round styles stay whole.
         // A tap on it shows or puts away the style buttons below.
         Box(
-            Modifier.weight(1f).heightIn(min = 120.dp).fillMaxWidth().clip(Radii.xl).background(c.surface).border(1.dp, c.line, Radii.xl)
+            Modifier.weight(1f).heightIn(min = 120.dp).fillMaxWidth()
                 .clickable(
                     remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null,
                     onClickLabel = if (controls.shown) "Hide styles" else "Show styles",
                 ) { controls.toggle() },
         ) {
             if (fallback && sideFailed) VizUnavailable(Modifier.fillMaxSize())
-            else VisualizerCanvas(settings.vizStyle, frames, c.accent, tint, settings.vizIntensity, Modifier.fillMaxSize().padding(16.dp), item = item, hole = c.surface)
-            Row(Modifier.align(Alignment.TopEnd)) {
+            else VisualizerCanvas(settings.vizStyle, frames, c.accent, tint, settings.vizIntensity, Modifier.fillMaxSize().padding(16.dp), item = item, hole = c.bg)
+            // Nudged right so the glyphs line up with the icons in the bar above.
+            Row(Modifier.align(Alignment.TopEnd).offset(x = 12.dp)) {
                 IconAction(MoodyIcons.Equalizer, "Tune the visualizer", onTune, tint = c.text2)
                 IconAction(MoodyIcons.Fullscreen, "Full screen visualizer", onFullscreen, tint = c.text2)
             }

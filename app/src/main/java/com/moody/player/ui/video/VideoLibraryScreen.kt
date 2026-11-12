@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -212,7 +213,7 @@ fun VideoLibraryContent(
                     }
                     else -> {
                         if (!searching) continueRow(s, nav)
-                        if (!searching) full { SectionHeader("All videos", s.layout, vm::setLayout, inset = if (grid) 0.dp else 16.dp) }
+                        if (!searching) full { SectionHeader("All videos", s.layout, vm::setLayout, inset = if (grid) 0.dp else 16.dp, onSort = { sortSheet = true }) }
                         items(s.shown, key = { it.uri.toString() }) { v ->
                             val onClick = { if (selecting) toggle(v) else nav.play(s.shown, s.shown.indexOf(v)) }
                             val onLong = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); toggle(v) }
@@ -237,7 +238,6 @@ fun VideoLibraryContent(
                         else -> TopRow(
                             onLogoLong = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); nav.openVault() },
                             onSearch = { searching = true },
-                            onSort = { sortSheet = true },
                             onStream = nav.openStream,
                             onSettings = nav.openSettings,
                         )
@@ -263,7 +263,7 @@ fun VideoLibraryContent(
 
     if (sortSheet) {
         ModalBottomSheet(onDismissRequest = { sortSheet = false }, containerColor = MoodyTheme.colors.surface) {
-            SortSheet(s.sort, s.layout, vm::setSort, vm::setLayout)
+            SortSheet(s.sort, vm::setSort)
         }
     }
 }
@@ -301,15 +301,14 @@ private fun LazyGridScope.continueRow(s: VideoUiState, nav: VideoNav) {
     }
 }
 
-/** Logo and name, then search, play a link, sort, settings. Long-press the logo for the vault. */
+/** Logo and name, then search, play a link, settings. Long-press the logo for the vault. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun TopRow(onLogoLong: () -> Unit, onSearch: () -> Unit, onSort: () -> Unit, onStream: () -> Unit, onSettings: () -> Unit) {
+private fun TopRow(onLogoLong: () -> Unit, onSearch: () -> Unit, onStream: () -> Unit, onSettings: () -> Unit) {
     val c = MoodyTheme.colors
     com.moody.player.ui.components.AppTopBar(BarHeight, Modifier.padding(horizontal = 0.dp), onLogoLong = onLogoLong) {
         IconAction(MoodyIcons.Search, "Search", onSearch, tint = c.text)
         IconAction(MoodyIcons.Link, "Play a link", onStream, tint = c.text)
-        IconAction(MoodyIcons.Sort, "Sort and view", onSort, tint = c.text)
         IconAction(MoodyIcons.Settings, "Settings", onSettings, tint = c.text)
     }
 }
@@ -336,12 +335,17 @@ private fun Header(s: VideoUiState, onView: (VideoView) -> Unit, onVault: () -> 
     }
 }
 
-/** Section title with the grid / list switch on the right, as in the mockup. */
+/** Section title with sort (when the list can be sorted) and the grid / list switch on the right. */
 @Composable
-private fun SectionHeader(title: String, layout: LayoutMode, onLayout: (LayoutMode) -> Unit, inset: androidx.compose.ui.unit.Dp) {
+private fun SectionHeader(title: String, layout: LayoutMode, onLayout: (LayoutMode) -> Unit, inset: androidx.compose.ui.unit.Dp, onSort: (() -> Unit)? = null) {
     val c = MoodyTheme.colors
-    Row(Modifier.fillMaxWidth().padding(start = inset, end = inset, top = 16.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(start = inset, end = inset, top = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Text(title, style = MoodyTheme.type.heading, color = c.text, modifier = Modifier.weight(1f))
+        // The sort button's 48 dp target leaves about 9 dp of air on each side of its circle, so no spacer.
+        if (onSort != null) com.moody.player.design.components.SortButton("Sort videos", onSort)
         Row(Modifier.height(30.dp).clip(Radii.pill).border(1.dp, c.line2, Radii.pill).padding(2.dp)) {
             listOf(LayoutMode.GRID to MoodyIcons.Grid, LayoutMode.LIST to MoodyIcons.ListView).forEach { (m, icon) ->
                 val on = layout == m
@@ -439,19 +443,11 @@ internal fun SelectionBar(count: Int, onClose: () -> Unit, onAll: () -> Unit, on
 
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun SortSheet(sort: SortSpec, layout: LayoutMode, onSort: (SortSpec) -> Unit, onLayout: (LayoutMode) -> Unit) {
+private fun SortSheet(sort: SortSpec, onSort: (SortSpec) -> Unit) {
     val c = MoodyTheme.colors
-    val t = MoodyTheme.type
     Column(Modifier.padding(horizontal = 24.dp).padding(bottom = 32.dp)) {
-        Text("Sort and view", style = t.title, color = c.text)
+        Text("Sort videos", style = MoodyTheme.type.title, color = c.text)
         Spacer(Modifier.height(20.dp))
         com.moody.player.ui.components.SortChoices(com.moody.player.ui.components.FileSorts, sort, onSort)
-        Spacer(Modifier.height(16.dp))
-        Text("Show as", style = t.section, color = c.text3)
-        Spacer(Modifier.height(8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            ChoiceChip("Grid", layout == LayoutMode.GRID, { onLayout(LayoutMode.GRID) }, icon = MoodyIcons.Grid)
-            ChoiceChip("List", layout == LayoutMode.LIST, { onLayout(LayoutMode.LIST) }, icon = MoodyIcons.ListView)
-        }
     }
 }
