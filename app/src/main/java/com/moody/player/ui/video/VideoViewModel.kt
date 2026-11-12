@@ -58,7 +58,7 @@ class VideoViewModel @Inject constructor(
     ) { videos, s, positions, q, (access, scanning) ->
         val list = videos.orEmpty().filter { it.relativePath !in s.hiddenFolders }
         val posMap = positions.associateBy { it.uri }
-        val sorted = list.sortedBy(s.sort, { it.name }, { it.dateAdded }, { it.sizeBytes }, { it.durationMs ?: 0 })
+        val sorted = list.sortedBy(s.sort, { it.name }, { it.modified }, { it.sizeBytes }, { it.durationMs ?: 0 })
         val shown = if (q.isBlank()) sorted else sorted.filter { it.name.contains(q.trim(), ignoreCase = true) }
         val byUri = list.associateBy { it.uri.toString() }
         VideoUiState(
@@ -93,7 +93,7 @@ class VideoViewModel @Inject constructor(
     override fun hideFolder(path: String) { viewModelScope.launch { settingsStore.update { it.copy(hiddenFolders = it.hiddenFolders + path) } } }
 
     fun inFolder(path: String): List<VideoItem> = state.value.all.filter { it.relativePath == path }
-        .sortedBy(state.value.sort, { it.name }, { it.dateAdded }, { it.sizeBytes }, { it.durationMs ?: 0 })
+        .sortedBy(state.value.sort, { it.name }, { it.modified }, { it.sizeBytes }, { it.durationMs ?: 0 })
 
     fun find(uri: Uri) = repo.video(uri)
 }

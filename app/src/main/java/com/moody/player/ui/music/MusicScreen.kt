@@ -82,6 +82,7 @@ data class MusicNav(
 
 const val FAVOURITES_ID = -1L
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun MusicScreen(vm: MusicViewModel, nav: MusicNav, hasAccess: Boolean, backgrounds: Boolean) {
     val s by vm.state.collectAsStateWithLifecycle()
@@ -93,6 +94,8 @@ fun MusicScreen(vm: MusicViewModel, nav: MusicNav, hasAccess: Boolean, backgroun
     var selected by remember { mutableStateOf(setOf<String>()) }
     var batch by remember { mutableStateOf<SongBatchRequest?>(null) }
     var coverFor by remember { mutableStateOf<com.moody.player.domain.MoodMix<AudioItem>?>(null) }
+    var sortSheet by remember { mutableStateOf(false) }
+    var renaming by remember { mutableStateOf<com.moody.player.domain.MoodMix<AudioItem>?>(null) }
     val toaster = com.moody.player.design.components.LocalToaster.current
     androidx.activity.compose.BackHandler(selected.isNotEmpty()) { selected = emptySet() }
     androidx.compose.runtime.LaunchedEffect(tab) { selected = emptySet() }
@@ -115,11 +118,35 @@ fun MusicScreen(vm: MusicViewModel, nav: MusicNav, hasAccess: Boolean, backgroun
         onNewPlaylist = { newPlaylist = true },
         onMix = { m -> vm.music.playQueue(m.songs, 0, shuffle = m.shuffle) },
         onMixCover = { coverFor = it },
+        onSort = { sortSheet = true },
+        onBringBackMixes = vm::bringBackMixes,
     )
+    if (sortSheet) {
+        androidx.compose.material3.ModalBottomSheet(onDismissRequest = { sortSheet = false }, containerColor = MoodyTheme.colors.surface) {
+            Column(Modifier.padding(horizontal = 24.dp).padding(bottom = 32.dp)) {
+                Text("Sort songs", style = MoodyTheme.type.title, color = MoodyTheme.colors.text)
+                Spacer(Modifier.height(20.dp))
+                com.moody.player.ui.components.SortChoices(
+                    listOf(com.moody.player.domain.SortKey.TITLE to "Title") + com.moody.player.ui.components.FileSorts,
+                    s.songSort, vm::setSongSort,
+                )
+            }
+        }
+    }
     coverFor?.let { m ->
-        MixCoverSheet(m.title, hasCover = m.id in s.mixCovers, onDismiss = { coverFor = null }, onRemove = { vm.clearMixCover(m.id) }) { picked ->
+        MixSheet(
+            m.title, hasCover = m.id in s.mixCovers, onDismiss = { coverFor = null }, onRemoveCover = { vm.clearMixCover(m.id) },
+            onRename = { renaming = m },
+            onRemoveMix = { vm.removeMix(m.id); toaster.show("Mix removed. Bring it back from Mood mixes") },
+        ) { picked ->
             vm.setMixCover(m.id, picked) { ok -> if (!ok) toaster.show("That picture couldn't be opened") }
         }
+    }
+    renaming?.let { m ->
+        NameDialog(
+            "Rename mix", m.title, "Rename", onDismiss = { renaming = null },
+            note = "Leave it empty to use Moody's name", allowBlank = true,
+        ) { vm.renameMix(m.id, it); renaming = null }
     }
     val writeCover = rememberCoverWriter(vm.music)
     actionsFor?.let { song -> SongActionsSheet(song, vm, onDismiss = { actionsFor = null }, onCoverSaved = writeCover) }
@@ -147,6 +174,8 @@ fun MusicContent(
     selected: Set<String> = emptySet(),
     onToggle: ((AudioItem) -> Unit)? = null,
     selectionBar: (@Composable () -> Unit)? = null,
+    onSort: (() -> Unit)? = null,
+    onBringBackMixes: (() -> Unit)? = null,
 ) {
     val c = MoodyTheme.colors
     val grid = tab == MusicTab.ALBUMS
@@ -198,7 +227,9 @@ fun MusicContent(
                     EmptyState({ EmptyMusic() }, "No music on this phone yet", "Songs you download or copy into Music show up here. Clips under 30 seconds are left out")
                 }
                 tab == MusicTab.SONGS -> {
-                    if (s.mixes.isNotEmpty()) item(key = "mixes", span = { GridItemSpan(maxLineSpan) }) { MoodMixesRow(s.mixes, onMix, s.mixCovers, onMixCover) }
+                    if (s.mixes.isNotEmpty() || s.hiddenMixes.isNotEmpty()) item(key = "mixes", span = { GridItemSpan(maxLineSpan) }) {
+                        MoodMixesRow(s.mixes, onMix, s.mixCovers, onMixCover, hidden = s.hiddenMixes.size, onBringBack = onBringBackMixes)
+                    }
                     items(s.songs, key = { it.uri.toString() }, span = { GridItemSpan(maxLineSpan) }) { song ->
                         val current = song.uri.toString() == currentUri
                         val picking = selected.isNotEmpty()
@@ -263,6 +294,8 @@ fun MusicContent(
         CollapsingTopBar(bar, contentUnder = gridState.firstVisibleItemIndex > 0 || gridState.firstVisibleItemScrollOffset > 0, height = 48.dp) {
             if (selectionBar != null) selectionBar()
             else com.moody.player.ui.components.AppTopBar(48.dp) {
+                // Sorting applies to the Songs list; albums, artists and folders keep their own order.
+                if (onSort != null && tab == MusicTab.SONGS && s.songs.isNotEmpty()) IconAction(MoodyIcons.Sort, "Sort songs", onSort, tint = c.text)
                 IconAction(MoodyIcons.Chart, "Your stats", nav.openStats, tint = c.text)
                 IconAction(MoodyIcons.Settings, "Settings", nav.openSettings, tint = c.text)
             }
@@ -328,7 +361,10 @@ fun GroupRow(leading: @Composable () -> Unit, title: String, meta: String, onCli
 /** Pick a picture for a mood mix, or go back to its album discs. */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
-private fun MixCoverSheet(title: String, hasCover: Boolean, onDismiss: () -> Unit, onRemove: () -> Unit, onPicked: (android.net.Uri) -> Unit) {
+private fun MixSheet(
+    title: String, hasCover: Boolean, onDismiss: () -> Unit, onRemoveCover: () -> Unit,
+    onRename: () -> Unit, onRemoveMix: () -> Unit, onPicked: (android.net.Uri) -> Unit,
+) {
     val c = MoodyTheme.colors
     val pick = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) onPicked(uri)
@@ -340,7 +376,9 @@ private fun MixCoverSheet(title: String, hasCover: Boolean, onDismiss: () -> Uni
             SheetRow(MoodyIcons.Image, if (hasCover) "Change cover" else "Choose a cover") {
                 pick.launch(androidx.activity.result.PickVisualMediaRequest(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly))
             }
-            if (hasCover) SheetRow(MoodyIcons.Close, "Use the album covers") { onRemove(); onDismiss() }
+            if (hasCover) SheetRow(MoodyIcons.Close, "Use the album covers") { onRemoveCover(); onDismiss() }
+            SheetRow(MoodyIcons.Rename, "Rename") { onDismiss(); onRename() }
+            SheetRow(MoodyIcons.Delete, "Remove mix", meta = "Your songs stay. You can bring it back") { onDismiss(); onRemoveMix() }
         }
     }
 }

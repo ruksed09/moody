@@ -34,6 +34,8 @@ data class Settings(
     val videoView: VideoView = VideoView.FOLDERS,
     val videoLayout: LayoutMode = LayoutMode.GRID,
     val sort: SortSpec = SortSpec(SortKey.DATE, ascending = false),
+    /** How the Music tab's Songs list is ordered. */
+    val songSort: SortSpec = SortSpec(SortKey.TITLE, ascending = true),
     // Player
     val decoder: Decoder = Decoder.HW,
     val doubleTapSeekSec: Int = 10,
@@ -102,6 +104,8 @@ private object K {
     val videoLayout = stringPreferencesKey("video_layout")
     val sortKey = stringPreferencesKey("sort_key")
     val sortAsc = booleanPreferencesKey("sort_asc")
+    val songSortKey = stringPreferencesKey("song_sort_key")
+    val songSortAsc = booleanPreferencesKey("song_sort_asc")
     val decoder = stringPreferencesKey("decoder")
     val doubleTap = intPreferencesKey("double_tap_sec")
     val gestures = booleanPreferencesKey("gestures")
@@ -156,6 +160,7 @@ internal fun Preferences.toSettings(): Settings {
         videoView = enum(K.videoView, d.videoView),
         videoLayout = enum(K.videoLayout, d.videoLayout),
         sort = SortSpec(enum(K.sortKey, d.sort.key), this[K.sortAsc] ?: d.sort.ascending),
+        songSort = SortSpec(enum(K.songSortKey, d.songSort.key), this[K.songSortAsc] ?: d.songSort.ascending),
         decoder = enum(K.decoder, d.decoder),
         doubleTapSeekSec = this[K.doubleTap] ?: d.doubleTapSeekSec,
         gestures = this[K.gestures] ?: d.gestures,
@@ -207,6 +212,8 @@ internal fun MutablePreferences.write(s: Settings) {
     this[K.videoLayout] = s.videoLayout.name
     this[K.sortKey] = s.sort.key.name
     this[K.sortAsc] = s.sort.ascending
+    this[K.songSortKey] = s.songSort.key.name
+    this[K.songSortAsc] = s.songSort.ascending
     this[K.decoder] = s.decoder.name
     this[K.doubleTap] = s.doubleTapSeekSec
     this[K.gestures] = s.gestures

@@ -1,6 +1,7 @@
 package com.moody.player.domain
 
-enum class SortKey { NAME, DATE, SIZE, DURATION }
+/** NAME is the file name; TITLE is a song's title tag (Music only); DATE is when the file was last modified. */
+enum class SortKey { NAME, DATE, SIZE, DURATION, TITLE }
 
 data class SortSpec(val key: SortKey, val ascending: Boolean)
 
@@ -39,9 +40,11 @@ fun <T> List<T>.sortedBy(
     date: (T) -> Long,
     size: (T) -> Long,
     duration: (T) -> Long,
+    title: (T) -> String = name,
 ): List<T> {
     val cmp: Comparator<T> = when (spec.key) {
         SortKey.NAME -> Comparator { a, b -> NaturalOrder.compare(name(a), name(b)) }
+        SortKey.TITLE -> Comparator { a, b -> NaturalOrder.compare(title(a), title(b)) }
         SortKey.DATE -> compareBy(date)
         SortKey.SIZE -> compareBy(size)
         SortKey.DURATION -> compareBy(duration)

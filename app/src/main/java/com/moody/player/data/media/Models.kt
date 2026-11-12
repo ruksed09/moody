@@ -14,7 +14,11 @@ data class VideoItem(
     val width: Int,
     val height: Int,
     val mime: String,
+    /** MediaStore DATE_MODIFIED, in seconds; 0 when unknown. */
+    val dateModified: Long = 0,
 ) {
+    /** When the file last changed, falling back to when it was added. Seconds. */
+    val modified: Long get() = if (dateModified > 0) dateModified else dateAdded
     val folder: String get() = folderName(relativePath)
     val title: String get() = name.substringBeforeLast('.', name)
     val extension: String get() = name.substringAfterLast('.', "").uppercase()
@@ -43,7 +47,12 @@ data class AudioItem(
     val dateAdded: Long,
     /** A cover picked in Moody (absolute path of Moody's own copy); null uses the file's art. */
     val cover: String? = null,
+    val sizeBytes: Long = 0,
+    /** MediaStore DATE_MODIFIED, in seconds; 0 when unknown. */
+    val dateModified: Long = 0,
 ) {
+    /** When the file last changed, falling back to when it was added. Seconds. */
+    val modified: Long get() = if (dateModified > 0) dateModified else dateAdded
     val folder: String get() = folderName(relativePath)
 }
 

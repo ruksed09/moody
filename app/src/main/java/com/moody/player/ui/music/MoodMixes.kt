@@ -2,6 +2,7 @@ package com.moody.player.ui.music
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -54,12 +55,24 @@ private val DiscSide = 116.dp
 fun MoodMixesRow(
     mixes: List<MoodMix<AudioItem>>, onPlay: (MoodMix<AudioItem>) -> Unit,
     covers: Map<String, String> = emptyMap(), onCover: ((MoodMix<AudioItem>) -> Unit)? = null,
+    hidden: Int = 0, onBringBack: (() -> Unit)? = null,
 ) {
     val c = MoodyTheme.colors
     Column(Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("Mood mixes", style = MoodyTheme.type.title, color = c.text, modifier = Modifier.weight(1f))
-            Text("Made on this phone", style = MoodyTheme.type.caption, color = c.text3)
+            if (hidden > 0 && onBringBack != null) {
+                Text(
+                    "Bring back $hidden", style = MoodyTheme.type.label, color = c.accent,
+                    modifier = Modifier.clip(Radii.sm).clickable(role = Role.Button, onClick = onBringBack).padding(horizontal = 6.dp, vertical = 6.dp)
+                        .semantics { contentDescription = "Bring back $hidden removed ${if (hidden == 1) "mix" else "mixes"}" },
+                )
+            } else Text("Made on this phone", style = MoodyTheme.type.caption, color = c.text3)
+        }
+        if (mixes.isEmpty()) {
+            Text("You removed every mix", style = MoodyTheme.type.caption, color = c.text3, modifier = Modifier.padding(horizontal = 16.dp))
+            Spacer(Modifier.height(16.dp))
+            return@Column
         }
         LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             items(mixes, key = { it.id }) { m -> MixCard(m, covers[m.id], onCover?.let { f -> { f(m) } }) { onPlay(m) } }
@@ -80,11 +93,11 @@ private fun MixCard(m: MoodMix<AudioItem>, cover: String?, onCover: (() -> Unit)
             .width(CardSide)
             .graphicsLayer { scaleX = scale; scaleY = scale }
             .clip(Radii.lg)
-            // Hold a card to give the mix a cover of your own.
-            .combinedClickable(src, ripple(), role = Role.Button, onLongClickLabel = "Change cover", onLongClick = onCover, onClick = onClick)
+            // Hold a card to rename it, give it a cover of your own or remove it.
+            .combinedClickable(src, ripple(), role = Role.Button, onLongClickLabel = "Mix options", onLongClick = onCover, onClick = onClick)
             .semantics(mergeDescendants = true) {
                 contentDescription = "Play ${m.title}, ${m.songs.size} songs. ${m.basis}"
-                if (onCover != null) customActions = listOf(androidx.compose.ui.semantics.CustomAccessibilityAction("Change cover") { onCover(); true })
+                if (onCover != null) customActions = listOf(androidx.compose.ui.semantics.CustomAccessibilityAction("Mix options") { onCover(); true })
             },
     ) {
         Box(Modifier.size(CardSide).clip(Radii.lg).background(c.surface)) {

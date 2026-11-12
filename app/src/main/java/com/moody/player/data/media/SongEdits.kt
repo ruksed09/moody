@@ -55,6 +55,41 @@ class SongEdits @Inject constructor(@ApplicationContext private val context: Con
 }
 
 private val Context.mixCoverStore by preferencesDataStore("mix_covers")
+private val Context.mixPrefStore by preferencesDataStore("mix_prefs")
+
+/** Names the user gave mood mixes, and the mixes they removed, by mix id. */
+data class MixPrefs(val names: Map<String, String> = emptyMap(), val hidden: Set<String> = emptySet())
+
+/** Renamed and removed mood mixes. Mixes are rebuilt from play history, so removing one only hides it. */
+@Singleton
+class MixNames @Inject constructor(@ApplicationContext private val context: Context) {
+    val all: Flow<MixPrefs> = context.mixPrefStore.data.map { p ->
+        val names = HashMap<String, String>()
+        val hidden = HashSet<String>()
+        p.asMap().forEach { (k, v) ->
+            when {
+                k.name.startsWith("name:") && v is String -> names[k.name.removePrefix("name:")] = v
+                k.name.startsWith("hide:") && v == true -> hidden += k.name.removePrefix("hide:")
+            }
+        }
+        MixPrefs(names, hidden)
+    }
+
+    /** A blank or null name goes back to Moody's own name for the mix. */
+    suspend fun rename(mixId: String, name: String?) {
+        val key = stringPreferencesKey("name:$mixId")
+        context.mixPrefStore.edit { if (name.isNullOrBlank()) it.remove(key) else it[key] = name.trim() }
+    }
+
+    suspend fun setHidden(mixId: String, hidden: Boolean) {
+        val key = androidx.datastore.preferences.core.booleanPreferencesKey("hide:$mixId")
+        context.mixPrefStore.edit { if (hidden) it[key] = true else it.remove(key) }
+    }
+
+    suspend fun showAll(mixIds: Collection<String>) {
+        context.mixPrefStore.edit { p -> mixIds.forEach { p.remove(androidx.datastore.preferences.core.booleanPreferencesKey("hide:$it")) } }
+    }
+}
 
 /** Covers the user picked for mood mixes, keyed by the mix's id: a path to Moody's own copy of the picture. */
 @Singleton

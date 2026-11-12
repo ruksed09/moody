@@ -9,6 +9,7 @@ import com.moody.player.data.media.AudioItem
 import com.moody.player.data.media.MediaRepository
 import com.moody.player.data.media.folderName
 import com.moody.player.domain.NaturalOrder
+import com.moody.player.domain.sortedBy
 import com.moody.player.player.music.MusicController
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.Flow
@@ -43,7 +44,14 @@ data class MusicUiState(
     val mixes: List<com.moody.player.domain.MoodMix<AudioItem>> = emptyList(),
     /** Covers picked for mixes, by mix id. */
     val mixCovers: Map<String, String> = emptyMap(),
+    val songSort: com.moody.player.domain.SortSpec = com.moody.player.data.prefs.Settings().songSort,
+    /** Ids of mixes that would show but were removed. */
+    val hiddenMixes: List<String> = emptyList(),
 )
+
+/** Orders the Songs list; ties keep their title order. */
+fun sortSongs(songs: List<AudioItem>, spec: com.moody.player.domain.SortSpec): List<AudioItem> =
+    songs.sortedBy(spec, { it.fileName }, { it.modified }, { it.sizeBytes }, { it.durationMs }, title = { it.title })
 
 /** Groups the library for the Music tab's sub-tabs. Pure, so it can be tested. */
 fun groupMusic(songs: List<AudioItem>): Triple<List<AlbumGroup>, List<ArtistGroup>, List<SongFolder>> {
@@ -65,6 +73,8 @@ class MusicViewModel @Inject constructor(
     val music: MusicController,
     private val stats: com.moody.player.data.stats.PlayStats,
     private val mixCovers: com.moody.player.data.media.MixCovers,
+    private val settingsStore: com.moody.player.data.prefs.SettingsStore,
+    private val mixNames: com.moody.player.data.media.MixNames,
     @dagger.hilt.android.qualifiers.ApplicationContext private val appContext: android.content.Context,
 ) : ViewModel() {
     val tab = MutableStateFlow(MusicTab.SONGS)
@@ -82,10 +92,11 @@ class MusicViewModel @Inject constructor(
     }.flowOn(kotlinx.coroutines.Dispatchers.Default)
 
     val state: StateFlow<MusicUiState> = combine(
-        media.audio, playlistDao.all(), playlistDao.counts(), favoriteDao.all(),
-    ) { audio, playlists, counts, favs ->
-        val songs = audio.orEmpty().sortedWith { a, b -> NaturalOrder.compare(a.title, b.title) }
-        val (albums, artists, folders) = groupMusic(songs)
+        media.audio, playlistDao.all(), playlistDao.counts(), favoriteDao.all(), settingsStore.settings,
+    ) { audio, playlists, counts, favs, settings ->
+        val byTitle = audio.orEmpty().sortedWith { a, b -> NaturalOrder.compare(a.title, b.title) }
+        val songs = sortSongs(byTitle, settings.songSort)
+        val (albums, artists, folders) = groupMusic(byTitle)
         val byUri = songs.associateBy { it.uri.toString() }
         val countMap = counts.associate { it.playlistId to it.n }
         MusicUiState(
@@ -94,9 +105,16 @@ class MusicViewModel @Inject constructor(
             playlists = playlists.map { PlaylistRow(it, countMap[it.id] ?: 0) },
             favorites = favs.mapNotNull { byUri[it.audioUri] },
             totalMs = songs.sumOf { it.durationMs },
+            songSort = settings.songSort,
         )
     }.combine(mixesFlow()) { s, mixes -> s.copy(mixes = mixes) }
-        .combine(mixCovers.all) { s, covers -> s.copy(mixCovers = covers) }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MusicUiState())
+        .combine(mixCovers.all) { s, covers -> s.copy(mixCovers = covers) }
+        .combine(mixNames.all) { s, p ->
+            s.copy(
+                mixes = s.mixes.filter { it.id !in p.hidden }.map { m -> p.names[m.id]?.let { m.copy(title = it) } ?: m },
+                hiddenMixes = s.mixes.map { it.id }.filter { it in p.hidden },
+            )
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MusicUiState())
 
     /** Copies [picked] into Moody's storage and uses it as the cover of mix [mixId]. */
     fun setMixCover(mixId: String, picked: android.net.Uri, done: (Boolean) -> Unit) = viewModelScope.launch {
@@ -108,6 +126,11 @@ class MusicViewModel @Inject constructor(
         }
         done(path != null)
     }
+
+    /** A blank name goes back to Moody's own name. */
+    fun renameMix(mixId: String, name: String) = viewModelScope.launch { mixNames.rename(mixId, name) }
+    fun removeMix(mixId: String) = viewModelScope.launch { mixNames.setHidden(mixId, true) }
+    fun bringBackMixes() = viewModelScope.launch { mixNames.showAll(state.value.hiddenMixes) }
 
     /** Goes back to the mix's own album discs. */
     fun clearMixCover(mixId: String) = viewModelScope.launch {
@@ -142,6 +165,8 @@ class MusicViewModel @Inject constructor(
         }
         media.rescan()
     }
+
+    fun setSongSort(s: com.moody.player.domain.SortSpec) = viewModelScope.launch { settingsStore.update { it.copy(songSort = s) } }
 
     fun addToPlaylist(id: Long, songs: List<AudioItem>) = viewModelScope.launch { playlistDao.append(id, songs.map { it.uri.toString() }) }
     fun renamePlaylist(id: Long, name: String) = viewModelScope.launch { playlistDao.rename(id, name.trim()) }

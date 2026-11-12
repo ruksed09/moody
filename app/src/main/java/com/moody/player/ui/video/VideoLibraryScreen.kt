@@ -445,26 +445,7 @@ private fun SortSheet(sort: SortSpec, layout: LayoutMode, onSort: (SortSpec) -> 
     Column(Modifier.padding(horizontal = 24.dp).padding(bottom = 32.dp)) {
         Text("Sort and view", style = t.title, color = c.text)
         Spacer(Modifier.height(20.dp))
-        Text("Sort by", style = t.section, color = c.text3)
-        Spacer(Modifier.height(8.dp))
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf(SortKey.DATE to "Date added", SortKey.NAME to "Name", SortKey.SIZE to "Size", SortKey.DURATION to "Length").forEach { (k, label) ->
-                ChoiceChip(label, sort.key == k, { onSort(SortSpec(k, if (k == SortKey.NAME) true else false)) })
-            }
-        }
-        Spacer(Modifier.height(16.dp))
-        Text("Order", style = t.section, color = c.text3)
-        Spacer(Modifier.height(8.dp))
-        val (asc, desc) = when (sort.key) {
-            SortKey.NAME -> "A to Z" to "Z to A"
-            SortKey.DATE -> "Oldest first" to "Newest first"
-            SortKey.SIZE -> "Smallest first" to "Largest first"
-            SortKey.DURATION -> "Shortest first" to "Longest first"
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            ChoiceChip(desc, !sort.ascending, { onSort(sort.copy(ascending = false)) })
-            ChoiceChip(asc, sort.ascending, { onSort(sort.copy(ascending = true)) })
-        }
+        com.moody.player.ui.components.SortChoices(com.moody.player.ui.components.FileSorts, sort, onSort)
         Spacer(Modifier.height(16.dp))
         Text("Show as", style = t.section, color = c.text3)
         Spacer(Modifier.height(8.dp))

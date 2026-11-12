@@ -23,7 +23,7 @@ class MediaScanner(private val context: Context) {
         val cols = buildList {
             add(MediaStore.Video.Media._ID); add(MediaStore.Video.Media.DISPLAY_NAME); add(MediaStore.Video.Media.SIZE)
             add(MediaStore.Video.Media.DURATION); add(MediaStore.Video.Media.DATE_ADDED); add(MediaStore.Video.Media.WIDTH)
-            add(MediaStore.Video.Media.HEIGHT); add(MediaStore.Video.Media.MIME_TYPE)
+            add(MediaStore.Video.Media.HEIGHT); add(MediaStore.Video.Media.MIME_TYPE); add(MediaStore.Video.Media.DATE_MODIFIED)
             if (Build.VERSION.SDK_INT >= 29) add(MediaStore.Video.Media.RELATIVE_PATH) else add(MediaStore.Video.Media.DATA)
         }.toTypedArray()
         val out = ArrayList<VideoItem>()
@@ -36,6 +36,7 @@ class MediaScanner(private val context: Context) {
             val w = c.getColumnIndexOrThrow(MediaStore.Video.Media.WIDTH)
             val h = c.getColumnIndexOrThrow(MediaStore.Video.Media.HEIGHT)
             val mime = c.getColumnIndexOrThrow(MediaStore.Video.Media.MIME_TYPE)
+            val modified = c.getColumnIndexOrThrow(MediaStore.Video.Media.DATE_MODIFIED)
             while (c.moveToNext()) {
                 val vid = c.getLong(id)
                 out += VideoItem(
@@ -49,6 +50,7 @@ class MediaScanner(private val context: Context) {
                     width = c.getInt(w),
                     height = c.getInt(h),
                     mime = c.getString(mime) ?: "video/*",
+                    dateModified = c.getLong(modified),
                 )
             }
         }
@@ -60,7 +62,7 @@ class MediaScanner(private val context: Context) {
             add(MediaStore.Audio.Media._ID); add(MediaStore.Audio.Media.TITLE); add(MediaStore.Audio.Media.ARTIST)
             add(MediaStore.Audio.Media.ALBUM); add(MediaStore.Audio.Media.ALBUM_ID); add(MediaStore.Audio.Media.DURATION)
             add(MediaStore.Audio.Media.MIME_TYPE); add(MediaStore.Audio.Media.TRACK); add(MediaStore.Audio.Media.DISPLAY_NAME)
-            add(MediaStore.Audio.Media.DATE_ADDED)
+            add(MediaStore.Audio.Media.DATE_ADDED); add(MediaStore.Audio.Media.DATE_MODIFIED); add(MediaStore.Audio.Media.SIZE)
             if (Build.VERSION.SDK_INT >= 29) add(MediaStore.Audio.Media.RELATIVE_PATH) else add(MediaStore.Audio.Media.DATA)
         }.toTypedArray()
         val out = ArrayList<AudioItem>()
@@ -75,6 +77,8 @@ class MediaScanner(private val context: Context) {
             val track = c.getColumnIndexOrThrow(MediaStore.Audio.Media.TRACK)
             val file = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
             val added = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED)
+            val modified = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_MODIFIED)
+            val size = c.getColumnIndexOrThrow(MediaStore.Audio.Media.SIZE)
             while (c.moveToNext()) {
                 val aid = c.getLong(id)
                 val fileName = c.getString(file) ?: ""
@@ -91,6 +95,8 @@ class MediaScanner(private val context: Context) {
                     trackNo = c.getInt(track) % 1000,
                     fileName = fileName,
                     dateAdded = c.getLong(added),
+                    sizeBytes = c.getLong(size),
+                    dateModified = c.getLong(modified),
                 )
             }
         }

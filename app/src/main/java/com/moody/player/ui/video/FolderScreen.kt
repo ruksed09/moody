@@ -43,7 +43,7 @@ import com.moody.player.domain.sortedBy
 fun FolderScreen(path: String, vm: VideoViewModel, nav: VideoNav, onBack: () -> Unit) {
     val s by vm.state.collectAsStateWithLifecycle()
     val videos = remember(s.all, s.sort, path) {
-        s.all.filter { it.relativePath == path }.sortedBy(s.sort, { it.name }, { it.dateAdded }, { it.sizeBytes }, { it.durationMs ?: 0 })
+        s.all.filter { it.relativePath == path }.sortedBy(s.sort, { it.name }, { it.modified }, { it.sizeBytes }, { it.durationMs ?: 0 })
     }
     var selected by remember { mutableStateOf(setOf<String>()) }
     val selecting = selected.isNotEmpty()
