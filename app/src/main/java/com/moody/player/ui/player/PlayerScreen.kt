@@ -42,6 +42,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.ui.semantics.onClick
+import com.moody.player.design.components.QuietButton
+import com.moody.player.design.components.PrimaryButton
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -81,7 +87,15 @@ fun PlayerScreen(vm: PlayerViewModel, host: PlayerHost, inPip: Boolean) {
     val resumedAt by vm.resumedAt.collectAsStateWithLifecycle()
     val ab by vm.ab.collectAsStateWithLifecycle()
     var controls by remember { mutableStateOf(true) }
-    var locked by remember { mutableStateOf(false) }
+    // Lock: NORMAL hides every control; ADVANCED keeps only the seek bar. Survives rotation and the next video.
+    var lockMode by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(LockMode.NONE) }
+    val locked = lockMode != LockMode.NONE
+    var lockReveal by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    var lockShown by remember { mutableStateOf(false) }
+    var lockHolding by remember { mutableStateOf(false) }
+    val keepLock = com.moody.player.ui.music.rememberKeepControls()
+    val abOn by vm.abOn.collectAsStateWithLifecycle()
+    val abEdit by vm.abEdit.collectAsStateWithLifecycle()
     var markTip by remember { mutableStateOf<Pair<Boolean, com.moody.player.data.db.Bookmark>?>(null) }
     var markTipTick by remember { androidx.compose.runtime.mutableIntStateOf(0) }
     var scrubbing by remember { mutableStateOf(false) }
@@ -96,6 +110,9 @@ fun PlayerScreen(vm: PlayerViewModel, host: PlayerHost, inPip: Boolean) {
     val studio by vm.studio.collectAsStateWithLifecycle()
     val studioOn by vm.studioOn.collectAsStateWithLifecycle()
     var transcript by remember { mutableStateOf(false) }
+    val seekMarks = remember(bookmarks, settings.showBookmarks) {
+        if (settings.showBookmarks) bookmarks.mapIndexed { i, b -> SeekMark(b.positionMs, b.endMs, b.name.ifBlank { "Bookmark ${i + 1}" }) } else emptyList()
+    }
 
     // Bookmarks go into the video file too: Android asks once per video (never, with Media management allowed).
     val fileWrite by vm.fileWrite.collectAsStateWithLifecycle()
@@ -119,8 +136,8 @@ fun PlayerScreen(vm: PlayerViewModel, host: PlayerHost, inPip: Boolean) {
     }
 
     // Controls hide 3 s after the last touch while playing.
-    LaunchedEffect(controls, st.playing, scrubbing, menu, tracks, poke, transcript) {
-        if (controls && st.playing && !scrubbing && menu == null && tracks == null && !transcript) { delay(3_000); controls = false }
+    LaunchedEffect(controls, st.playing, scrubbing, menu, tracks, poke, transcript, lockHolding) {
+        if (controls && st.playing && !scrubbing && menu == null && tracks == null && !transcript && !lockHolding) { delay(3_000); controls = false }
     }
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
@@ -130,14 +147,14 @@ fun PlayerScreen(vm: PlayerViewModel, host: PlayerHost, inPip: Boolean) {
             modifier = Modifier.fillMaxSize(),
         )
         // Subtitle files Moody draws itself (Subtitle Studio). Shown in picture-in-picture too.
-        studio?.takeIf { studioOn }?.let { d -> SubtitleOverlay(d, st, settings, controlsShown = controls && !locked && !inPip) }
+        studio?.takeIf { studioOn }?.let { d -> SubtitleOverlay(d, st, settings, controlsShown = (controls && !locked || lockMode == LockMode.ADVANCED) && !inPip) }
         if (inPip) return@Box
 
         GestureLayer(
             vm = vm,
             state = st,
             locked = locked,
-            onTap = { controls = !controls; poke++ },
+            onTap = { if (locked) lockReveal++ else { controls = !controls; poke++ } },
             modifier = Modifier.fillMaxSize(),
             onSideSeek = { right, at ->
                 if (settings.showBookmarks && !locked) nearestBookmark(bookmarks, at, right)?.let { markTip = right to it; markTipTick++ }
@@ -147,7 +164,7 @@ fun PlayerScreen(vm: PlayerViewModel, host: PlayerHost, inPip: Boolean) {
         LaunchedEffect(markTipTick) { if (markTipTick > 0) { delay(3_500); markTip = null } }
         LaunchedEffect(locked, settings.showBookmarks) { if (locked || !settings.showBookmarks) markTip = null }
         LaunchedEffect(st.uri) { markTip = null }
-        JumpToBookmarkTip(markTip, controls && !locked) { b -> markTip = null; vm.jumpTo(b); poke++ }
+        JumpToBookmarkTip(markTip, controls && !locked, abPill = ab.first != null && !locked) { b -> markTip = null; vm.jumpTo(b); poke++ }
 
         if (st.buffering && st.error == null) {
             CircularProgressIndicator(Modifier.align(Alignment.Center).size(40.dp), color = MoodyTheme.colors.accent, strokeWidth = 2.dp, trackColor = OnVideo.rail)
@@ -204,17 +221,17 @@ fun PlayerScreen(vm: PlayerViewModel, host: PlayerHost, inPip: Boolean) {
                     }
                     Spacer(Modifier.weight(1f))
                     BottomControls(
-                        st = st, showRemaining = showRemaining, ab = ab, marks = if (settings.showBookmarks) bookmarks.mapIndexed { i, b -> SeekMark(b.positionMs, b.endMs, b.name.ifBlank { "Bookmark ${i + 1}" }) } else emptyList(),
+                        st = st, showRemaining = showRemaining, ab = ab, marks = seekMarks,
                         canPrev = vm.hasPrev || st.positionMs > 5_000, hasNext = vm.hasNext || (shuffle && vm.queue.size > 1),
                         onPrev = { vm.prev(); poke++ },
                         onToggle = { vm.dismissResume(); vm.engine.toggle(); poke++ },
                         onNext = { vm.next(); poke++ },
                         onToggleTime = { showRemaining = !showRemaining; poke++ },
                         onSeek = { vm.dismissResume(); vm.engine.seekTo(it); poke++ },
-                        onScrubbing = { scrubbing = it; if (it) vm.dismissResume() },
-                        onLock = { locked = true; controls = false; vm.toast("Controls locked") },
-                        seekWhenLocked = settings.seekBarWhenLocked,
-                        onSeekWhenLocked = { v -> vm.updateSubLook { it.copy(seekBarWhenLocked = v) }; vm.toast(if (v) "Seek bar stays while locked" else "Seek bar hides while locked"); poke++ },
+                        onScrubbing = { scrubbing = it; vm.setScrubbing(it); if (it) vm.dismissResume() },
+                        onLock = { lockReveal = 0; lockMode = LockMode.NORMAL; controls = false; vm.toast("Controls locked. Tap the screen to unlock") },
+                        onAdvancedLock = { lockReveal = 0; lockHolding = false; lockMode = LockMode.ADVANCED; controls = false; vm.toast("Only the seek bar works. Tap the screen to show the lock") },
+                        onLockHolding = { lockHolding = it },
                         onScreenSize = {
                             val order = listOf(Aspect.FIT, Aspect.FILL, Aspect.STRETCH)
                             val a = order[(order.indexOf(st.aspect).coerceAtLeast(0) + 1) % order.size]
@@ -226,18 +243,40 @@ fun PlayerScreen(vm: PlayerViewModel, host: PlayerHost, inPip: Boolean) {
             }
         }
 
-        if (locked) {
-            if (settings.seekBarWhenLocked) LockedProgress(st, Modifier.align(Alignment.BottomCenter))
-            LockedOverlay(controls) { locked = false; controls = true; vm.toast("Controls unlocked") }
+        // Locked: a tap on the screen shows the way out for 3.5 s; each tap starts the 3.5 s again.
+        LaunchedEffect(lockReveal, lockMode) {
+            lockShown = false
+            if (lockReveal > 0 && lockMode != LockMode.NONE) { lockShown = true; delay(3_500); lockShown = false }
+        }
+        androidx.activity.compose.BackHandler(locked) { lockReveal++ }
+        LaunchedEffect(lockMode, st.uri) { scrubbing = false; vm.setScrubbing(false) }
+        // Finished with nothing to play next: unlock so Replay can be reached.
+        LaunchedEffect(st.ended) {
+            if (st.ended && locked) { delay(800); if (vm.engine.state.value.ended) { lockMode = LockMode.NONE; controls = true } }
+        }
+        val unlock = { lockMode = LockMode.NONE; controls = true; poke++; vm.toast("Controls unlocked") }
+        if (lockMode == LockMode.NORMAL) {
+            AnimatedVisibility(lockShown || keepLock, enter = fadeIn(Motion.fast()), exit = fadeOut(Motion.base())) { LockedOverlay(true, unlock) }
+        }
+        if (lockMode == LockMode.ADVANCED) {
+            AdvancedLockBar(
+                st, ab, seekMarks, showUnlock = lockShown || keepLock,
+                onSeek = { vm.dismissResume(); vm.engine.seekTo(it) },
+                onScrubbing = { scrubbing = it; vm.setScrubbing(it) },
+                onUnlock = unlock,
+                modifier = Modifier.align(Alignment.BottomCenter),
+            )
         }
 
         // A-B repeat: a mini bar with the start and end times while it is set up or running.
         val abA = ab.first
         if (abA != null && !locked) {
             AbBar(
-                a = abA, b = ab.second, at = st.positionMs,
+                a = abA, b = ab.second, on = abOn, at = st.positionMs,
+                onEditA = { vm.beginAbEdit(true); poke++ },
+                onEditB = { vm.beginAbEdit(false); poke++ },
                 onSetB = { vm.markB(); poke++ },
-                onJumpA = { vm.seekToA(); poke++ },
+                onToggleOn = { vm.toggleAbOn(); poke++ },
                 onBookmark = { vm.addBookmark(); poke++ },
                 onClear = { vm.clearAb(); poke++ },
                 modifier = Modifier.align(Alignment.BottomEnd).windowInsetsPadding(WindowInsets.safeDrawing)
@@ -245,7 +284,18 @@ fun PlayerScreen(vm: PlayerViewModel, host: PlayerHost, inPip: Boolean) {
             )
         }
 
-        resumedAt?.takeIf { it.first == vm.current?.uri }?.let { (_, at) ->
+        abEdit?.let { editingA ->
+            val origin = remember(editingA) { vm.abEditOrigin() }
+            AbTimeEditor(
+                editingA = editingA, a = ab.first, b = ab.second, durationMs = st.durationMs, origin = origin,
+                onPreview = vm::previewAb,
+                onSave = { ms -> vm.saveAb(editingA, ms).also { poke++ } },
+                onCancel = { vm.cancelAbEdit(); poke++ },
+                onGoToA = { vm.abEditGoToA(); poke++ },
+            )
+        }
+
+        if (!locked) resumedAt?.takeIf { it.first == vm.current?.uri }?.let { (_, at) ->
             ResumeChip(at, onStartOver = vm::startOver, modifier = Modifier.align(Alignment.BottomStart).windowInsetsPadding(WindowInsets.safeDrawing).padding(start = 16.dp, bottom = if (controls) 132.dp else 24.dp))
         }
 
@@ -349,7 +399,8 @@ private fun ShortcutRow(
                 contentAlignment = Alignment.Center,
             ) { Icon(icon, null, Modifier.size(18.dp), tint = if (active) accent else idle) }
     }
-    Row(Modifier.padding(start = 8.dp).horizontalScroll(androidx.compose.foundation.rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.padding(start = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.weight(1f, fill = false).horizontalScroll(androidx.compose.foundation.rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
         first.forEach { Button(it) }
         if (rest.isNotEmpty()) {
             AnimatedVisibility(
@@ -361,6 +412,9 @@ private fun ShortcutRow(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) { rest.forEach { Button(it) } }
             }
+        }
+        }
+        if (rest.isNotEmpty()) {
             val turn by androidx.compose.animation.core.animateFloatAsState(if (expanded) 180f else 0f, com.moody.player.design.components.Motion.base(), label = "shortcuts-arrow")
             Box(
                 Modifier.size(40.dp).clip(CircleShape)
@@ -397,8 +451,8 @@ private fun BottomControls(
     onLock: () -> Unit,
     onScreenSize: () -> Unit,
     onPopup: () -> Unit,
-    seekWhenLocked: Boolean = false,
-    onSeekWhenLocked: (Boolean) -> Unit = {},
+    onAdvancedLock: () -> Unit = {},
+    onLockHolding: (Boolean) -> Unit = {},
 ) {
     val t = MoodyTheme.type
     val accent = MoodyTheme.colors.accent
@@ -427,7 +481,7 @@ private fun BottomControls(
             val secondary = OnVideo.text.copy(alpha = 0.85f)
             Box(Modifier.fillMaxWidth().height(56.dp)) {
                 Box(Modifier.align(Alignment.CenterStart)) {
-                    LockButton(onLock, seekWhenLocked, onSeekWhenLocked, size = small, tint = secondary, box = btn)
+                    LockButton(onLock, onAdvancedLock, onLockHolding, size = small, tint = secondary, box = btn)
                 }
                 Row(
                     Modifier.align(Alignment.Center),
@@ -553,89 +607,100 @@ fun OverlayButton(text: String, onClick: () -> Unit, primary: Boolean = false) {
     ) { Text(text, style = MoodyTheme.type.label, color = if (primary) c.accentInk else OnVideo.text) }
 }
 
+/** NONE: playing normally. NORMAL: every control hidden. ADVANCED: only the seek bar works. */
+enum class LockMode { NONE, NORMAL, ADVANCED }
+
 /**
- * The lock button. A tap locks. Holding it 2.5 s (a ring starts filling after 0.4 s, then a tick) opens a
- * small choice: hide or show the seek bar while locked. The same choice is in Settings.
+ * The lock button. A tap (let go within 0.4 s) is Normal lock. Holding it shows a ring after 0.4 s that fills
+ * by 2.5 s: then a tick and Advanced lock, with the finger still down. Letting go in between does nothing.
+ * TalkBack gets both as actions, no holding needed.
  */
 @Composable
-private fun LockButton(onLock: () -> Unit, seekWhenLocked: Boolean, onChoose: (Boolean) -> Unit, size: Dp, tint: Color, box: Dp) {
+private fun LockButton(onLock: () -> Unit, onAdvanced: () -> Unit, onHolding: (Boolean) -> Unit, size: Dp, tint: Color, box: Dp) {
     val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val ring = remember { androidx.compose.animation.core.Animatable(0f) }
-    var held by remember { mutableStateOf(false) }
-    var choose by remember { mutableStateOf(false) }
-    Box {
-        Box(
-            Modifier
-                .size(box)
-                .clip(CircleShape)
-                .semantics {
-                    contentDescription = "Lock controls"
-                    role = Role.Button
-                    customActions = listOf(androidx.compose.ui.semantics.CustomAccessibilityAction("Seek bar while locked") { choose = true; true })
+    val lock by androidx.compose.runtime.rememberUpdatedState(onLock)
+    val advanced by androidx.compose.runtime.rememberUpdatedState(onAdvanced)
+    val holding by androidx.compose.runtime.rememberUpdatedState(onHolding)
+    // Removed mid-hold (Advanced lock hides it): the controls may hide again.
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { holding(false) } }
+    Box(
+        Modifier
+            .size(box)
+            .clip(CircleShape)
+            .semantics {
+                contentDescription = "Lock controls"
+                role = Role.Button
+                onClick("Lock") { lock(); true }
+                customActions = listOf(androidx.compose.ui.semantics.CustomAccessibilityAction("Advanced lock, seek bar only") { advanced(); true })
+            }
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    val down = awaitFirstDown()
+                    holding(true)
+                    var entered = false
+                    val job = scope.launch {
+                        delay(400)
+                        ring.snapTo(0f)
+                        ring.animateTo(1f, androidx.compose.animation.core.tween(2_100, easing = androidx.compose.animation.core.LinearEasing))
+                        entered = true
+                        haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                        advanced()
+                    }
+                    val up = waitForUpOrCancellation()
+                    job.cancel()
+                    holding(false)
+                    scope.launch { ring.animateTo(0f, androidx.compose.animation.core.tween(150)) }
+                    if (up != null) {
+                        up.consume()
+                        if (!entered && up.uptimeMillis - down.uptimeMillis < 400) lock()
+                    }
                 }
-                .pointerInput(Unit) {
-                    detectTapGestures(
-                        onPress = {
-                            held = false
-                            val job = scope.launch {
-                                delay(400)
-                                ring.snapTo(0f)
-                                ring.animateTo(1f, androidx.compose.animation.core.tween(2_100, easing = androidx.compose.animation.core.LinearEasing))
-                                held = true
-                                haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                                choose = true
-                            }
-                            tryAwaitRelease()
-                            job.cancel()
-                            scope.launch { ring.animateTo(0f, androidx.compose.animation.core.tween(150)) }
-                        },
-                        onTap = { if (!held) onLock() },
-                    )
-                },
-            contentAlignment = Alignment.Center,
-        ) {
-            if (ring.value > 0f) androidx.compose.foundation.Canvas(Modifier.size(box - 8.dp)) {
-                val w = 2.dp.toPx()
-                drawArc(
-                    Color(0xFF4FD1C5), -90f, 360f * ring.value, useCenter = false,
-                    topLeft = androidx.compose.ui.geometry.Offset(w / 2, w / 2),
-                    size = androidx.compose.ui.geometry.Size(this.size.width - w, this.size.height - w),
-                    style = androidx.compose.ui.graphics.drawscope.Stroke(w, cap = androidx.compose.ui.graphics.StrokeCap.Round),
-                )
-            }
-            Icon(MoodyIcons.Lock, null, Modifier.size(size), tint = tint)
-        }
-        androidx.compose.material3.DropdownMenu(choose, onDismissRequest = { choose = false }, containerColor = OnVideo.ink) {
-            Text(
-                "While locked", style = MoodyTheme.type.caption, color = OnVideo.text.copy(alpha = 0.6f),
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        if (ring.value > 0f) androidx.compose.foundation.Canvas(Modifier.size(box - 8.dp)) {
+            val w = 2.dp.toPx()
+            drawArc(
+                Color(0xFF4FD1C5), -90f, 360f * ring.value, useCenter = false,
+                topLeft = androidx.compose.ui.geometry.Offset(w / 2, w / 2),
+                size = androidx.compose.ui.geometry.Size(this.size.width - w, this.size.height - w),
+                style = androidx.compose.ui.graphics.drawscope.Stroke(w, cap = androidx.compose.ui.graphics.StrokeCap.Round),
             )
-            listOf(false to "Hide seek bar", true to "Show seek bar").forEach { (v, label) ->
-                androidx.compose.material3.DropdownMenuItem(
-                    text = { Text(label, style = MoodyTheme.type.body, color = OnVideo.text) },
-                    trailingIcon = { if (v == seekWhenLocked) Icon(MoodyIcons.Check, null, Modifier.size(18.dp), tint = MoodyTheme.colors.accent) },
-                    onClick = { choose = false; if (v != seekWhenLocked) onChoose(v) },
-                )
-            }
         }
+        Icon(MoodyIcons.Lock, null, Modifier.size(size), tint = tint)
     }
 }
 
-/** While locked: a thin progress line with the time, for looking only (it can't be touched). */
+/**
+ * Advanced lock: the seek bar and times stay and work; nothing else does. A tap elsewhere shows a small lock at
+ * the bottom left for 3.5 s; tapping it unlocks. Touching the seek bar doesn't show it.
+ */
 @Composable
-private fun LockedProgress(st: PlayerState, modifier: Modifier = Modifier) {
-    val frac = if (st.durationMs > 0) (st.positionMs.toFloat() / st.durationMs).coerceIn(0f, 1f) else 0f
-    Column(modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = 16.dp).padding(bottom = 10.dp)) {
-        Text(
-            "${formatDuration(st.positionMs).let { if (it == "--:--") "0:00" else it }} / ${formatDuration(st.durationMs)}",
-            style = MoodyTheme.type.mono, color = OnVideo.text.copy(alpha = 0.8f), modifier = Modifier.align(Alignment.End).padding(bottom = 4.dp),
-        )
-        Box(Modifier.fillMaxWidth().height(3.dp).clip(Radii.pill).background(OnVideo.rail)) {
-            Box(Modifier.fillMaxWidth(frac).fillMaxHeight().background(MoodyTheme.colors.accent))
+private fun AdvancedLockBar(
+    st: PlayerState, ab: Pair<Long?, Long?>, marks: List<SeekMark>, showUnlock: Boolean,
+    onSeek: (Long) -> Unit, onScrubbing: (Boolean) -> Unit, onUnlock: () -> Unit, modifier: Modifier = Modifier,
+) {
+    Column(modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = 12.dp).padding(bottom = 6.dp)) {
+        // The space stays reserved, so the seek bar never jumps when the lock comes and goes.
+        val shown by androidx.compose.animation.core.animateFloatAsState(if (showUnlock) 1f else 0f, Motion.base(), label = "unlock")
+        Box(
+            Modifier.padding(start = 4.dp, bottom = 4.dp).size(44.dp).graphicsLayer { alpha = shown }.clip(CircleShape).background(OnVideo.ink)
+                .then(if (showUnlock) Modifier.clickable(role = Role.Button, onClickLabel = "Unlock", onClick = onUnlock).semantics { contentDescription = "Unlock controls" } else Modifier),
+            contentAlignment = Alignment.Center,
+        ) { Icon(MoodyIcons.Unlock, null, Modifier.size(20.dp), tint = OnVideo.text) }
+        Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(clock0(st.positionMs), style = MoodyTheme.type.mono, color = OnVideo.text.copy(alpha = 0.85f))
+            Spacer(Modifier.weight(1f))
+            Text(formatDuration(st.durationMs), style = MoodyTheme.type.mono, color = OnVideo.text.copy(alpha = 0.85f))
         }
+        SeekBar(st.positionMs, st.durationMs, onSeek, onScrubbing, Modifier.fillMaxWidth().systemGestureExclusion(), ab.first, ab.second, marks)
     }
 }
+
+/** Like formatDuration, but 0 reads "0:00". */
+private fun clock0(ms: Long) = formatDuration(ms).let { if (it == "--:--") "0:00" else it }
 
 /**
  * The A-B mini bar. With only A set it reads "A 1:23  B --:--" and offers Set B (live: B shows where it
@@ -643,29 +708,116 @@ private fun LockedProgress(st: PlayerState, modifier: Modifier = Modifier) {
  * close to stop repeating.
  */
 @Composable
-private fun AbBar(a: Long, b: Long?, at: Long, onSetB: () -> Unit, onJumpA: () -> Unit, onBookmark: () -> Unit, onClear: () -> Unit, modifier: Modifier = Modifier) {
+internal fun AbBar(
+    a: Long, b: Long?, on: Boolean, at: Long,
+    onEditA: () -> Unit, onEditB: () -> Unit, onSetB: () -> Unit, onToggleOn: () -> Unit,
+    onBookmark: () -> Unit, onClear: () -> Unit, modifier: Modifier = Modifier,
+) {
     val accent = MoodyTheme.colors.accent
+    val dim = if (b != null && !on) 0.5f else 1f
+    @Composable
+    fun Time(text: String, label: String, alpha: Float, onClick: () -> Unit) = Text(
+        text, style = MoodyTheme.type.mono, color = OnVideo.text.copy(alpha = alpha),
+        modifier = Modifier.clip(Radii.pill).clickable(role = Role.Button, onClickLabel = label, onClick = onClick).padding(horizontal = 8.dp, vertical = 12.dp),
+    )
     Row(
-        modifier.clip(Radii.pill).background(OnVideo.ink).padding(start = 6.dp, end = 2.dp),
+        modifier.clip(Radii.pill).background(OnVideo.ink).padding(horizontal = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(MoodyIcons.AbRepeat, null, Modifier.padding(start = 8.dp).size(18.dp), tint = if (b != null) accent else OnVideo.text)
-        val times = if (b != null) com.moody.player.domain.bookmarkLabel(a, b)
-            else "A ${formatDuration(a)}  B ${if (at > a + 500) formatDuration(at) else "--:--"}"
-        Text(
-            times, style = MoodyTheme.type.mono, color = OnVideo.text,
-            modifier = Modifier.clip(Radii.pill).clickable(onClickLabel = "Go back to A", onClick = onJumpA).padding(horizontal = 10.dp, vertical = 12.dp),
-        )
+        if (b != null) VideoIcon(MoodyIcons.AbRepeat, if (on) "Pause A-B repeat" else "Resume A-B repeat", onToggleOn, size = 18.dp, tint = if (on) accent else OnVideo.text.copy(alpha = 0.6f), box = 40.dp)
+        else Icon(MoodyIcons.AbRepeat, null, Modifier.padding(start = 10.dp, end = 2.dp).size(18.dp), tint = OnVideo.text)
+        Time("A ${clock0(a)}", "Edit A", dim, onEditA)
+        Text("\u2192", style = MoodyTheme.type.mono, color = OnVideo.text.copy(alpha = 0.5f * dim))
+        if (b != null) Time("B ${clock0(b)}", "Edit B", dim, onEditB) else Time("B --:--", "Set B by time", 0.6f, onEditB)
         if (b == null) {
             Text(
                 "Set B", style = MoodyTheme.type.label, color = MoodyTheme.colors.accentInk,
-                modifier = Modifier.clip(Radii.pill).background(if (at > a + 500) accent else accent.copy(alpha = 0.45f))
+                modifier = Modifier.padding(start = 2.dp, end = 2.dp).clip(Radii.pill).background(if (at > a + 500) accent else accent.copy(alpha = 0.45f))
                     .clickable(role = Role.Button, onClick = onSetB).padding(horizontal = 14.dp, vertical = 8.dp),
             )
         } else {
             VideoIcon(MoodyIcons.Bookmark, "Bookmark this range", onBookmark, size = 18.dp, box = 40.dp)
         }
         VideoIcon(MoodyIcons.Close, "Stop A-B repeat", onClear, size = 16.dp, box = 40.dp)
+    }
+}
+
+/**
+ * Sets A or B to the tenth of a second: type a time or nudge it. The video pauses and shows the frame; Save
+ * keeps it, Cancel goes back to where it was.
+ */
+@Composable
+private fun AbTimeEditor(
+    editingA: Boolean, a: Long?, b: Long?, durationMs: Long, origin: Long,
+    onPreview: (Long) -> Unit, onSave: (Long) -> String?, onCancel: () -> Unit, onGoToA: () -> Unit,
+) {
+    val c = MoodyTheme.colors
+    val gap = com.moody.player.domain.AB_MIN_GAP_MS
+    val lo = if (editingA) 0L else (a ?: 0L) + gap
+    val hi = (if (editingA) (b?.minus(gap) ?: (durationMs - gap)) else durationMs).coerceAtLeast(lo)
+    val first = ((if (editingA) a else b) ?: origin)
+    var text by remember { mutableStateOf(com.moody.player.domain.formatClock(first)) }
+    var error by remember { mutableStateOf<String?>(null) }
+    fun set(ms: Long) {
+        val v = ms.coerceIn(lo, hi)
+        text = com.moody.player.domain.formatClock(v); error = null; onPreview(v)
+    }
+    androidx.compose.ui.window.Dialog(onDismissRequest = onCancel) {
+        Column(Modifier.fillMaxWidth().background(c.surface, Radii.xl).border(1.dp, c.line, Radii.xl).padding(24.dp)) {
+            Text(if (editingA) "Edit A" else "Edit B", style = MoodyTheme.type.title, color = c.text)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                if (durationMs > 0) "Between ${com.moody.player.domain.formatClock(lo)} and ${com.moody.player.domain.formatClock(hi)}" else "The video's length isn't known yet",
+                style = MoodyTheme.type.caption, color = c.text3,
+            )
+            Spacer(Modifier.height(16.dp))
+            Box(
+                Modifier.fillMaxWidth().height(48.dp).background(c.bg, Radii.md)
+                    .border(1.dp, if (error != null) c.danger else c.accent.copy(alpha = 0.55f), Radii.md).padding(horizontal = 12.dp),
+                contentAlignment = Alignment.CenterStart,
+            ) {
+                androidx.compose.foundation.text.BasicTextField(
+                    text,
+                    { t ->
+                        text = t.filter { it.isDigit() || it == ':' || it == '.' }.take(12); error = null
+                        com.moody.player.domain.parseAbTime(text)?.takeIf { it in lo..hi }?.let(onPreview)
+                    },
+                    singleLine = true,
+                    textStyle = MoodyTheme.type.mono.copy(color = c.text),
+                    cursorBrush = androidx.compose.ui.graphics.SolidColor(c.accent),
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Ascii),
+                    modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Time, hours minutes seconds" },
+                )
+            }
+            error?.let {
+                Spacer(Modifier.height(8.dp))
+                Text(it, style = MoodyTheme.type.caption, color = c.danger)
+            }
+            Spacer(Modifier.height(12.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf(-5_000L to "\u22125", -1_000L to "\u22121", -100L to "\u22120.1", 100L to "+0.1", 1_000L to "+1", 5_000L to "+5").forEach { (d, label) ->
+                    Box(
+                        Modifier.weight(1f).height(40.dp).clip(Radii.md).border(1.dp, c.line, Radii.md)
+                            .clickable(role = Role.Button, onClickLabel = "$label seconds") { set((com.moody.player.domain.parseAbTime(text) ?: first) + d) },
+                        contentAlignment = Alignment.Center,
+                    ) { Text(label, style = MoodyTheme.type.mono, color = c.text, maxLines = 1) }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                QuietButton("Use current time", { set(origin) })
+                if (a != null) QuietButton("Go to A", onGoToA)
+            }
+            Spacer(Modifier.height(16.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                QuietButton("Cancel", onCancel)
+                Spacer(Modifier.width(8.dp))
+                PrimaryButton("Save", {
+                    val ms = com.moody.player.domain.parseAbTime(text)
+                    error = if (ms == null) "Enter a time like 16:45.0" else onSave(ms)
+                }, enabled = durationMs > 0)
+            }
+        }
     }
 }
 
@@ -686,12 +838,14 @@ internal fun nearestBookmark(marks: List<com.moody.player.data.db.Bookmark>, at:
 private fun androidx.compose.foundation.layout.BoxScope.JumpToBookmarkTip(
     tip: Pair<Boolean, com.moody.player.data.db.Bookmark>?,
     controlsShown: Boolean,
+    abPill: Boolean,
     onJump: (com.moody.player.data.db.Bookmark) -> Unit,
 ) {
     var last by remember { mutableStateOf(tip) }
     if (tip != null) last = tip
     val (right, b) = last ?: return
-    val lift by androidx.compose.animation.core.animateDpAsState(if (controlsShown) 148.dp else 40.dp, label = "tip-lift")
+    // Above the A-B pill when it is showing (it sits bottom right at the same height).
+    val lift by androidx.compose.animation.core.animateDpAsState((if (controlsShown) 148.dp else 40.dp) + (if (abPill) 56.dp else 0.dp), label = "tip-lift")
     AnimatedVisibility(
         tip != null,
         Modifier

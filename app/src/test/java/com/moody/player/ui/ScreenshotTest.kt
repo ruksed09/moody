@@ -220,6 +220,18 @@ class ScreenshotTest {
             }
         }
     }
+    @Config(qualifiers = "w320dp-h640dp-xhdpi")
+    @Test fun abPills() = bare("ab-pills-320", ThemeMode.DARK) {
+        androidx.compose.foundation.layout.Column(
+            androidx.compose.ui.Modifier.background(androidx.compose.ui.graphics.Color(0xFF202428)).padding(8.dp),
+        ) {
+            com.moody.player.ui.player.AbBar(4_343_000, null, true, 4_350_000, {}, {}, {}, {}, {}, {})
+            androidx.compose.foundation.layout.Spacer(androidx.compose.ui.Modifier.size(12.dp))
+            com.moody.player.ui.player.AbBar(4_343_000, 4_534_000, true, 4_400_000, {}, {}, {}, {}, {}, {})
+            androidx.compose.foundation.layout.Spacer(androidx.compose.ui.Modifier.size(12.dp))
+            com.moody.player.ui.player.AbBar(4_343_000, 4_534_000, false, 4_400_000, {}, {}, {}, {}, {}, {})
+        }
+    }
     @Test fun discsDark() = bare("discs-dark", ThemeMode.DARK) { discs() }
     @Test fun discsLight() = bare("discs-light", ThemeMode.LIGHT) { discs() }
 

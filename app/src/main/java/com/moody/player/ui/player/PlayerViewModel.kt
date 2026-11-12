@@ -18,6 +18,8 @@ import com.moody.player.data.prefs.SettingsStore
 import com.moody.player.domain.Decoder
 import com.moody.player.domain.LoopMode
 import com.moody.player.domain.formatDuration
+import com.moody.player.domain.formatClock
+import com.moody.player.domain.abError
 import com.moody.player.domain.isWatched
 import com.moody.player.domain.resumePosition
 import com.moody.player.player.video.EngineEvent
@@ -129,7 +131,11 @@ class PlayerViewModel @Inject constructor(
                 statTickAt = if (s.playing) now else 0L
                 if (statPending >= 5_000 || (!s.playing && statPending > 0)) flushStats()
                 val (a, b) = _ab.value
-                if (a != null && b != null && s.positionMs >= b) engine.seekTo(a)
+                if (a != null && b != null && _abOn.value && !scrubbing && !abEditing && s.uri == abUri) {
+                    // After a jump back the player still reports old times for a moment: wait until it is
+                    // inside the loop again (or 1.5 s), so one pass never seeks twice.
+                    if (loopGuard.shouldJump(s.positionMs, a, b, android.os.SystemClock.elapsedRealtime())) loopSeek()
+                }
                 if (s.playing && System.currentTimeMillis() - lastSave > 5_000) {
                     lastSave = System.currentTimeMillis()
                     savePosition()
@@ -145,6 +151,8 @@ class PlayerViewModel @Inject constructor(
 
     fun open(i: Int, fromStart: Boolean = false, decoder: Decoder? = null) = viewModelScope.launch {
         val entry = queue.getOrNull(i) ?: return@launch
+        // A-B belongs to one video: a retry of the same one keeps it, another video starts without.
+        if (entry.uri != abUri) resetAb()
         dismissResume()
         flushStats()
         savePosition()
@@ -165,7 +173,6 @@ class PlayerViewModel @Inject constructor(
             if (f.speed != 1f) engine.setRate(f.speed)
             launch { delay(1200); if (f.audioTrack >= 0) engine.selectAudio(f.audioTrack); if (f.subTrack >= -1) engine.selectSub(f.subTrack) }
         }
-        _ab.value = null to null
         bookmarkJob?.cancel()
         _bookmarks.value = emptyList()
         if (!isPrivate(entry.uri)) bookmarkJob = launch {
@@ -212,7 +219,11 @@ class PlayerViewModel @Inject constructor(
 
 
     /** A-B toggle: on marks A at the current time (a Set B chip then appears); off clears the loop. */
-    fun toggleAb() { if (_ab.value.first != null) clearAb() else markA() }
+    /** The A-B shortcut: first tap sets A, the second sets B and starts the loop, the third clears it. */
+    fun toggleAb() {
+        val (a, b) = _ab.value
+        when { a == null -> markA(); b == null -> markB(); else -> clearAb() }
+    }
 
     fun cycleLoop() = setLoop(LoopMode.entries[(_loop.value.ordinal + 1) % LoopMode.entries.size])
 
@@ -271,9 +282,9 @@ class PlayerViewModel @Inject constructor(
     fun retry(decoder: Decoder? = null) = open(_index.value, decoder = decoder)
 
     /** Reopens the current video at the current position, e.g. after a decoder or subtitle-style change. */
-    fun reopenHere(decoder: Decoder? = null) = viewModelScope.launch {
+    fun reopenHere(decoder: Decoder? = null, at: Long? = null) = viewModelScope.launch {
         val entry = current ?: return@launch
-        val pos = engine.state.value.positionMs
+        val pos = at ?: engine.state.value.positionMs
         val s = settingsStore.settings.first()
         engine.claim(token)
         val studioFile = _studio.value != null
@@ -339,6 +350,13 @@ class PlayerViewModel @Inject constructor(
     }
 
     private fun onEnded() {
+        // B at the very end: the video ends before reaching it, so start the loop again from A.
+        val (a, b) = _ab.value
+        if (a != null && b != null && _abOn.value && current?.uri == abUri) {
+            loopGuard.seeked(android.os.SystemClock.elapsedRealtime())
+            reopenHere(at = a)
+            return
+        }
         viewModelScope.launch { savePosition(ended = true) }
         if (_sleepAt.value == -1L) { _sleepAt.value = null; return }
         when (_loop.value) {
@@ -394,9 +412,10 @@ class PlayerViewModel @Inject constructor(
         val end = b.endMs
         if (end != null && end > b.positionMs) {
             _ab.value = b.positionMs to end
+            abUri = current?.uri; _abOn.value = true
             _toasts.tryEmit("Repeating ${com.moody.player.domain.bookmarkLabel(b.positionMs, end)}")
         }
-        engine.seekTo(b.positionMs)
+        guardedSeek(b.positionMs)
         if (!engine.state.value.playing) engine.play()
     }
 
@@ -499,24 +518,119 @@ class PlayerViewModel @Inject constructor(
         _toasts.tryEmit(if (m == LoopMode.OFF) "Loop off" else "Loop: ${m.label.lowercase()}")
     }
 
+    // ---- A-B repeat ----
+
+    private val _abOn = MutableStateFlow(true)
+    /** False while the loop is paused: A and B stay, playback runs past B. */
+    val abOn: StateFlow<Boolean> = _abOn.asStateFlow()
+    private var abUri: Uri? = null
+    @Volatile private var scrubbing = false
+    @Volatile private var abEditing = false
+    private val loopGuard = com.moody.player.domain.LoopGuard()
+    private val _abEdit = MutableStateFlow<Boolean?>(null)
+    /** The A-B time editor is open: true for A, false for B. Kept here so it outlives the screen. */
+    val abEdit: StateFlow<Boolean?> = _abEdit.asStateFlow()
+    private var editFrom: Pair<Long, Boolean>? = null // position and playing when the editor opened
+    private var previewJob: kotlinx.coroutines.Job? = null
+
+    /** The seek bar is being dragged: the loop waits, so it doesn't fight the finger. */
+    fun setScrubbing(v: Boolean) { scrubbing = v }
+
+    private fun resetAb() {
+        _ab.value = null to null; _abOn.value = true; abUri = null; loopGuard.reset()
+        if (abEditing) { abEditing = false; _abEdit.value = null; editFrom = null; previewJob?.cancel() }
+    }
+
+    /** Seeks and tells the loop to ignore the old times still on their way, so it never seeks twice. */
+    private fun guardedSeek(ms: Long) {
+        loopGuard.seeked(android.os.SystemClock.elapsedRealtime())
+        engine.seekTo(ms)
+    }
+
+    /** The one place the loop jumps back to A. */
+    private fun loopSeek() { _ab.value.first?.let(::guardedSeek) }
+
     fun markA() {
-        val pos = engine.state.value.positionMs
-        _ab.value = pos to null
-        _toasts.tryEmit("A set at ${formatDuration(pos)}")
+        val st = engine.state.value
+        val pos = st.positionMs
+        abError(true, pos, null, null, st.durationMs)?.let { _toasts.tryEmit(it); return }
+        _ab.value = pos to null; abUri = current?.uri; _abOn.value = true; loopGuard.reset()
+        _toasts.tryEmit("A set at ${formatClock(pos)}. Tap again for B")
     }
 
     fun markB() {
         val a = _ab.value.first ?: return
-        val pos = engine.state.value.positionMs
-        if (pos <= a + 500) { _toasts.tryEmit("B must come after A"); return }
-        _ab.value = a to pos
-        _toasts.tryEmit("Repeating ${formatDuration(a)} to ${formatDuration(pos)}")
-        engine.seekTo(a)
+        val st = engine.state.value
+        val pos = st.positionMs
+        abError(false, pos, a, null, st.durationMs)?.let { _toasts.tryEmit(it); return }
+        _ab.value = a to pos; _abOn.value = true
+        _toasts.tryEmit("Repeating ${formatClock(a)} to ${formatClock(pos)}")
+        loopSeek()
     }
 
-    fun clearAb() { _ab.value = null to null; _toasts.tryEmit("A-B repeat off") }
+    fun clearAb() { resetAb(); _toasts.tryEmit("A-B repeat off") }
 
-    /** Jumps back to A (the mini bar's times are tappable). */
+    /** Pauses or resumes the loop; A and B stay. */
+    fun toggleAbOn() {
+        val (a, b) = _ab.value
+        if (a == null || b == null) return
+        val on = !_abOn.value
+        _abOn.value = on
+        _toasts.tryEmit(if (on) "A-B repeat on" else "A-B repeat paused")
+        if (on) { loopGuard.reset(); val p = engine.state.value.positionMs; if (p < a || p >= b) loopSeek() }
+    }
+
+    /** Opens the A or B editor: playback pauses and the loop waits until Save or Cancel. */
+    fun beginAbEdit(editingA: Boolean) {
+        if (abEditing) return
+        val st = engine.state.value
+        editFrom = st.positionMs to st.playing
+        abEditing = true
+        _abEdit.value = editingA
+        if (st.playing) engine.pause()
+    }
+
+    /** Where the video was when the editor opened ("Use current time"). */
+    fun abEditOrigin(): Long = editFrom?.first ?: engine.state.value.positionMs
+
+    /** Shows the frame at [ms] while editing; quick changes only seek once, to the last. */
+    fun previewAb(ms: Long) {
+        previewJob?.cancel()
+        previewJob = viewModelScope.launch { delay(150); engine.seekTo(ms) }
+    }
+
+    private fun endAbEdit(seek: Long?) {
+        previewJob?.cancel()
+        val from = editFrom
+        abEditing = false; _abEdit.value = null; editFrom = null
+        val (a, b) = _ab.value
+        when {
+            seek != null -> guardedSeek(seek)
+            a != null && b != null && _abOn.value && from != null && (from.first < a || from.first >= b) -> loopSeek()
+            from != null -> guardedSeek(from.first)
+        }
+        if (from?.second == true) engine.play()
+    }
+
+    fun cancelAbEdit() { if (abEditing) endAbEdit(null) }
+
+    /** Leaves the editor at A. */
+    fun abEditGoToA() { val a = _ab.value.first ?: return; endAbEdit(a) }
+
+    /** Saves a new A or B. Gives the reason when it can't be used (the editor stays open). */
+    fun saveAb(editingA: Boolean, ms: Long): String? {
+        val (a, b) = _ab.value
+        abError(editingA, ms, a, b, engine.state.value.durationMs)?.let { return it }
+        _ab.value = if (editingA) ms to b else (a ?: return "Set A first") to ms
+        abUri = current?.uri
+        if (!editingA || b != null) _abOn.value = true
+        endAbEdit(null)
+        val (na, nb) = _ab.value
+        _toasts.tryEmit(if (nb != null) "Repeating ${formatClock(na!!)} to ${formatClock(nb)}" else "A set at ${formatClock(na!!)}")
+        return null
+    }
+
+    /** Jumps back to A. */
     fun seekToA() { _ab.value.first?.let { dismissResume(); engine.seekTo(it) } }
 
     fun sleepIn(minutes: Int?) {

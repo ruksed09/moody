@@ -262,7 +262,6 @@ fun SettingsSectionScreen(
                         }
                     }
                 }
-                item { Toggle("Seek bar while locked", "A thin progress line stays visible when the controls are locked. In the player, hold the lock button to change this.", s.seekBarWhenLocked, MoodyIcons.Lock) { v -> vm.update { it.copy(seekBarWhenLocked = v) } } }
                 item { Label("Leaving the player") }
                 item { Toggle("Picture-in-picture on Home", "Going Home while a video plays shrinks it to a small window.", s.autoPip, MoodyIcons.Pip) { v -> vm.update { it.copy(autoPip = v) } } }
                 item { Toggle("Keep playing in the background", "Sound continues when picture-in-picture is off or unavailable.", s.backgroundPlay, MoodyIcons.Audio) { v -> vm.update { it.copy(backgroundPlay = v) } } }
