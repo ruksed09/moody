@@ -179,6 +179,8 @@ class VlcEngine @Inject constructor(@ApplicationContext private val context: Con
         layout = view
         applyAspect(_state.value.aspect)
         if (pendingPlay) { pendingPlay = false; player?.play() }
+        // A paused video handed to a new screen (background play, then back) would stay black until the next frame.
+        else if (sawTime) main.postDelayed({ if (sawTime) player?.let { if (!it.isPlaying && it.length > 0) it.time = it.time } }, 150)
     }
 
     fun detach(view: VLCVideoLayout) {

@@ -301,7 +301,7 @@ private fun MoreMenu(vm: PlayerViewModel, st: PlayerState, host: PlayerHost, go:
 
     GroupLabel("Audio & display")
     SheetRow(MoodyIcons.Speed, "Playback speed", speedValue(st.rate)) { go(PlayerMenu.SPEED) }
-    SheetRow(MoodyIcons.Audio, "Audio track", audioValue) { go(PlayerMenu.AUDIO) }
+    SheetRow(MoodyIcons.AudioTrack, "Audio track", audioValue) { go(PlayerMenu.AUDIO) }
     SheetRow(MoodyIcons.Cc, "Subtitles", subValue) { go(PlayerMenu.SUBTITLES) }
     SheetRow(MoodyIcons.Equalizer, "Equalizer") { go(PlayerMenu.EQUALIZER) }
     SectionDivider()
@@ -318,6 +318,7 @@ private fun MoreMenu(vm: PlayerViewModel, st: PlayerState, host: PlayerHost, go:
     SheetRow(MoodyIcons.Aspect, "Aspect ratio", st.aspect.label) { go(PlayerMenu.ASPECT) }
     SheetRow(MoodyIcons.Rotate, "Rotate screen") { host.onRotate(); close() }
     if (host.onPip != null) SheetRow(MoodyIcons.Pip, "Picture-in-picture", switch = false) { close(); host.onPip.invoke() }
+    if (!vm.isVault) SheetRow(MoodyIcons.Headphones, "Play in background") { close(); host.onBackground() }
     SheetRow(MoodyIcons.Decoder, "Decoder", decoderLabel(st.decoder)) { go(PlayerMenu.DECODER) }
     SectionDivider()
     GroupLabel("Customization")

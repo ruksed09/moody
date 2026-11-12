@@ -131,7 +131,7 @@ private fun Preview(selected: List<PlayerShortcut>) {
             Icon(MoodyIcons.ArrowBack, null, Modifier.size(18.dp), tint = OnVideo.text)
             Spacer(Modifier.width(12.dp))
             Text("My video.mp4", style = MoodyTheme.type.label, color = OnVideo.text, modifier = Modifier.weight(1f))
-            listOf(MoodyIcons.Audio, MoodyIcons.Cc, MoodyIcons.More).forEach {
+            listOf(MoodyIcons.Headphones, MoodyIcons.AudioTrack, MoodyIcons.Cc, MoodyIcons.More).forEach {
                 Icon(it, null, Modifier.padding(horizontal = 8.dp).size(16.dp), tint = OnVideo.text)
             }
         }

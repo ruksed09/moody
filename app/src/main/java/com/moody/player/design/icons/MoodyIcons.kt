@@ -59,6 +59,8 @@ object MoodyIcons {
     }
     val Subtitles by lazy { icon("subtitles", "M5 5h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z", "M7 15h4M15 15h2M7 11h2M13 11h4") }
     val Audio by lazy { icon("audio", "M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3") }
+    /** Audio track picker: sound-wave bars. Not a speaker (that is volume) and no knobs (that is the equalizer). */
+    val AudioTrack by lazy { icon("audio-track", "M2 10v3", "M6 6v11", "M10 3v18", "M14 8v7", "M18 5v13", "M22 10v3") }
     val Settings by lazy { icon("settings", GEAR, "M12 9a3 3 0 1 0 0 6a3 3 0 1 0 0-6z") }
     val Pip by lazy {
         icon("pip", "M4.5 4.5h15a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2h-15a2 2 0 0 1-2-2v-11a2 2 0 0 1 2-2z",

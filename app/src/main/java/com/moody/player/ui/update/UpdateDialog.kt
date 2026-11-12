@@ -169,41 +169,29 @@ fun UpdateModal(
 ) {
     val c = MoodyTheme.colors
     val t = MoodyTheme.type
-    Box(modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
-        Column(Modifier.widthIn(max = 380.dp).fillMaxWidth().background(c.surface, Radii.xl).border(1.dp, c.line, Radii.xl).padding(20.dp)) {
+    Box(modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 24.dp), contentAlignment = Alignment.Center) {
+        Column(Modifier.widthIn(max = 360.dp).fillMaxWidth().background(c.surface, Radii.xl).border(1.dp, c.line, Radii.xl).padding(18.dp)) {
+            val title = when {
+                state is UpdateState.Downloading -> "Downloading update"
+                state is UpdateState.Ready -> "Ready to install"
+                info.required -> "Update needed"
+                else -> "Update available"
+            }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(44.dp).background(c.accentWash, Radii.lg), contentAlignment = Alignment.Center) {
-                    Icon(MoodyIcons.Download, null, Modifier.size(22.dp), tint = c.accent)
-                }
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    val (title, line) = when {
-                        state is UpdateState.Downloading -> "Downloading update" to "Moody ${info.version} is on its way."
-                        state is UpdateState.Ready -> "Ready to install" to "Moody ${info.version} has been downloaded."
-                        info.required -> "Update needed" to "This version is needed to keep using Moody."
-                        else -> "Update available" to "A new Moody is ready to download."
-                    }
-                    Text(title, style = t.title, color = c.text, modifier = Modifier.semantics { heading() })
-                    Spacer(Modifier.height(2.dp))
-                    Text(line, style = t.caption, color = c.text2)
-                }
+                Icon(MoodyIcons.Download, null, Modifier.size(20.dp), tint = c.accent)
+                Spacer(Modifier.width(10.dp))
+                Text(title, style = t.title, color = c.text, modifier = Modifier.semantics { heading() })
             }
-            Spacer(Modifier.height(16.dp))
-            Row(Modifier.fillMaxWidth().background(c.raised, Radii.md).padding(horizontal = 12.dp, vertical = 10.dp)) {
-                Fact("Version", "${BuildConfig.VERSION_NAME} \u2192 ${info.version}", Modifier.weight(1f))
-                if (info.apkSize > 0) {
-                    Spacer(Modifier.width(12.dp))
-                    Fact("Size", formatBytes(info.apkSize))
-                }
-            }
+            Spacer(Modifier.height(6.dp))
+            // One quiet line: from, to and the download size.
+            val meta = "${BuildConfig.VERSION_NAME} \u2192 ${info.version}" + if (info.apkSize > 0) "  \u00b7  ${formatBytes(info.apkSize)}" else ""
+            Text(meta, style = t.monoSmall, color = c.text3)
             if (info.notes.isNotBlank()) {
-                Spacer(Modifier.height(16.dp))
-                Text("What\u2019s new", style = t.section, color = c.text2)
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(14.dp))
                 // Capped, and it gives way first when the screen is short (a phone on its side).
-                Column(Modifier.weight(1f, fill = false).heightIn(max = 180.dp).verticalScroll(rememberScrollState())) { Notes(info.notes) }
+                Column(Modifier.weight(1f, fill = false).heightIn(max = 132.dp).verticalScroll(rememberScrollState())) { Notes(info.notes) }
             }
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(18.dp))
             when (state) {
                 is UpdateState.Downloading -> {
                     ReelLine(if (state.total > 0) state.done / state.total.toFloat() else null, height = 3.dp)
@@ -223,26 +211,42 @@ fun UpdateModal(
                     }
                     PrimaryButton("Install", onInstall, Modifier.fillMaxWidth())
                 }
-                else -> {
-                    PrimaryButton("Update now", onUpdate, Modifier.fillMaxWidth(), icon = MoodyIcons.Download)
-                    if (canDismiss) {
-                        Spacer(Modifier.height(8.dp))
-                        SecondaryButton("Don\u2019t show again", onDontShowAgain, Modifier.fillMaxWidth())
-                    }
-                }
+                else -> if (canDismiss) ChoiceButtons(onDontShowAgain, onUpdate) else PrimaryButton("Update now", onUpdate, Modifier.fillMaxWidth())
             }
         }
     }
 }
 
-/** A small label over its value: "Version" over "1.2.0 to 1.3.0". */
+/**
+ * "Don't show again" and "Update now" in one row: equal widths when both labels fit, else the quiet one takes the
+ * width its label needs and "Update now" the rest. Only when even that can't fit (very large text) do they stack.
+ */
 @Composable
-private fun Fact(label: String, value: String, modifier: Modifier = Modifier) {
-    val c = MoodyTheme.colors
-    Column(modifier) {
-        Text(label, style = MoodyTheme.type.caption, color = c.text3)
-        Spacer(Modifier.height(2.dp))
-        Text(value, style = MoodyTheme.type.mono, color = c.text)
+private fun ChoiceButtons(onDontShowAgain: () -> Unit, onUpdate: () -> Unit) {
+    val t = MoodyTheme.type
+    val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val quiet = "Don\u2019t show again"
+    val main = "Update now"
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val gap = 8.dp
+        val pad = 32.dp // a button's own side padding, both sides
+        val quietW = with(density) { measurer.measure(quiet, t.label, maxLines = 1).size.width.toDp() } + pad + 2.dp
+        val mainW = with(density) { measurer.measure(main, t.bodyStrong, maxLines = 1).size.width.toDp() } + pad + 2.dp
+        when {
+            maxOf(quietW, mainW) * 2 + gap <= maxWidth -> Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
+                SecondaryButton(quiet, onDontShowAgain, Modifier.weight(1f))
+                PrimaryButton(main, onUpdate, Modifier.weight(1f))
+            }
+            quietW + mainW + gap <= maxWidth -> Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
+                SecondaryButton(quiet, onDontShowAgain, Modifier.width(quietW))
+                PrimaryButton(main, onUpdate, Modifier.weight(1f))
+            }
+            else -> Column(verticalArrangement = Arrangement.spacedBy(gap)) {
+                PrimaryButton(main, onUpdate, Modifier.fillMaxWidth())
+                SecondaryButton(quiet, onDontShowAgain, Modifier.fillMaxWidth())
+            }
+        }
     }
 }
 
@@ -250,12 +254,12 @@ private fun Fact(label: String, value: String, modifier: Modifier = Modifier) {
 @Composable
 private fun Notes(md: String) {
     val c = MoodyTheme.colors
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         md.lines().map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") }.forEach { line ->
             val bullet = line.startsWith("- ") || line.startsWith("* ")
             Row {
-                if (bullet) Text("•", style = MoodyTheme.type.body, color = c.accent, modifier = Modifier.width(16.dp))
-                Text(bold(if (bullet) line.drop(2) else line), style = MoodyTheme.type.body, color = c.text2)
+                if (bullet) Text("•", style = MoodyTheme.type.caption, color = c.text3, modifier = Modifier.width(14.dp))
+                Text(bold(if (bullet) line.drop(2) else line), style = MoodyTheme.type.caption, color = c.text2)
             }
         }
     }

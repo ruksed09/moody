@@ -109,7 +109,7 @@ class ScreenshotTest {
         song(3, "Avril 14th", "Aphex Twin", "Drukqs", 3, 125_000), song(4, "Svefn-g-englar", "Sigur Rós", "Ágætis byrjun", 4, 604_000),
         song(5, "Teardrop", "Massive Attack", "Mezzanine", 5, 330_000), song(6, "Re: Stacks", "Bon Iver", "For Emma, Forever Ago", 6, 401_000),
     )
-    private val musicNav = com.moody.player.ui.music.MusicNav({}, {}, {}, {}, {}, {})
+    private val musicNav = com.moody.player.ui.music.MusicNav({ _, _ -> }, {}, {}, {}, {}, {})
     private fun musicState(): com.moody.player.ui.music.MusicUiState {
         val (albums, artists, folders) = com.moody.player.ui.music.groupMusic(songs)
         return com.moody.player.ui.music.MusicUiState(false, songs, albums, artists, folders, emptyList(), songs.take(2), songs.sumOf { it.durationMs })
@@ -232,6 +232,24 @@ class ScreenshotTest {
             com.moody.player.ui.player.AbBar(4_343_000, 4_534_000, false, 4_400_000, {}, {}, {}, {}, {}, {})
         }
     }
+    /** The player's top bar with Play in background and the audio-track icon, then the icons it must not be confused with. */
+    @Composable private fun playerTopBar() {
+        val st = com.moody.player.player.video.PlayerState(videoWidth = 1920, videoHeight = 1080, playing = true, buffering = false)
+        val icons = com.moody.player.design.icons.MoodyIcons
+        Column(androidx.compose.ui.Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color(0xFF202428))) {
+            com.moody.player.ui.player.TitleBar("Holiday in the mountains, day 3 (final cut).mp4", st, {}, {}, {}, {}, {})
+            // A vault video: no Play in background button.
+            com.moody.player.ui.player.TitleBar("Holiday in the mountains, day 3 (final cut).mp4", st, {}, null, {}, {}, {})
+            androidx.compose.foundation.layout.Row(androidx.compose.ui.Modifier.padding(16.dp), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(20.dp)) {
+                listOf(icons.Headphones, icons.AudioTrack, icons.VolumeHigh, icons.VolumeLow, icons.VolumeMute, icons.Equalizer, icons.Chart, icons.Pulse).forEach {
+                    androidx.compose.material3.Icon(it, null, androidx.compose.ui.Modifier.size(20.dp), tint = androidx.compose.ui.graphics.Color.White)
+                }
+            }
+        }
+    }
+    @Test fun playerTopBarDark() = bare("player-top-bar-dark", ThemeMode.DARK) { playerTopBar() }
+    @Config(qualifiers = "w320dp-h640dp-xhdpi")
+    @Test fun playerTopBar320() = bare("player-top-bar-320", ThemeMode.DARK) { playerTopBar() }
     @Test fun discsDark() = bare("discs-dark", ThemeMode.DARK) { discs() }
     @Test fun discsLight() = bare("discs-light", ThemeMode.LIGHT) { discs() }
 

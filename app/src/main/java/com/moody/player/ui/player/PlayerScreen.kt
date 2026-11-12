@@ -76,6 +76,8 @@ import org.videolan.libvlc.util.VLCVideoLayout
 data class PlayerHost(
     val onBack: () -> Unit,
     val onPip: (() -> Unit)?,
+    /** Keep the sound, drop the picture, leave the screen. Never offered for vault videos. */
+    val onBackground: () -> Unit,
     val onRotate: () -> Unit,
     val orientationLabel: String,
 )
@@ -210,6 +212,7 @@ fun PlayerScreen(vm: PlayerViewModel, host: PlayerHost, inPip: Boolean) {
                     Column {
                     TitleBar(
                         title = vm.current?.title.orEmpty(), st = st, onBack = host.onBack,
+                        onBackground = if (vm.isVault) null else ({ host.onBackground() }),
                         onAudio = { tracks = TrackKind.AUDIO; poke++ },
                         onCc = { tracks = TrackKind.SUBS; poke++ },
                         onMore = { menu = PlayerMenu.MORE; poke++ },
@@ -318,22 +321,28 @@ fun PlayerScreen(vm: PlayerViewModel, host: PlayerHost, inPip: Boolean) {
     }
 }
 
-/** Back, filename, resolution, Audio, CC, overflow. The filename gives way first; the buttons never move. */
+/**
+ * Back, filename, resolution, Play in background, Audio, CC, overflow. The filename gives way first; the buttons
+ * never move. [onBackground] is null for vault videos, which never play in the background. With that fourth button
+ * on a screen under 340 dp wide, the resolution tag steps aside so the filename keeps the room it had before.
+ */
 @Composable
-private fun TitleBar(title: String, st: PlayerState, onBack: () -> Unit, onAudio: () -> Unit, onCc: () -> Unit, onMore: () -> Unit) {
+internal fun TitleBar(title: String, st: PlayerState, onBack: () -> Unit, onBackground: (() -> Unit)?, onAudio: () -> Unit, onCc: () -> Unit, onMore: () -> Unit) {
     Row(Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         VideoIcon(MoodyIcons.ArrowBack, "Back", onBack, size = 22.dp)
         androidx.compose.foundation.layout.BoxWithConstraints(Modifier.weight(1f).padding(horizontal = 4.dp)) {
             val maxChars = (maxWidth.value / 8.2f).toInt().coerceAtLeast(8)
             Text(middleEllipsize(title, maxChars), style = MoodyTheme.type.heading, color = OnVideo.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        resolution(st)?.let {
+        val roomForResolution = onBackground == null || androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp >= 340
+        if (roomForResolution) resolution(st)?.let {
             Text(
                 it, style = MoodyTheme.type.monoSmall, color = OnVideo.text.copy(alpha = 0.88f),
                 modifier = Modifier.padding(end = 2.dp).border(1.dp, OnVideo.text.copy(alpha = 0.28f), Radii.sm).padding(horizontal = 5.dp, vertical = 2.dp),
             )
         }
-        VideoIcon(MoodyIcons.Audio, "Audio tracks", onAudio, size = 20.dp)
+        if (onBackground != null) VideoIcon(MoodyIcons.Headphones, "Play in background", onBackground, size = 20.dp)
+        VideoIcon(MoodyIcons.AudioTrack, "Audio tracks", onAudio, size = 20.dp)
         VideoIcon(MoodyIcons.Cc, "Subtitles", onCc, size = 20.dp)
         VideoIcon(MoodyIcons.More, "More options", onMore, size = 20.dp)
     }

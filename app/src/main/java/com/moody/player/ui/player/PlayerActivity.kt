@@ -62,6 +62,11 @@ class PlayerActivity : ComponentActivity() {
     private var userOrientation: Int? = null
     private var sizedFor: Uri? = null
     private var orientationBeforePip: Int? = null
+    /**
+     * The Play in background button was used and this screen has not been seen since: it leaves to background
+     * sound (never picture-in-picture), and onStop keeps the video playing whatever the Background play setting says.
+     */
+    private var backgroundRequested = false
 
     private val pipReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -76,6 +81,7 @@ class PlayerActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         adoptViewIntent(intent)
+        adoptBackgroundSession(intent)
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -101,6 +107,7 @@ class PlayerActivity : ComponentActivity() {
                         PlayerHost(
                             onBack = { finish() },
                             onPip = if (supportsPip()) ({ enterPip() }) else null,
+                            onBackground = ::playInBackground,
                             onRotate = ::rotate,
                             orientationLabel = "",
                         ),
@@ -139,6 +146,21 @@ class PlayerActivity : ComponentActivity() {
             i.putParcelableArrayListExtra(PlayerViewModel.EXTRA_QUEUE, arrayListOf(i.data!!))
             i.putExtra(PlayerViewModel.EXTRA_INDEX, 0)
         }
+    }
+
+    /**
+     * Opened without a queue (the background-play notification) after the screen that started the video was
+     * closed: take the queue the service is playing from. With no service running the queue stays empty and
+     * the screen closes, as before.
+     */
+    private fun adoptBackgroundSession(i: Intent) {
+        if (i.hasExtra(PlayerViewModel.EXTRA_QUEUE) || !VideoBackgroundService.running) return
+        val s = VideoBackgroundState.session?.takeIf { it.queue.isNotEmpty() } ?: return
+        i.putParcelableArrayListExtra(PlayerViewModel.EXTRA_QUEUE, ArrayList(s.queue.map { it.uri }))
+        i.putStringArrayListExtra(PlayerViewModel.EXTRA_TITLES, ArrayList(s.queue.map { it.title }))
+        i.putExtra(PlayerViewModel.EXTRA_INDEX, s.index)
+        i.putExtra(PlayerViewModel.EXTRA_VAULT, false)
+        i.putExtra(PlayerViewModel.EXTRA_REJOIN, true)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -202,7 +224,7 @@ class PlayerActivity : ComponentActivity() {
                 action(PIP_TOGGLE, if (st.playing) R.drawable.ic_pip_pause else R.drawable.ic_pip_play, if (st.playing) "Pause" else "Play"),
                 action(PIP_FWD, R.drawable.ic_pip_forward, "Forward 10 seconds"),
             ))
-        if (Build.VERSION.SDK_INT >= 31) b.setAutoEnterEnabled(vm.settings.value.autoPip && st.playing && !vm.isVault).setSeamlessResizeEnabled(true)
+        if (Build.VERSION.SDK_INT >= 31) b.setAutoEnterEnabled(vm.settings.value.autoPip && st.playing && !vm.isVault && !backgroundRequested).setSeamlessResizeEnabled(true)
         return b.build()
     }
 
@@ -213,7 +235,38 @@ class PlayerActivity : ComponentActivity() {
         runCatching { enterPictureInPictureMode(pipParams()) }
     }
 
-    private fun shouldAutoPip() = supportsPip() && vm.settings.value.autoPip && vm.engine.state.value.playing && !vm.isVault
+    private fun shouldAutoPip() = supportsPip() && vm.settings.value.autoPip && vm.engine.state.value.playing && !vm.isVault && !backgroundRequested
+
+    /**
+     * The Play in background button: the sound goes on under the same service and notification as the Background
+     * play setting, and Moody leaves the screen. This screen is only stopped, not closed, so the sleep timer, A-B
+     * repeat, stats and the queue keep working, and the notification brings it back with the picture. A paused
+     * video starts playing: that is what was asked for. Vault videos never play in the background.
+     */
+    private fun playInBackground() {
+        if (vm.isVault) { vm.toast("Background play is off for vault videos"); return }
+        val st = vm.engine.state.value
+        if (st.uri == null || st.error != null) { vm.toast("Nothing to play in the background yet"); return }
+        backgroundRequested = true
+        // Before leaving: "Picture-in-picture on Home" must not turn this into a small window.
+        updatePip()
+        if (!st.playing) {
+            coordinator.videoStarted()
+            vm.dismissResume()
+            vm.engine.play()
+        }
+        // Started here, while this screen is still in front, so Android cannot refuse the foreground service.
+        VideoBackgroundState.session = BackgroundSession(vm.queue, vm.index.value)
+        val started = runCatching { VideoBackgroundService.start(this, vm.current?.title.orEmpty()) }.isSuccess
+        if (started && moveTaskToBack(true)) return
+        // Still on screen: back to normal. The service is given a moment to finish starting before it is stopped.
+        backgroundRequested = false
+        updatePip()
+        vm.toast("Couldn't switch to background play")
+        if (started) window.decorView.postDelayed({
+            if (!backgroundRequested && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) VideoBackgroundService.stop(this)
+        }, 1_000)
+    }
 
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
@@ -229,6 +282,8 @@ class PlayerActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        // Seen again: the next Home press follows the settings (picture-in-picture, Background play) as usual.
+        backgroundRequested = false
         updatePip()
         if (VideoBackgroundService.running) VideoBackgroundService.stop(this)
     }
@@ -264,8 +319,12 @@ class PlayerActivity : ComponentActivity() {
         if (isFinishing || isInPictureInPictureMode) return
         vm.engine.suspendViews()
         val st = vm.engine.state.value
-        if (vm.settings.value.backgroundPlay && st.playing && !vm.isVault) {
+        if (backgroundRequested && !vm.isVault) {
+            // The Play in background button already started the service; it works with the setting off, and a video
+            // it has just un-paused may not report "playing" yet. Nothing to start, and nothing to pause.
+        } else if (vm.settings.value.backgroundPlay && st.playing && !vm.isVault) {
             // Android 12+ can refuse a foreground start once the app is in the background; pause rather than crash.
+            VideoBackgroundState.session = BackgroundSession(vm.queue, vm.index.value)
             runCatching { VideoBackgroundService.start(this, vm.current?.title.orEmpty()) }.onFailure { vm.engine.pause() }
         } else {
             vm.engine.pause()

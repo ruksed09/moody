@@ -67,7 +67,15 @@ class PlayerViewModel @Inject constructor(
 
     var queue: List<QueueEntry> by androidx.compose.runtime.mutableStateOf(uris.mapIndexed { i, u -> QueueEntry(u, titles.getOrNull(i) ?: titleOf(u)) })
         private set
-    private val _index = MutableStateFlow((handle.get<Int>(EXTRA_INDEX) ?: 0).coerceIn(0, (queue.size - 1).coerceAtLeast(0)))
+    // Back from the background-play notification: the engine knows best which video is on (the queue may have
+    // moved on since the index was stored). A video the user picked keeps the index it came with.
+    private val _index = MutableStateFlow(
+        com.moody.player.domain.resumeIndex(
+            uris,
+            engine.state.value.uri.takeIf { VideoBackgroundState.active && handle.get<Boolean>(EXTRA_REJOIN) == true },
+            handle.get<Int>(EXTRA_INDEX) ?: 0,
+        ),
+    )
     val index: StateFlow<Int> = _index.asStateFlow()
 
     val settings: StateFlow<Settings> = settingsStore.settings.stateIn(viewModelScope, SharingStarted.Eagerly, Settings())
@@ -156,14 +164,23 @@ class PlayerViewModel @Inject constructor(
                 }
             }
         }
-        if (queue.isNotEmpty()) open(_index.value)
+        if (queue.isNotEmpty()) {
+            // Opened from the background-play notification after the old screen was closed: the engine is already
+            // on this video, so join it where it is instead of opening the file again. Decided (and claimed) right
+            // here, before anything suspends: the service stops as soon as this screen is in front.
+            val st = engine.state.value
+            val join = VideoBackgroundState.active && st.uri == queue[_index.value].uri && !st.ended && st.error == null
+            if (join) engine.claim(token)
+            open(_index.value, join = join)
+        }
     }
 
     val current: QueueEntry? get() = queue.getOrNull(_index.value)
     val hasNext: Boolean get() = _index.value < queue.lastIndex
     val hasPrev: Boolean get() = _index.value > 0
 
-    fun open(i: Int, fromStart: Boolean = false, decoder: Decoder? = null) = viewModelScope.launch {
+    /** [join]: the engine already plays this video (background play); keep it running, only set this screen up. */
+    fun open(i: Int, fromStart: Boolean = false, decoder: Decoder? = null, join: Boolean = false) = viewModelScope.launch {
         val entry = queue.getOrNull(i) ?: return@launch
         // A-B belongs to one video: a retry of the same one keeps it, another video starts without.
         if (entry.uri != abUri) resetAb()
@@ -172,17 +189,22 @@ class PlayerViewModel @Inject constructor(
         savePosition()
         _index.value = i
         val s = settingsStore.settings.first()
-        val saved = if (isVault || fromStart || !s.resume) null else positions.get(entry.uri.toString())
+        val saved = if (join || isVault || fromStart || !s.resume) null else positions.get(entry.uri.toString())
         // Smart resume steps back a few seconds, so the line that was cut off plays again.
         val start = saved?.let { com.moody.player.domain.smartResume(resumePosition(it.positionMs, it.durationMs), s.smartResumeSec) } ?: 0L
-        val perFile = if (s.perFileSettings && !isVault) fileSettings.get(entry.uri.toString()) else null
+        val perFile = if (!join && s.perFileSettings && !isVault) fileSettings.get(entry.uri.toString()) else null
         engine.claim(token)
         // A matching subtitle file next to the video: Studio draws it when it can read it, else libVLC does.
         val side = sidecarSubtitle(entry.uri)
         val doc = if (s.subStudio && side != null) loadSubtitle(side) else null
         _studio.value = doc
-        _studioOn.value = doc != null
-        engine.open(entry.uri, start, decoder ?: s.decoder, SubStyle(s.subSize, s.subBg, s.subColor), if (doc != null) null else side, noAutoSubs = doc != null)
+        if (join) {
+            // Studio draws its file again unless a track inside the video is the one showing.
+            _studioOn.value = doc != null && engine.state.value.selectedSub == -1
+        } else {
+            _studioOn.value = doc != null
+            engine.open(entry.uri, start, decoder ?: s.decoder, SubStyle(s.subSize, s.subBg, s.subColor), if (doc != null) null else side, noAutoSubs = doc != null)
+        }
         perFile?.let { f ->
             if (f.speed != 1f) engine.setRate(f.speed)
             launch { delay(1200); if (f.audioTrack >= 0) engine.selectAudio(f.audioTrack); if (f.subTrack >= -1) engine.selectSub(f.subTrack) }
@@ -710,10 +732,21 @@ class PlayerViewModel @Inject constructor(
         const val EXTRA_INDEX = "index"
         const val EXTRA_VAULT = "vault"
         const val EXTRA_TITLES = "titles"
+        /** The queue was taken over from the background service, not chosen by the user. */
+        const val EXTRA_REJOIN = "rejoin"
     }
 }
 
 /** Set by the background service while it owns playback. */
 object VideoBackgroundState {
     @Volatile var active: Boolean = false
+
+    /**
+     * The queue the player screen had when it handed playback to the service, so the notification can bring the
+     * video back after that screen was closed. Memory only, never written anywhere; vault videos don't play in the
+     * background, so none get here. Only meaningful while the service runs.
+     */
+    @Volatile var session: BackgroundSession? = null
 }
+
+class BackgroundSession(val queue: List<QueueEntry>, val index: Int)

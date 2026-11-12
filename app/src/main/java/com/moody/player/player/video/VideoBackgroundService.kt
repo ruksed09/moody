@@ -22,6 +22,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -60,8 +61,10 @@ class VideoBackgroundService : Service() {
         }
         if (watch == null) {
             watch = scope.launch {
-                engine.state.map { it.playing to it.ended }.distinctUntilChanged().collect { (playing, ended) ->
-                    if (ended) { stopSelf(); return@collect }
+                engine.state.map { it.playing to it.ended }.distinctUntilChanged().collectLatest { (playing, ended) ->
+                    // At the end, wait a moment: loop, shuffle or the next video in the queue start right away and
+                    // cancel this (collectLatest), so background play carries on. Only a real stop ends the service.
+                    if (ended) { kotlinx.coroutines.delay(1_500); if (engine.state.value.ended) stopSelf(); return@collectLatest }
                     getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification(playing))
                 }
             }
