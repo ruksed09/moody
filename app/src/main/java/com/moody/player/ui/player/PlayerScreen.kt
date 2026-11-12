@@ -41,6 +41,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -196,7 +197,7 @@ fun PlayerScreen(vm: PlayerViewModel, host: PlayerHost, inPip: Boolean) {
                         onCc = { tracks = TrackKind.SUBS; poke++ },
                         onMore = { menu = PlayerMenu.MORE; poke++ },
                     )
-                    ShortcutRow(vm, st, settings.playerShortcuts, ab, loop, shuffle, host.onRotate, onTranscript = {
+                    ShortcutRow(vm, st, settings.playerShortcuts, settings.shortcutsExpanded, ab, loop, shuffle, host.onRotate, onTranscript = {
                         if (vm.studio.value != null) transcript = true else vm.toast("Load a subtitle file to see its transcript")
                     }) { poke++ }
                     }
@@ -310,17 +311,26 @@ private fun resolution(st: PlayerState): String? {
     }
 }
 
-/** The user's chosen shortcuts, small and in one row under the title bar (MX style). Never the six fixed controls. */
+/** Shortcuts shown before the expand arrow. */
+private const val SHORTCUTS_SHOWN = 3
+
+/**
+ * The user's chosen shortcuts, small and in one row under the title bar (MX style). Never the six fixed controls.
+ * Up to three show directly; with more, the first three show and an arrow slides the rest open in the same row.
+ * Open or closed is a setting, so it stays across videos and player restarts.
+ */
 @Composable
 private fun ShortcutRow(
-    vm: PlayerViewModel, st: PlayerState, shortcuts: List<com.moody.player.domain.PlayerShortcut>,
+    vm: PlayerViewModel, st: PlayerState, shortcuts: List<com.moody.player.domain.PlayerShortcut>, expanded: Boolean,
     ab: Pair<Long?, Long?>, loop: com.moody.player.domain.LoopMode, shuffle: Boolean, onRotate: () -> Unit, onTranscript: () -> Unit, onUse: () -> Unit,
 ) {
     if (shortcuts.isEmpty()) return
     val accent = MoodyTheme.colors.accent
     val idle = OnVideo.text.copy(alpha = 0.9f)
-    Row(Modifier.padding(start = 8.dp).horizontalScroll(androidx.compose.foundation.rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
-        shortcuts.forEach { sc ->
+    val first = shortcuts.take(SHORTCUTS_SHOWN)
+    val rest = shortcuts.drop(SHORTCUTS_SHOWN)
+    @Composable
+    fun Button(sc: com.moody.player.domain.PlayerShortcut) {
             val (icon, label, active, action) = when (sc) {
                 com.moody.player.domain.PlayerShortcut.LOOP -> Quad(
                     if (loop == com.moody.player.domain.LoopMode.ONE) MoodyIcons.RepeatOne else MoodyIcons.Repeat,
@@ -338,6 +348,28 @@ private fun ShortcutRow(
                 Modifier.size(40.dp).clip(CircleShape).clickable(role = Role.Button) { action(); onUse() }.semantics { contentDescription = label },
                 contentAlignment = Alignment.Center,
             ) { Icon(icon, null, Modifier.size(18.dp), tint = if (active) accent else idle) }
+    }
+    Row(Modifier.padding(start = 8.dp).horizontalScroll(androidx.compose.foundation.rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+        first.forEach { Button(it) }
+        if (rest.isNotEmpty()) {
+            AnimatedVisibility(
+                expanded,
+                enter = androidx.compose.animation.expandHorizontally(com.moody.player.design.components.Motion.base(), expandFrom = Alignment.Start) +
+                    androidx.compose.animation.fadeIn(com.moody.player.design.components.Motion.base()),
+                exit = androidx.compose.animation.shrinkHorizontally(com.moody.player.design.components.Motion.base(), shrinkTowards = Alignment.Start) +
+                    androidx.compose.animation.fadeOut(com.moody.player.design.components.Motion.fast()),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) { rest.forEach { Button(it) } }
+            }
+            val turn by androidx.compose.animation.core.animateFloatAsState(if (expanded) 180f else 0f, com.moody.player.design.components.Motion.base(), label = "shortcuts-arrow")
+            Box(
+                Modifier.size(40.dp).clip(CircleShape)
+                    .clickable(role = Role.Button, onClickLabel = if (expanded) "Show fewer shortcuts" else "Show all shortcuts") {
+                        vm.updateSubLook { it.copy(shortcutsExpanded = !expanded) }; onUse()
+                    }
+                    .semantics { contentDescription = if (expanded) "Fewer shortcuts" else "${rest.size} more shortcuts" },
+                contentAlignment = Alignment.Center,
+            ) { Icon(MoodyIcons.ChevronRight, null, Modifier.size(18.dp).graphicsLayer { rotationZ = turn }, tint = idle) }
         }
     }
 }

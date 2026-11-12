@@ -50,6 +50,8 @@ data class Settings(
     /** Bookmarks show on the video seek bar, and double-tap seeking offers a jump to one. */
     val showBookmarks: Boolean = true,
     val playerShortcuts: List<com.moody.player.domain.PlayerShortcut> = com.moody.player.domain.DEFAULT_SHORTCUTS,
+    /** With more than three shortcuts, whether the player shows them all (kept across videos and restarts). */
+    val shortcutsExpanded: Boolean = false,
     val subSize: SubSize = SubSize.M,
     val subBg: SubBg = SubBg.SHADOW,
     val subColor: Long = 0xFFFFFAF2,
@@ -116,6 +118,7 @@ private object K {
     val seekLocked = booleanPreferencesKey("seek_locked")
     val showMarks = booleanPreferencesKey("show_marks")
     val shortcuts = stringPreferencesKey("player_shortcuts")
+    val shortcutsOpen = booleanPreferencesKey("player_shortcuts_open")
     val subSize = stringPreferencesKey("sub_size")
     val subBg = stringPreferencesKey("sub_bg")
     val subColor = longPreferencesKey("sub_color")
@@ -170,6 +173,7 @@ internal fun Preferences.toSettings(): Settings {
         seekBarWhenLocked = this[K.seekLocked] ?: d.seekBarWhenLocked,
         showBookmarks = this[K.showMarks] ?: d.showBookmarks,
         playerShortcuts = this[K.shortcuts]?.let { com.moody.player.domain.decodeShortcuts(it) } ?: d.playerShortcuts,
+        shortcutsExpanded = this[K.shortcutsOpen] ?: d.shortcutsExpanded,
         subSize = enum(K.subSize, d.subSize),
         subBg = enum(K.subBg, d.subBg),
         subColor = this[K.subColor] ?: d.subColor,
@@ -221,6 +225,7 @@ internal fun MutablePreferences.write(s: Settings) {
     this[K.seekLocked] = s.seekBarWhenLocked
     this[K.showMarks] = s.showBookmarks
     this[K.shortcuts] = com.moody.player.domain.encodeShortcuts(s.playerShortcuts)
+    this[K.shortcutsOpen] = s.shortcutsExpanded
     this[K.subSize] = s.subSize.name
     this[K.subBg] = s.subBg.name
     this[K.subColor] = s.subColor
