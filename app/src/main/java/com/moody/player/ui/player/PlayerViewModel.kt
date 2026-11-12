@@ -87,6 +87,20 @@ class PlayerViewModel @Inject constructor(
     val loop: StateFlow<LoopMode> = _loop.asStateFlow()
     private val _ab = MutableStateFlow<Pair<Long?, Long?>>(null to null)
     val ab: StateFlow<Pair<Long?, Long?>> = _ab.asStateFlow()
+    // A-B state lives up here, before init: init's open() calls resetAb() at once, so anything it touches
+    // has to exist by then (declared further down, it was still null and the player crashed on open).
+    private val _abOn = MutableStateFlow(true)
+    /** False while the loop is paused: A and B stay, playback runs past B. */
+    val abOn: StateFlow<Boolean> = _abOn.asStateFlow()
+    private var abUri: Uri? = null
+    @Volatile private var scrubbing = false
+    @Volatile private var abEditing = false
+    private val loopGuard = com.moody.player.domain.LoopGuard()
+    private val _abEdit = MutableStateFlow<Boolean?>(null)
+    /** The A-B time editor is open: true for A, false for B. Kept here so it outlives the screen. */
+    val abEdit: StateFlow<Boolean?> = _abEdit.asStateFlow()
+    private var editFrom: Pair<Long, Boolean>? = null // position and playing when the editor opened
+    private var previewJob: kotlinx.coroutines.Job? = null
 
     /** Sleep timer end, epoch ms; -1 = at the end of this video; null = off. */
     private val _sleepAt = MutableStateFlow<Long?>(null)
@@ -519,19 +533,8 @@ class PlayerViewModel @Inject constructor(
     }
 
     // ---- A-B repeat ----
+    // Its state is declared above init: open() runs resetAb() while the view model is still being built.
 
-    private val _abOn = MutableStateFlow(true)
-    /** False while the loop is paused: A and B stay, playback runs past B. */
-    val abOn: StateFlow<Boolean> = _abOn.asStateFlow()
-    private var abUri: Uri? = null
-    @Volatile private var scrubbing = false
-    @Volatile private var abEditing = false
-    private val loopGuard = com.moody.player.domain.LoopGuard()
-    private val _abEdit = MutableStateFlow<Boolean?>(null)
-    /** The A-B time editor is open: true for A, false for B. Kept here so it outlives the screen. */
-    val abEdit: StateFlow<Boolean?> = _abEdit.asStateFlow()
-    private var editFrom: Pair<Long, Boolean>? = null // position and playing when the editor opened
-    private var previewJob: kotlinx.coroutines.Job? = null
 
     /** The seek bar is being dragged: the loop waits, so it doesn't fight the finger. */
     fun setScrubbing(v: Boolean) { scrubbing = v }
