@@ -441,8 +441,8 @@ class PlayerViewModel @Inject constructor(
     private val _consent29 = MutableStateFlow<android.content.IntentSender?>(null)
     /** Android 10 only: the prompt to allow changing one file. */
     val consent29: StateFlow<android.content.IntentSender?> = _consent29.asStateFlow()
-    private val declined = mutableSetOf<Uri>()
-    private val unsupported = mutableSetOf<Uri>()
+    private val declined: MutableSet<Uri> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+    private val unsupported: MutableSet<Uri> = java.util.concurrent.ConcurrentHashMap.newKeySet()
     private var marksJob: kotlinx.coroutines.Job? = null
 
     private fun canCarry(uri: Uri) = !isPrivate(uri) && uri.scheme == "content" && uri !in declined && uri !in unsupported

@@ -326,7 +326,7 @@ class VlcEngine @Inject constructor(@ApplicationContext private val context: Con
     fun seekTo(ms: Long) {
         val mp = player ?: return
         val d = _state.value.durationMs
-        val target = if (d > 0) ms.coerceIn(0, d - 500) else ms.coerceAtLeast(0)
+        val target = if (d > 0) ms.coerceIn(0, (d - 500).coerceAtLeast(0)) else ms.coerceAtLeast(0)
         mp.setTime(target, false)
         _state.update { it.copy(positionMs = target, ended = false) }
     }

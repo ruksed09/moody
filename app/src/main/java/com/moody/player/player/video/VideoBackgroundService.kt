@@ -45,10 +45,19 @@ class VideoBackgroundService : Service() {
         }
         running = true
         VideoBackgroundState.active = true
-        ServiceCompat.startForeground(
-            this, NOTIFICATION_ID, notification(engine.state.value.playing),
-            if (Build.VERSION.SDK_INT >= 29) ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK else 0,
-        )
+        try {
+            ServiceCompat.startForeground(
+                this, NOTIFICATION_ID, notification(engine.state.value.playing),
+                if (Build.VERSION.SDK_INT >= 29) ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK else 0,
+            )
+        } catch (e: Exception) {
+            // Android may refuse a foreground start (background limits): pause rather than crash.
+            running = false
+            VideoBackgroundState.active = false
+            engine.pause()
+            stopSelf()
+            return START_NOT_STICKY
+        }
         if (watch == null) {
             watch = scope.launch {
                 engine.state.map { it.playing to it.ended }.distinctUntilChanged().collect { (playing, ended) ->

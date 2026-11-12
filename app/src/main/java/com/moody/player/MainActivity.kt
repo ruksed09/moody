@@ -42,6 +42,7 @@ import kotlinx.coroutines.flow.first
 import com.moody.player.ui.onboarding.OnboardingFlow
 import com.moody.player.ui.onboarding.PermissionsScreen
 import com.moody.player.ui.settings.SettingsScreen
+import com.moody.player.ui.update.ProvideUpdateBadge
 import com.moody.player.ui.update.UpdateDialogHost
 import com.moody.player.ui.update.UpdateSettingsRow
 import com.moody.player.data.update.UpdateManager
@@ -81,7 +82,7 @@ class MainActivity : ComponentActivity() {
             val start = remember { if (settings.onboarded) Routes.MAIN else Routes.ONBOARDING }
             val musicState by music.state.collectAsStateWithLifecycle()
             com.moody.player.ui.music.DriveDiscClock(musicState.playing)
-            MoodyRoot(
+            ProvideUpdateBadge(updates) { MoodyRoot(
                 settings,
                 AppSlots(
                     videoNav = { nav ->
@@ -97,7 +98,7 @@ class MainActivity : ComponentActivity() {
                         MusicScreen(
                             vm,
                             MusicNav(
-                                openAlbum = { nav.navigate(Routes.album(it)) },
+                                openAlbum = { id, name -> nav.navigate(Routes.album(id, name)) },
                                 openArtist = { nav.navigate(Routes.artist(it)) },
                                 openFolder = { nav.navigate(Routes.musicFolder(it)) },
                                 openPlaylist = { nav.navigate(Routes.playlist(it)) },
@@ -192,12 +193,13 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                         if (settings.onboarded) {
-                            LaunchedEffect(Unit) { updates.check(force = false) }
+                            // Every app open: a cold start and each return from the background. The manager drops repeats (rotation).
+                            androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_START) { updates.checkOnOpen() }
                             UpdateDialogHost(updates)
                         }
                     },
                 ),
-            )
+            ) }
         }
     }
 

@@ -78,8 +78,10 @@ class HealthRepository @Inject constructor(
     suspend fun target(uri: Uri): HealthTarget? = libraryTargets().firstOrNull { it.uri == uri }
 
     fun scanLibrary() {
-        if (job?.isActive == true) return
+        val old = job
+        if (old?.isActive == true && !old.isCancelled) return
         job = scope.launch(Dispatchers.IO) {
+            old?.join() // a stopped scan may still be finishing its last file
             val targets = libraryTargets()
             _state.update { it.copy(progress = ScanProgress(0, targets.size, "")) }
             val found = mutableMapOf<String, HealthReport>()

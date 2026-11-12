@@ -59,3 +59,19 @@ fun parseRelease(text: String): ReleaseInfo? {
         required = body.contains(REQUIRED_MARKER, ignoreCase = true),
     )
 }
+
+/** What the app shows for a release: the header badge, the popup, and whether the popup offers "Don't show again". */
+data class UpdatePrompt(val showBadge: Boolean, val showModal: Boolean, val canDismiss: Boolean) {
+    companion object { val None = UpdatePrompt(showBadge = false, showModal = false, canDismiss = false) }
+}
+
+/**
+ * Decides what to show after a check found [release] (null: nothing to install).
+ * The badge shows for any version newer than [installed]. The popup opens by itself unless the user chose
+ * "Don't show again" for exactly that version ([dismissedVersion]); a [manual] check and a required release always open it.
+ */
+fun updatePrompt(installed: String, release: ReleaseInfo?, dismissedVersion: String, manual: Boolean): UpdatePrompt {
+    if (release == null || compareVersions(release.version, installed) <= 0) return UpdatePrompt.None
+    val dismissed = dismissedVersion.isNotBlank() && compareVersions(release.version, dismissedVersion) == 0
+    return UpdatePrompt(showBadge = true, showModal = release.required || manual || !dismissed, canDismiss = !release.required)
+}

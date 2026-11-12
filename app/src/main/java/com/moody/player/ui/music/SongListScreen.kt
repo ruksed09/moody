@@ -71,7 +71,7 @@ fun SongListScreen(vm: MusicViewModel, kind: SongListKind, key: String, onBack: 
     val playlistSongs by (if (playlistId != null && playlistId != FAVOURITES_ID) vm.playlistSongs(playlistId) else kotlinx.coroutines.flow.flowOf(emptyList()))
         .collectAsState(initial = emptyList())
     val (title, songs) = when (kind) {
-        SongListKind.ALBUM -> s.albums.firstOrNull { it.id.toString() == key }.let { (it?.name ?: "Album") to (it?.songs ?: emptyList()) }
+        SongListKind.ALBUM -> s.albums.firstOrNull { "${it.id}|${it.name}" == key || it.id.toString() == key }.let { (it?.name ?: "Album") to (it?.songs ?: emptyList()) }
         SongListKind.ARTIST -> s.artists.firstOrNull { it.name == key }.let { (it?.name ?: key) to (it?.songs ?: emptyList()) }
         SongListKind.FOLDER -> s.folders.firstOrNull { it.path == key }.let { (it?.name ?: "Folder") to (it?.songs ?: emptyList()) }
         SongListKind.PLAYLIST -> if (playlistId == FAVOURITES_ID) "Favourites" to s.favorites

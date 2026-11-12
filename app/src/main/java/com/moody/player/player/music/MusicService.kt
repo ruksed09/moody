@@ -202,7 +202,8 @@ class MusicService : MediaSessionService() {
             }
         })
         saver = scope.launch {
-            while (isActive) { delay(10_000); if (player.isPlaying) save(player) }
+            // The session's player, not just ExoPlayer: songs only libVLC can play run on the other one.
+            while (isActive) { delay(10_000); val current = session?.player ?: player; if (current.isPlaying) save(current) }
         }
         statsJob = scope.launch {
             var last = android.os.SystemClock.elapsedRealtime()
@@ -253,10 +254,11 @@ class MusicService : MediaSessionService() {
         val items = ids.mapNotNull { byUri[it]?.toMediaItem() }
         if (items.isEmpty()) return
         val index = (prefs[KEY_INDEX] ?: 0).coerceIn(0, items.lastIndex)
+        // Something may have been queued while the saved queue was loading; that wins. Checked before
+        // pickPlayer, which would otherwise stop the player that is already playing it.
+        if (exo.mediaItemCount > 0 || (vlc?.mediaItemCount ?: 0) > 0) return
         pickPlayer(items)
         val target = session?.player ?: p
-        // Something may have been queued while the saved queue was loading; that wins.
-        if (target.mediaItemCount > 0 || exo.mediaItemCount > 0 || (vlc?.mediaItemCount ?: 0) > 0) return
         target.setMediaItems(items, index, prefs[KEY_POS] ?: 0L)
         target.prepare()
     }

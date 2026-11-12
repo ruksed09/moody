@@ -90,8 +90,8 @@ data class Settings(
     // App state
     val onboarded: Boolean = false,
     val lastUpdateCheck: Long = 0,
-    val snoozedVersion: String = "",
-    val snoozedUntil: Long = 0,
+    /** The update version the user chose "Don't show again" for; its popup stays closed until a newer one appears. */
+    val dismissedUpdateVersion: String = "",
 )
 
 private val Context.settingsStore: DataStore<Preferences> by preferencesDataStore("settings")
@@ -144,8 +144,7 @@ private object K {
     val autoLock = intPreferencesKey("vault_auto_lock")
     val onboarded = booleanPreferencesKey("onboarded")
     val lastCheck = longPreferencesKey("last_update_check")
-    val snoozedVer = stringPreferencesKey("snoozed_version")
-    val snoozedUntil = longPreferencesKey("snoozed_until")
+    val dismissedUpdate = stringPreferencesKey("dismissed_update_version")
 }
 
 private inline fun <reified E : Enum<E>> Preferences.enum(key: Preferences.Key<String>, default: E): E =
@@ -199,8 +198,7 @@ internal fun Preferences.toSettings(): Settings {
         vaultAutoLockSec = this[K.autoLock] ?: d.vaultAutoLockSec,
         onboarded = this[K.onboarded] ?: d.onboarded,
         lastUpdateCheck = this[K.lastCheck] ?: d.lastUpdateCheck,
-        snoozedVersion = this[K.snoozedVer] ?: d.snoozedVersion,
-        snoozedUntil = this[K.snoozedUntil] ?: d.snoozedUntil,
+        dismissedUpdateVersion = this[K.dismissedUpdate] ?: d.dismissedUpdateVersion,
     )
 }
 
@@ -252,8 +250,7 @@ internal fun MutablePreferences.write(s: Settings) {
     this[K.autoLock] = s.vaultAutoLockSec
     this[K.onboarded] = s.onboarded
     this[K.lastCheck] = s.lastUpdateCheck
-    this[K.snoozedVer] = s.snoozedVersion
-    this[K.snoozedUntil] = s.snoozedUntil
+    this[K.dismissedUpdate] = s.dismissedUpdateVersion
 }
 
 @Singleton

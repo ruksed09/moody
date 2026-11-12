@@ -1,5 +1,10 @@
 package com.moody.player.ui.update
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.scaleIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -13,12 +18,16 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -26,6 +35,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -42,17 +53,54 @@ import com.moody.player.data.update.UpdateManager
 import com.moody.player.data.update.UpdateState
 import com.moody.player.design.MoodyTheme
 import com.moody.player.design.Radii
+import com.moody.player.design.components.IconAction
 import com.moody.player.design.components.LocalToaster
+import com.moody.player.design.components.Motion
 import com.moody.player.design.components.PrimaryButton
 import com.moody.player.design.components.QuietButton
 import com.moody.player.design.components.ReelLine
+import com.moody.player.design.components.SecondaryButton
 import com.moody.player.design.icons.MoodyIcons
+import com.moody.player.design.illustrations.rememberReducedMotion
+import com.moody.player.domain.ReleaseInfo
 import com.moody.player.domain.formatBytes
 
-/** The "new version" popup. Shown over everything while an update is available, downloading or ready to install. */
+/** The known update for the app headers: its version, and what a tap on the badge does. Null: nothing to show. */
+class UpdateBadge(val version: String, val onOpen: () -> Unit)
+
+val LocalUpdateBadge = compositionLocalOf<UpdateBadge?> { null }
+
+/** Provides the header badge for everything in [content] while an update newer than this install is known. */
+@Composable
+fun ProvideUpdateBadge(manager: UpdateManager, content: @Composable () -> Unit) {
+    val info by manager.available.collectAsStateWithLifecycle()
+    val badge = remember(info?.version) { info?.let { UpdateBadge(it.version, manager::openPrompt) } }
+    CompositionLocalProvider(LocalUpdateBadge provides badge, content = content)
+}
+
+/** A download icon with a red dot, for a top bar's actions. Takes no room when there is no update. */
+@Composable
+fun UpdateBadgeAction() {
+    val badge = LocalUpdateBadge.current ?: return
+    val c = MoodyTheme.colors
+    Box {
+        IconAction(MoodyIcons.Download, "Update available, version ${badge.version}", badge.onOpen, tint = c.text)
+        // The dot sits on the icon's top right corner; the ring in the bar's colour keeps it apart from the strokes.
+        Box(
+            Modifier.align(Alignment.TopEnd).padding(top = 10.dp, end = 10.dp).size(10.dp)
+                .background(c.bg, CircleShape).padding(1.5.dp).background(c.danger, CircleShape),
+        )
+    }
+}
+
+/**
+ * The "new version" popup. It opens by itself after a check (unless that version was dismissed) and from the header
+ * badge, and stays up while the update downloads or waits to be installed.
+ */
 @Composable
 fun UpdateDialogHost(manager: UpdateManager) {
     val state by manager.state.collectAsStateWithLifecycle()
+    val open by manager.promptOpen.collectAsStateWithLifecycle()
     val toaster = LocalToaster.current
     var wasDownloading by remember { mutableStateOf(false) }
     LaunchedEffect(state) {
@@ -60,14 +108,7 @@ fun UpdateDialogHost(manager: UpdateManager) {
         val s = state
         if (s is UpdateState.Failed && wasDownloading) { toaster.show(s.reason); wasDownloading = false; manager.dismissResult() }
     }
-    val info = when (val s = state) {
-        is UpdateState.Available -> s.info
-        is UpdateState.Downloading -> s.info
-        is UpdateState.Ready -> s.info
-        else -> return
-    }
     val context = LocalContext.current
-    val c = MoodyTheme.colors
     var askedPermission by remember { mutableStateOf(false) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         // Back from "Install unknown apps": install straight away if it was allowed.
@@ -77,64 +118,131 @@ fun UpdateDialogHost(manager: UpdateManager) {
             context.startActivity(manager.installIntent(s.file))
         }
     }
+    val info = when (val s = state) {
+        is UpdateState.Available -> s.info
+        is UpdateState.Downloading -> s.info
+        is UpdateState.Ready -> s.info
+        else -> return
+    }
+    if (!open) return
 
     Dialog(
-        onDismissRequest = { if (!info.required && state is UpdateState.Available) manager.later() },
-        properties = DialogProperties(dismissOnBackPress = !info.required, dismissOnClickOutside = false),
+        onDismissRequest = manager::closePrompt,
+        properties = DialogProperties(dismissOnBackPress = manager.canDismiss(info), dismissOnClickOutside = false, usePlatformDefaultWidth = false),
     ) {
-        Column(Modifier.fillMaxWidth().background(c.surface, Radii.xl).border(1.dp, c.line, Radii.xl).padding(24.dp)) {
-            Box(Modifier.size(44.dp).background(c.accentWash, Radii.md), contentAlignment = Alignment.Center) {
-                Icon(MoodyIcons.Download, null, Modifier.size(22.dp), tint = c.accent)
+        // A short fade and settle; none at all when the phone's animations are off.
+        val still = rememberReducedMotion()
+        val shown = remember { MutableTransitionState(still) }.apply { targetState = true }
+        AnimatedVisibility(shown, enter = fadeIn(Motion.enter()) + scaleIn(Motion.enter(), initialScale = 0.96f), exit = ExitTransition.None) {
+            UpdateModal(
+                info, state,
+                canDismiss = manager.canDismiss(info),
+                needsInstallPermission = state is UpdateState.Ready && manager.needsInstallPermission(),
+                onUpdate = manager::startDownload,
+                onDontShowAgain = manager::dontShowAgain,
+                onCancelDownload = manager::cancelDownload,
+                onInstall = {
+                    val s = manager.state.value
+                    if (s is UpdateState.Ready) {
+                        if (manager.needsInstallPermission()) { askedPermission = true; context.startActivity(manager.installPermissionIntent()) }
+                        else context.startActivity(manager.installIntent(s.file))
+                    }
+                },
+            )
+        }
+    }
+}
+
+/** The popup's card with its margins, as it sits in the dialog window. Stateless, so it can be drawn in a test. */
+@Composable
+fun UpdateModal(
+    info: ReleaseInfo,
+    state: UpdateState,
+    /** False for a required release: "Don't show again" is not offered. */
+    canDismiss: Boolean,
+    needsInstallPermission: Boolean,
+    onUpdate: () -> Unit,
+    onDontShowAgain: () -> Unit,
+    onCancelDownload: () -> Unit,
+    onInstall: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val c = MoodyTheme.colors
+    val t = MoodyTheme.type
+    Box(modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+        Column(Modifier.widthIn(max = 380.dp).fillMaxWidth().background(c.surface, Radii.xl).border(1.dp, c.line, Radii.xl).padding(20.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(44.dp).background(c.accentWash, Radii.lg), contentAlignment = Alignment.Center) {
+                    Icon(MoodyIcons.Download, null, Modifier.size(22.dp), tint = c.accent)
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    val (title, line) = when {
+                        state is UpdateState.Downloading -> "Downloading update" to "Moody ${info.version} is on its way."
+                        state is UpdateState.Ready -> "Ready to install" to "Moody ${info.version} has been downloaded."
+                        info.required -> "Update needed" to "This version is needed to keep using Moody."
+                        else -> "Update available" to "A new Moody is ready to download."
+                    }
+                    Text(title, style = t.title, color = c.text, modifier = Modifier.semantics { heading() })
+                    Spacer(Modifier.height(2.dp))
+                    Text(line, style = t.caption, color = c.text2)
+                }
             }
             Spacer(Modifier.height(16.dp))
-            Text(if (info.required) "Update needed" else "A new Moody is ready", style = MoodyTheme.type.title, color = c.text)
-            Spacer(Modifier.height(4.dp))
-            Text(
-                "${BuildConfig.VERSION_NAME} → ${info.version}" + if (info.apkSize > 0) " · ${formatBytes(info.apkSize)}" else "",
-                style = MoodyTheme.type.mono, color = c.text3,
-            )
+            Row(Modifier.fillMaxWidth().background(c.raised, Radii.md).padding(horizontal = 12.dp, vertical = 10.dp)) {
+                Fact("Version", "${BuildConfig.VERSION_NAME} \u2192 ${info.version}", Modifier.weight(1f))
+                if (info.apkSize > 0) {
+                    Spacer(Modifier.width(12.dp))
+                    Fact("Size", formatBytes(info.apkSize))
+                }
+            }
             if (info.notes.isNotBlank()) {
                 Spacer(Modifier.height(16.dp))
-                Column(Modifier.heightIn(max = 220.dp).verticalScroll(rememberScrollState())) { Notes(info.notes) }
-            }
-            if (info.required) {
-                Spacer(Modifier.height(12.dp))
-                Text("This version is needed to keep using Moody.", style = MoodyTheme.type.caption, color = c.text2)
+                Text("What\u2019s new", style = t.section, color = c.text2)
+                Spacer(Modifier.height(8.dp))
+                // Capped, and it gives way first when the screen is short (a phone on its side).
+                Column(Modifier.weight(1f, fill = false).heightIn(max = 180.dp).verticalScroll(rememberScrollState())) { Notes(info.notes) }
             }
             Spacer(Modifier.height(20.dp))
-            when (val s = state) {
+            when (state) {
                 is UpdateState.Downloading -> {
-                    ReelLine(if (s.total > 0) s.done / s.total.toFloat() else null, height = 3.dp)
+                    ReelLine(if (state.total > 0) state.done / state.total.toFloat() else null, height = 3.dp)
                     Spacer(Modifier.height(8.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("${formatBytes(s.done)} of ${formatBytes(s.total)}", style = MoodyTheme.type.mono, color = c.text2, modifier = Modifier.weight(1f))
-                        QuietButton("Cancel", manager::cancelDownload)
+                        Text("${formatBytes(state.done)} of ${formatBytes(state.total)}", style = t.mono, color = c.text2, modifier = Modifier.weight(1f))
+                        QuietButton("Cancel", onCancelDownload)
                     }
                 }
                 is UpdateState.Ready -> {
-                    if (manager.needsInstallPermission()) {
+                    if (needsInstallPermission) {
                         Text(
-                            "Android asks once before Moody can install updates. Turn on “Allow from this source”, then come back.",
-                            style = MoodyTheme.type.caption, color = c.text2,
+                            "Android asks once before Moody can install updates. Turn on \u201cAllow from this source\u201d, then come back.",
+                            style = t.caption, color = c.text2,
                         )
                         Spacer(Modifier.height(16.dp))
                     }
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                        PrimaryButton("Install", {
-                            if (manager.needsInstallPermission()) { askedPermission = true; context.startActivity(manager.installPermissionIntent()) }
-                            else context.startActivity(manager.installIntent(s.file))
-                        })
-                    }
+                    PrimaryButton("Install", onInstall, Modifier.fillMaxWidth())
                 }
-                else -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
-                    if (!info.required) {
-                        QuietButton("Later", manager::later)
-                        Spacer(Modifier.width(8.dp))
+                else -> {
+                    PrimaryButton("Update now", onUpdate, Modifier.fillMaxWidth(), icon = MoodyIcons.Download)
+                    if (canDismiss) {
+                        Spacer(Modifier.height(8.dp))
+                        SecondaryButton("Don\u2019t show again", onDontShowAgain, Modifier.fillMaxWidth())
                     }
-                    PrimaryButton("Update", manager::startDownload, icon = MoodyIcons.Download)
                 }
             }
         }
+    }
+}
+
+/** A small label over its value: "Version" over "1.2.0 to 1.3.0". */
+@Composable
+private fun Fact(label: String, value: String, modifier: Modifier = Modifier) {
+    val c = MoodyTheme.colors
+    Column(modifier) {
+        Text(label, style = MoodyTheme.type.caption, color = c.text3)
+        Spacer(Modifier.height(2.dp))
+        Text(value, style = MoodyTheme.type.mono, color = c.text)
     }
 }
 
@@ -176,7 +284,7 @@ fun UpdateSettingsRow(manager: UpdateManager, lastCheck: Long, onCheck: () -> Un
         Text("Moody ${BuildConfig.VERSION_NAME}", style = MoodyTheme.type.body, color = c.text)
         Text(status, style = MoodyTheme.type.caption, color = if (state is UpdateState.Failed) c.danger else c.text3)
         Spacer(Modifier.height(10.dp))
-        if (state is UpdateState.Checking) ReelLine(null) else com.moody.player.design.components.SecondaryButton("Check for updates", onCheck, icon = MoodyIcons.Refresh)
+        if (state is UpdateState.Checking) ReelLine(null) else SecondaryButton("Check for updates", onCheck, icon = MoodyIcons.Refresh)
     }
 }
 

@@ -66,7 +66,9 @@ class MediaScanner(private val context: Context) {
             if (Build.VERSION.SDK_INT >= 29) add(MediaStore.Audio.Media.RELATIVE_PATH) else add(MediaStore.Audio.Media.DATA)
         }.toTypedArray()
         val out = ArrayList<AudioItem>()
-        query(audioCollection, cols, "${MediaStore.Audio.Media.DURATION} >= $minDurationMs")?.use { c ->
+        val durationFilter = if (minDurationMs <= 0) "(${MediaStore.Audio.Media.DURATION} >= 0 OR ${MediaStore.Audio.Media.DURATION} IS NULL)"
+        else "${MediaStore.Audio.Media.DURATION} >= $minDurationMs"
+        query(audioCollection, cols, durationFilter)?.use { c ->
             val id = c.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
             val title = c.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
             val artist = c.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)

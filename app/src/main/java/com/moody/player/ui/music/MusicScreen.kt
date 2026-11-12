@@ -74,7 +74,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 
 /** Where the Music tab can go. */
 data class MusicNav(
-    val openAlbum: (Long) -> Unit,
+    val openAlbum: (Long, String) -> Unit,
     val openArtist: (String) -> Unit,
     val openFolder: (String) -> Unit,
     val openPlaylist: (Long) -> Unit,
@@ -260,7 +260,7 @@ fun MusicContent(
                 }
                 tab == MusicTab.ALBUMS -> items(s.albums, key = { "${it.id}-${it.name}" }) { a ->
                     val current = a.songs.any { it.uri.toString() == currentUri }
-                    Column(Modifier.clip(Radii.lg).clickable { nav.openAlbum(a.id) }) {
+                    Column(Modifier.clip(Radii.lg).clickable { nav.openAlbum(a.id, a.name) }) {
                         // The album's disc on a quiet sleeve; it turns when one of its songs is playing.
                         BoxWithConstraints(Modifier.fillMaxWidth().aspectRatio(1f).clip(Radii.lg).background(c.surface), contentAlignment = Alignment.Center) {
                             Disc(a.songs.firstOrNull(), maxWidth * 0.86f, spinning = current && playing, behind = c.surface, current = current)
@@ -311,6 +311,7 @@ fun MusicContent(
         CollapsingTopBar(bar, contentUnder = gridState.firstVisibleItemIndex > 0 || gridState.firstVisibleItemScrollOffset > 0, height = 48.dp) {
             if (selectionBar != null) selectionBar()
             else com.moody.player.ui.components.AppTopBar(48.dp) {
+                com.moody.player.ui.update.UpdateBadgeAction()
                 IconAction(MoodyIcons.Chart, "Your stats", nav.openStats, tint = c.text)
                 IconAction(MoodyIcons.Settings, "Settings", nav.openSettings, tint = c.text)
             }

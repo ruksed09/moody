@@ -26,7 +26,8 @@ object Routes {
     fun decodePath(arg: String?): String = Uri.decode(arg.orEmpty()).let { if (it == "~") "" else it }
     fun settingsSection(id: String) = "settings/section/$id"
     fun playlist(id: Long) = "playlist/$id"
-    fun album(id: Long) = "album/$id"
+    /** Id and name: a renamed song makes a second album with the same id, so the id alone is ambiguous. */
+    fun album(id: Long, name: String) = "album/${Uri.encode("$id|$name")}"
     fun artist(name: String) = "artist/${Uri.encode(name)}"
     fun health(uri: Uri? = null) = if (uri == null) "health" else "health?uri=${Uri.encode(uri.toString())}"
     fun musicFolder(path: String) = "music-folder/${Uri.encode(path.ifEmpty { "~" })}"

@@ -310,4 +310,36 @@ class ScreenshotTest {
         )
         com.moody.player.ui.music.MoodMixesRow(mixes, {}, hidden = 2, onBringBack = {})
     }
+
+    // ---- Updates: the popup and the header badge ----
+    private val release = com.moody.player.domain.ReleaseInfo(
+        "1.3.0",
+        "- **Faster** thumbnails in big folders\n- Subtitles keep their timing after a seek\n- The sleep timer can wait for the song to end\n- Fixed a crash when a playlist was renamed twice\n- Smaller download",
+        "https://example.com/moody-1.3.0.apk", 36_700_160, false,
+    )
+    /** The popup as the dialog window shows it: over the dimmed app. A real Dialog is its own window and would not be drawn here. */
+    @Composable private fun updateModal(info: com.moody.player.domain.ReleaseInfo = release, state: com.moody.player.data.update.UpdateState = com.moody.player.data.update.UpdateState.Available(info)) {
+        VideoLibraryContent(state(VideoView.FOLDERS), noop, nav)
+        Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.6f)), contentAlignment = androidx.compose.ui.Alignment.Center) {
+            com.moody.player.ui.update.UpdateModal(info, state, canDismiss = !info.required, needsInstallPermission = true, {}, {}, {}, {})
+        }
+    }
+    @Composable private fun withBadge(content: @Composable () -> Unit) = androidx.compose.runtime.CompositionLocalProvider(
+        com.moody.player.ui.update.LocalUpdateBadge provides com.moody.player.ui.update.UpdateBadge("1.3.0") {}, content = content,
+    )
+    @Test fun updateModalDark() = bare("update-modal-dark", ThemeMode.DARK) { updateModal() }
+    @Test fun updateModalLight() = bare("update-modal-light", ThemeMode.LIGHT) { updateModal() }
+    @Test fun updateModalMidnight() = bare("update-modal-midnight", ThemeMode.MIDNIGHT) { updateModal() }
+    @Config(qualifiers = "w320dp-h640dp-xhdpi")
+    @Test fun updateModal320() = bare("update-modal-dark-320", ThemeMode.DARK) { updateModal() }
+    @Test fun updateModalRequiredLight() = bare("update-modal-required-light", ThemeMode.LIGHT) { updateModal(release.copy(required = true, notes = "- A fix Moody needs to keep playing your library")) }
+    @Config(qualifiers = "w320dp-h640dp-xhdpi")
+    @Test fun updateModalDownloading320() = bare("update-modal-downloading-320", ThemeMode.MIDNIGHT) { updateModal(state = com.moody.player.data.update.UpdateState.Downloading(release, 12_400_000, 36_700_160)) }
+    @Test fun updateModalReadyDark() = bare("update-modal-ready-dark", ThemeMode.DARK) { updateModal(state = com.moody.player.data.update.UpdateState.Ready(release, File("moody-1.3.0.apk"))) }
+    @Test fun updateBadgeVideosDark() = shot("update-badge-videos-dark", ThemeMode.DARK) { withBadge { VideoLibraryContent(state(VideoView.FOLDERS), noop, nav) } }
+    @Config(qualifiers = "w320dp-h640dp-xhdpi")
+    @Test fun updateBadgeVideos320() = shot("update-badge-videos-320", ThemeMode.MIDNIGHT) { withBadge { VideoLibraryContent(state(VideoView.FOLDERS), noop, nav) } }
+    @Test fun updateBadgeMusicLight() = shot("update-badge-music-light", ThemeMode.LIGHT) {
+        withBadge { com.moody.player.ui.music.MusicContent(musicState(), com.moody.player.ui.music.MusicTab.SONGS, null, true, true, musicNav, {}, { _, _ -> }, {}, {}, {}) }
+    }
 }

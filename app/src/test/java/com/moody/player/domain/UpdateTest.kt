@@ -45,4 +45,34 @@ class UpdateTest {
     @Test fun parse_noApk_returnsNull() = assertNull(parseRelease(sample.replace("moody-1.1.0.apk\"", "moody-1.1.0.zip\"")))
     @Test fun parse_garbage_returnsNull() = assertNull(parseRelease("{oops"))
     @Test fun parse_missingTag_returnsNull() = assertNull(parseRelease("""{"assets":[]}"""))
+
+    // ---- what to show for a release: popup, header badge, "Don't show again" ----
+    private fun release(version: String, required: Boolean = false) = ReleaseInfo(version, "- Notes", "https://example.com/moody.apk", 1, required)
+
+    @Test fun prompt_newVersion_showsModalAndBadge() {
+        val p = updatePrompt("1.2.0", release("1.3.0"), dismissedVersion = "", manual = false)
+        assertTrue(p.showModal); assertTrue(p.showBadge); assertTrue(p.canDismiss)
+    }
+    @Test fun prompt_dismissedVersion_keepsBadgeHidesModal() {
+        val p = updatePrompt("1.2.0", release("1.3.0"), dismissedVersion = "1.3.0", manual = false)
+        assertFalse(p.showModal); assertTrue(p.showBadge)
+    }
+    @Test fun prompt_dismissedVersion_matchesWithOrWithoutV() =
+        assertFalse(updatePrompt("1.2.0", release("1.3.0"), dismissedVersion = "v1.3.0", manual = false).showModal)
+    @Test fun prompt_newerThanDismissed_showsModalAgain() =
+        assertTrue(updatePrompt("1.2.0", release("1.4.0"), dismissedVersion = "1.3.0", manual = false).showModal)
+    @Test fun prompt_manualCheck_showsModalForDismissedVersion() =
+        assertTrue(updatePrompt("1.2.0", release("1.3.0"), dismissedVersion = "1.3.0", manual = true).showModal)
+    @Test fun prompt_required_alwaysShowsAndCannotBeDismissed() {
+        val p = updatePrompt("1.2.0", release("1.3.0", required = true), dismissedVersion = "1.3.0", manual = false)
+        assertTrue(p.showModal); assertTrue(p.showBadge); assertFalse(p.canDismiss)
+    }
+    @Test fun prompt_sameVersion_showsNothing() =
+        assertEquals(UpdatePrompt.None, updatePrompt("1.3.0", release("1.3.0"), dismissedVersion = "", manual = true))
+    @Test fun prompt_olderRelease_showsNothing() =
+        assertEquals(UpdatePrompt.None, updatePrompt("1.3.0", release("1.2.9", required = true), dismissedVersion = "", manual = true))
+    @Test fun prompt_onceInstalled_badgeGoes() =
+        assertFalse(updatePrompt("1.3.0", release("1.3.0"), dismissedVersion = "1.3.0", manual = false).showBadge)
+    @Test fun prompt_noRelease_showsNothing() =
+        assertEquals(UpdatePrompt.None, updatePrompt("1.2.0", null, dismissedVersion = "", manual = true))
 }

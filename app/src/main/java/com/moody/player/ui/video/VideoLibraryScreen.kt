@@ -307,6 +307,7 @@ private fun LazyGridScope.continueRow(s: VideoUiState, nav: VideoNav) {
 private fun TopRow(onLogoLong: () -> Unit, onSearch: () -> Unit, onStream: () -> Unit, onSettings: () -> Unit) {
     val c = MoodyTheme.colors
     com.moody.player.ui.components.AppTopBar(BarHeight, Modifier.padding(horizontal = 0.dp), onLogoLong = onLogoLong) {
+        com.moody.player.ui.update.UpdateBadgeAction()
         IconAction(MoodyIcons.Search, "Search", onSearch, tint = c.text)
         IconAction(MoodyIcons.Link, "Play a link", onStream, tint = c.text)
         IconAction(MoodyIcons.Settings, "Settings", onSettings, tint = c.text)

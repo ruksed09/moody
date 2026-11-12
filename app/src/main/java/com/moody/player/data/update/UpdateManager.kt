@@ -7,17 +7,22 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
 import com.moody.player.BuildConfig
 import com.moody.player.R
 import com.moody.player.data.prefs.SettingsStore
 import com.moody.player.di.AppScope
 import com.moody.player.domain.ReleaseInfo
-import com.moody.player.domain.compareVersions
 import com.moody.player.domain.parseRelease
+import com.moody.player.domain.updatePrompt
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -28,6 +33,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -47,8 +54,6 @@ sealed interface UpdateState {
     data class Ready(val info: ReleaseInfo, val file: File) : UpdateState
 }
 
-private const val SIX_HOURS = 6 * 60 * 60 * 1000L
-private const val SNOOZE = 24 * 60 * 60 * 1000L
 private const val CHANNEL = "updates"
 private const val NOTIFY_ID = 77
 
@@ -67,51 +72,143 @@ class UpdateManager @Inject constructor(
     val state: StateFlow<UpdateState> = _state.asStateFlow()
     private var download: Job? = null
 
-    /** When [force] is false the check is skipped if one ran in the last 6 h, and a snoozed version stays quiet. */
+    /** The newest release known to be newer than this install. It drives the header badge and outlives a closed popup. */
+    private val _available = MutableStateFlow<ReleaseInfo?>(null)
+    val available: StateFlow<ReleaseInfo?> = _available.asStateFlow()
+
+    /** Whether the update popup is on screen. */
+    private val _promptOpen = MutableStateFlow(false)
+    val promptOpen: StateFlow<Boolean> = _promptOpen.asStateFlow()
+
+    private val checking = Mutex()
+    /** True once this visit to the app has been checked; cleared when the whole app goes to the background. */
+    @Volatile private var checkedThisVisit = false
+
+    init {
+        // The process lifecycle, not an activity's: rotating or coming back from the video player is not "opening the app".
+        Handler(Looper.getMainLooper()).post {
+            ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
+                override fun onStop(owner: LifecycleOwner) { checkedThisVisit = false }
+            })
+        }
+    }
+
+    /** The automatic check: once per app open (a cold start, or a return from the background). Safe to call on every start. */
+    fun checkOnOpen() {
+        if (checkedThisVisit) return
+        checkedThisVisit = true
+        scope.launch { check(force = false) }
+    }
+
+    /**
+     * Asks GitHub for the latest release. An automatic check ([force] false) is quiet: it shows no progress, a failure
+     * changes nothing, and the popup stays closed for a version the user chose "Don't show again" for.
+     * A manual check ([force] true) always opens the popup when there is an update.
+     */
     suspend fun check(force: Boolean) {
-        if (_state.value is UpdateState.Downloading || _state.value is UpdateState.Ready) return
-        val s = settings.settings.first()
-        if (!force && System.currentTimeMillis() - s.lastUpdateCheck < SIX_HOURS) return
-        _state.value = UpdateState.Checking
-        val result = withContext(Dispatchers.IO) {
-            try {
-                val req = Request.Builder()
-                    .url("https://api.github.com/repos/${BuildConfig.UPDATE_REPO}/releases/latest")
-                    .header("Accept", "application/vnd.github+json")
-                    .header("User-Agent", "Moody-Android/${BuildConfig.VERSION_NAME}")
-                    .build()
-                http.newCall(req).execute().use { r ->
-                    when {
-                        r.code == 404 -> UpdateState.UpToDate // no releases published yet
-                        !r.isSuccessful -> UpdateState.Failed("GitHub answered ${r.code}")
-                        else -> {
-                            val info = parseRelease(r.body?.string().orEmpty())
-                            when {
-                                info == null -> UpdateState.UpToDate
-                                compareVersions(info.version, BuildConfig.VERSION_NAME) <= 0 -> UpdateState.UpToDate
-                                else -> UpdateState.Available(info)
-                            }
-                        }
+        if (reopenIfBusy(force)) return
+        if (force) _state.value = UpdateState.Checking
+        checking.withLock {
+            if (reopenIfBusy(force)) return
+            if (force) _state.value = UpdateState.Checking
+            val result = fetchLatest()
+            if (busy()) return // a download began while GitHub was answering
+            val info = (result as? UpdateState.Available)?.info
+            val prompt = updatePrompt(BuildConfig.VERSION_NAME, info, settings.settings.first().dismissedUpdateVersion, manual = force)
+            when {
+                result is UpdateState.Failed -> if (force) _state.value = result
+                info != null && prompt.showBadge -> {
+                    // A popup that is already open for this version stays open.
+                    val alreadyOpen = _promptOpen.value && _available.value?.version == info.version
+                    _available.value = info
+                    _state.value = UpdateState.Available(info)
+                    _promptOpen.value = prompt.showModal || alreadyOpen
+                }
+                else -> {
+                    _available.value = null
+                    _promptOpen.value = false
+                    _state.value = UpdateState.UpToDate
+                }
+            }
+            if (result !is UpdateState.Failed) settings.update { it.copy(lastUpdateCheck = System.currentTimeMillis()) }
+        }
+    }
+
+    private fun busy() = _state.value is UpdateState.Downloading || _state.value is UpdateState.Ready
+
+    /**
+     * While an update downloads or waits to be installed there is nothing to ask GitHub. The check then only brings
+     * its popup back, by the same rule as a fresh one. True when that was the case.
+     */
+    private suspend fun reopenIfBusy(manual: Boolean): Boolean {
+        val info = when (val s = _state.value) {
+            is UpdateState.Downloading -> s.info
+            is UpdateState.Ready -> s.info
+            else -> return false
+        }
+        if (updatePrompt(BuildConfig.VERSION_NAME, info, settings.settings.first().dismissedUpdateVersion, manual).showModal) _promptOpen.value = true
+        return true
+    }
+
+    private suspend fun fetchLatest(): UpdateState = withContext(Dispatchers.IO) {
+        try {
+            val req = Request.Builder()
+                .url("https://api.github.com/repos/${BuildConfig.UPDATE_REPO}/releases/latest")
+                .header("Accept", "application/vnd.github+json")
+                .header("User-Agent", "Moody-Android/${BuildConfig.VERSION_NAME}")
+                .build()
+            http.newCall(req).execute().use { r ->
+                when {
+                    r.code == 404 -> UpdateState.UpToDate // no releases published yet
+                    !r.isSuccessful -> UpdateState.Failed("GitHub answered ${r.code}")
+                    else -> {
+                        // Whether it is newer than this install is decided by updatePrompt, in check().
+                        parseRelease(r.body?.string().orEmpty())?.let { UpdateState.Available(it) } ?: UpdateState.UpToDate
                     }
                 }
-            } catch (e: Exception) {
-                UpdateState.Failed("Couldn't reach GitHub")
             }
+        } catch (e: Exception) {
+            UpdateState.Failed("Couldn't reach GitHub")
         }
-        if (result !is UpdateState.Failed) settings.update { it.copy(lastUpdateCheck = System.currentTimeMillis()) }
-        val snoozed = result is UpdateState.Available && !force && !result.info.required &&
-            s.snoozedVersion == result.info.version && System.currentTimeMillis() < s.snoozedUntil
-        _state.value = if (snoozed) UpdateState.Idle else result
     }
 
-    fun later() {
-        val s = _state.value as? UpdateState.Available ?: return
-        scope.launch { settings.update { it.copy(snoozedVersion = s.info.version, snoozedUntil = System.currentTimeMillis() + SNOOZE) } }
-        _state.value = UpdateState.Idle
+    /** "Don't show again": the popup stays closed for this version from now on. The header badge still leads back to it. */
+    fun dontShowAgain() {
+        val info = (_state.value as? UpdateState.Available)?.info ?: return
+        if (!canDismiss(info)) return
+        scope.launch { settings.update { it.copy(dismissedUpdateVersion = info.version) } }
+        _promptOpen.value = false
     }
 
+    /** Closes the popup for now (Back). Nothing is remembered, so the next app open shows it again. */
+    fun closePrompt() {
+        val info = when (val s = _state.value) {
+            is UpdateState.Available -> s.info
+            is UpdateState.Ready -> s.info
+            else -> return
+        }
+        if (canDismiss(info)) _promptOpen.value = false
+    }
+
+    /** False for a required release: its popup has no "Don't show again" and Back does not close it. */
+    fun canDismiss(info: ReleaseInfo) = updatePrompt(BuildConfig.VERSION_NAME, info, dismissedVersion = "", manual = true).canDismiss
+
+    /** The header badge: opens the popup for the known update, whatever was dismissed before. */
+    fun openPrompt() {
+        val info = _available.value ?: return
+        when (_state.value) {
+            UpdateState.Checking -> return // the manual check in flight opens it itself
+            UpdateState.Idle, UpdateState.UpToDate, is UpdateState.Failed -> _state.value = UpdateState.Available(info)
+            else -> Unit
+        }
+        _promptOpen.value = true
+    }
+
+    /** Clears a finished result. After a failed download the known update comes back, so it can be tried again. */
     fun dismissResult() {
-        if (_state.value is UpdateState.UpToDate || _state.value is UpdateState.Failed) _state.value = UpdateState.Idle
+        if (_state.value is UpdateState.UpToDate || _state.value is UpdateState.Failed) {
+            _state.value = _available.value?.let { UpdateState.Available(it) } ?: UpdateState.Idle
+        }
     }
 
     fun startDownload() {
@@ -120,6 +217,7 @@ class UpdateManager @Inject constructor(
             is UpdateState.Failed -> return
             else -> return
         }
+        _promptOpen.value = true
         download?.cancel()
         download = scope.launch(Dispatchers.IO) {
             val dir = File(context.cacheDir, "updates").apply { mkdirs(); listFiles()?.forEach { it.delete() } }
