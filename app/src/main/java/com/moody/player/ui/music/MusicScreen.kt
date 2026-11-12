@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.material3.PlainTooltip
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -372,6 +374,27 @@ fun GroupRow(leading: @Composable () -> Unit, title: String, meta: String, onCli
 }
 
 /** Pick a picture for a mood mix, or go back to its album discs. */
+/** An info button whose tooltip says what removing a mix does (and doesn't). Its tap doesn't remove the mix. */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun RemoveMixInfo() {
+    val c = MoodyTheme.colors
+    val tip = androidx.compose.material3.rememberTooltipState(isPersistent = true)
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val text = "Your songs stay on your phone. Bring the mix back any time from Mood mixes"
+    androidx.compose.material3.TooltipBox(
+        positionProvider = androidx.compose.material3.TooltipDefaults.rememberPlainTooltipPositionProvider(),
+        tooltip = {
+            PlainTooltip(containerColor = c.raised, contentColor = c.text) {
+                Text(text, style = MoodyTheme.type.caption, color = c.text)
+            }
+        },
+        state = tip,
+    ) {
+        IconAction(MoodyIcons.Info, "What removing does: $text", { scope.launch { tip.show() } }, tint = c.text3)
+    }
+}
+
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 private fun MixSheet(
@@ -391,7 +414,7 @@ private fun MixSheet(
             }
             if (hasCover) SheetRow(MoodyIcons.Close, "Use the album covers") { onRemoveCover(); onDismiss() }
             SheetRow(MoodyIcons.Rename, "Rename") { onDismiss(); onRename() }
-            SheetRow(MoodyIcons.Delete, "Remove mix", meta = "Your songs stay. You can bring it back") { onDismiss(); onRemoveMix() }
+            SheetRow(MoodyIcons.Delete, "Remove mix", trailing = { RemoveMixInfo() }) { onDismiss(); onRemoveMix() }
         }
     }
 }

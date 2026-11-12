@@ -221,13 +221,22 @@ fun SongActionsSheet(
 }
 
 @Composable
-fun SheetRow(icon: ImageVector, label: String, meta: String? = null, onClick: () -> Unit) {
+fun SheetRow(
+    icon: ImageVector, label: String, meta: String? = null,
+    /** Something at the row's right end, such as an info button; it takes the place of [meta]'s spot. */
+    trailing: (@Composable () -> Unit)? = null,
+    onClick: () -> Unit,
+) {
     val c = MoodyTheme.colors
-    Row(Modifier.fillMaxWidth().height(52.dp).clickable(onClick = onClick).padding(horizontal = 24.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        Modifier.fillMaxWidth().height(52.dp).clickable(onClick = onClick).padding(start = 24.dp, end = if (trailing != null) 12.dp else 24.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Icon(icon, null, Modifier.size(20.dp), tint = c.text2)
         Spacer(Modifier.width(16.dp))
-        Text(label, style = MoodyTheme.type.body, color = c.text, modifier = Modifier.weight(1f))
-        if (meta != null) Text(meta, style = MoodyTheme.type.monoSmall, color = c.text3)
+        Text(label, style = MoodyTheme.type.body, color = c.text, maxLines = 1, modifier = Modifier.weight(1f))
+        if (meta != null) Text(meta, style = MoodyTheme.type.monoSmall, color = c.text3, maxLines = 1)
+        trailing?.invoke()
     }
 }
 

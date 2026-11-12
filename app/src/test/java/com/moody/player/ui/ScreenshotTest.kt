@@ -286,6 +286,15 @@ class ScreenshotTest {
     @Test fun statsOffLight() = bare("stats-off-light", ThemeMode.LIGHT) {
         com.moody.player.ui.stats.StatsContent(statsUi(com.moody.player.ui.stats.StatsRange.WEEK).copy(keepStats = false), {}, {}, {}, {})
     }
+    @Test fun mixSheetRowsDark() = bare("mix-sheet-rows-dark", ThemeMode.DARK) {
+        val c = com.moody.player.design.MoodyTheme.colors
+        androidx.compose.foundation.layout.Column(Modifier.background(c.surface).padding(vertical = 8.dp)) {
+            com.moody.player.ui.music.SheetRow(com.moody.player.design.icons.MoodyIcons.Rename, "Rename") {}
+            com.moody.player.ui.music.SheetRow(com.moody.player.design.icons.MoodyIcons.Delete, "Remove mix", trailing = {
+                com.moody.player.design.components.IconAction(com.moody.player.design.icons.MoodyIcons.Info, "Info", {}, tint = c.text3)
+            }) {}
+        }
+    }
     @Test fun sortChoicesDark() = bare("sort-songs-dark", ThemeMode.DARK) {
         androidx.compose.foundation.layout.Column(Modifier.padding(24.dp)) {
             com.moody.player.ui.components.SortChoices(
