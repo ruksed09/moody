@@ -13,3 +13,6 @@ captures/
 *.keystore
 keystore.properties
 dist/
+
+# Release APKs for GitHub releases
+release/
