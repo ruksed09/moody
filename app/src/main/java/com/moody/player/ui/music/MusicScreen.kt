@@ -146,7 +146,11 @@ fun MusicScreen(vm: MusicViewModel, nav: MusicNav, hasAccess: Boolean, backgroun
         NameDialog(
             "Rename mix", m.title, "Rename", onDismiss = { renaming = null },
             note = "Leave it empty to use Moody's name", allowBlank = true,
-        ) { vm.renameMix(m.id, it); renaming = null }
+        ) { name ->
+            // Saving the name as shown would pin it (time-of-day names would stop following the clock).
+            if (name.trim() != m.title) vm.renameMix(m.id, name)
+            renaming = null
+        }
     }
     val writeCover = rememberCoverWriter(vm.music)
     actionsFor?.let { song -> SongActionsSheet(song, vm, onDismiss = { actionsFor = null }, onCoverSaved = writeCover) }

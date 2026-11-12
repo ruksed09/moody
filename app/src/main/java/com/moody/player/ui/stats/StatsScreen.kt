@@ -52,7 +52,17 @@ import com.moody.player.design.components.ChoiceChip
 import com.moody.player.design.components.LocalToaster
 import com.moody.player.design.components.Motion
 import com.moody.player.design.components.QuietButton
-import com.moody.player.design.components.SecondaryButton
+import com.moody.player.design.components.EmptyState
+import com.moody.player.design.components.PrimaryButton
+import com.moody.player.design.components.RoundIconAction
+import com.moody.player.design.components.moodyCard
+import com.moody.player.design.icons.MoodyIcons
+import com.moody.player.design.illustrations.StatsEmptyArt
+import com.moody.player.design.illustrations.StatsOffArt
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.ui.draw.clip
 import com.moody.player.domain.DayTotal
 import com.moody.player.domain.StatsSummary
 import com.moody.player.domain.TopItem
@@ -118,75 +128,87 @@ fun StatsContent(s: StatsUi, onRange: (StatsRange) -> Unit, onKeep: (Boolean) ->
     val c = MoodyTheme.colors
     val toaster = LocalToaster.current
     var confirm by remember { mutableStateOf(false) }
+    var menu by remember { mutableStateOf(false) }
     val sum = s.summary
 
-    SettingsPage("Your stats", onBack) {
-        item {
-            Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                StatsRange.entries.forEach { r -> ChoiceChip(r.label, s.range == r, { onRange(r) }) }
+    SettingsPage("Your stats", onBack, trailing = {
+        Box {
+            RoundIconAction(MoodyIcons.More, "Stats options", { menu = true })
+            DropdownMenu(menu, { menu = false }, containerColor = c.raised) {
+                DropdownMenuItem(
+                    text = { Text(if (s.keepStats) "Turn stats off" else "Turn stats on", color = c.text) },
+                    onClick = { menu = false; onKeep(!s.keepStats); if (s.keepStats) toaster.show("Stats off") },
+                )
+                DropdownMenuItem(text = { Text("Clear stats", color = c.danger) }, onClick = { menu = false; confirm = true })
+            }
+        }
+    }) {
+        item(key = "range") {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)) {
+                StatsRange.entries.forEach { r -> ChoiceChip(r.label, s.range == r, { onRange(r) }, icon = MoodyIcons.Calendar) }
             }
         }
         if (!s.keepStats) {
-            item {
-                Column(Modifier.padding(16.dp).fillMaxWidth().border(1.dp, c.line2, Radii.lg).padding(16.dp)) {
-                    Text("Stats are off", style = MoodyTheme.type.title, color = c.text)
-                    Spacer(Modifier.height(4.dp))
-                    Text("Moody isn't counting play time right now. What was counted before stays here until you clear it.", style = MoodyTheme.type.caption, color = c.text2)
-                    Spacer(Modifier.height(12.dp))
-                    SecondaryButton("Turn stats on", { onKeep(true) })
+            item(key = "off") {
+                Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth().moodyCard(c), verticalAlignment = Alignment.CenterVertically) {
+                    StatsOffArt()
+                    Spacer(Modifier.width(14.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Stats are off", style = MoodyTheme.type.title, color = c.text)
+                        Spacer(Modifier.height(2.dp))
+                        Text("Moody isn't counting play time. What was counted before stays here until you clear it.", style = MoodyTheme.type.caption, color = c.text2)
+                        Spacer(Modifier.height(10.dp))
+                        PrimaryButton("Turn stats on", { onKeep(true) }, Modifier.height(36.dp))
+                    }
                 }
             }
         }
-        if (sum == null) return@SettingsPage
-        item {
+        if (sum == null) {
+            item(key = "loading") {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    repeat(2) { Box(Modifier.weight(1f).height(TileHeight).background(c.raised, Radii.lg)) }
+                }
+            }
+            return@SettingsPage
+        }
+        item(key = "tiles") {
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Tile("Watched", formatSpent(sum.videoMs), watchColor(), Modifier.weight(1f))
-                Tile("Listened", formatSpent(sum.musicMs), listenColor(), Modifier.weight(1f))
+                Tile("Watched", formatSpent(sum.videoMs), watchColor(), MoodyIcons.Eye, sum.days.map { it.videoMs }, Modifier.weight(1f))
+                Tile("Listened", formatSpent(sum.musicMs), listenColor(), MoodyIcons.Headphones, sum.days.map { it.musicMs }, Modifier.weight(1f))
             }
         }
         if (sum.isEmpty) {
-            item {
-                Column(Modifier.fillMaxWidth().padding(horizontal = 32.dp, vertical = 40.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Nothing counted yet", style = MoodyTheme.type.title, color = c.text)
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        "Play a video or a song and your time shows up here. It's counted on this phone only, and vault videos are never counted.",
-                        style = MoodyTheme.type.caption, color = c.text2, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                    )
-                }
+            item(key = "empty") {
+                EmptyState(
+                    { StatsEmptyArt() }, "Nothing counted yet",
+                    "Play a video or a song and your time shows up here. It's counted on this phone only, and vault videos are never counted.",
+                )
             }
         } else {
-            item { DayChart(sum.days, s.range) }
+            item(key = "chart") { DayChart(sum.days, s.range, sum.videoMs + sum.musicMs) }
             sum.busiestHour?.let { h ->
-                item {
-                    Text(
-                        "You play most around ${hourLabel(h)}",
-                        style = MoodyTheme.type.body, color = c.text2,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                    )
+                item(key = "hour") {
+                    Row(Modifier.padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(MoodyIcons.Clock, null, Modifier.size(16.dp), tint = c.text3)
+                        Spacer(Modifier.width(8.dp))
+                        Text("You play most around ${hourLabel(h)}", style = MoodyTheme.type.body, color = c.text2)
+                    }
                 }
             }
             if (sum.topSongs.isNotEmpty()) {
-                item { Heading("Top songs") }
-                sum.topSongs.forEachIndexed { i, t -> item(key = "s" + t.uri) { TopRow(i + 1, t) } }
+                item(key = "songs-h") { Heading("Top songs") }
+                item(key = "songs") { TopList(sum.topSongs, MoodyIcons.Music) }
             }
             if (sum.topVideos.isNotEmpty()) {
-                item { Heading("Top videos") }
-                sum.topVideos.forEachIndexed { i, t -> item(key = "v" + t.uri) { TopRow(i + 1, t) } }
+                item(key = "videos-h") { Heading("Top videos") }
+                item(key = "videos") { TopList(sum.topVideos, MoodyIcons.Film) }
             }
         }
-        item {
-            Column(Modifier.padding(horizontal = 16.dp, vertical = 16.dp)) {
-                Text(
-                    "Counted on this phone only. Nothing leaves it. Vault videos, links and deleted files are never named here.",
-                    style = MoodyTheme.type.caption, color = c.text3,
-                )
-                Spacer(Modifier.height(8.dp))
-                Row {
-                    if (s.keepStats) QuietButton("Turn off", { onKeep(false); toaster.show("Stats off") }, color = c.text2)
-                    QuietButton("Clear stats", { confirm = true }, color = c.danger)
-                }
-            }
+        item(key = "note") {
+            Text(
+                "Counted on this phone only. Nothing leaves it. Vault videos, links and deleted files are never named here.",
+                style = MoodyTheme.type.caption, color = c.text3, modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp),
+            )
         }
     }
 
@@ -204,37 +226,80 @@ fun StatsContent(s: StatsUi, onRange: (StatsRange) -> Unit, onKeep: (Boolean) ->
     }
 }
 
+private val TileHeight = 88.dp
+
+/** A total with its series colour on the icon, and the range's days as a soft line along the bottom. */
 @Composable
-private fun Tile(label: String, value: String, swatch: Color, modifier: Modifier) {
+private fun Tile(label: String, value: String, swatch: Color, icon: androidx.compose.ui.graphics.vector.ImageVector, series: List<Long>, modifier: Modifier) {
     val c = MoodyTheme.colors
-    Column(
-        modifier.height(72.dp).background(c.surface, Radii.lg).border(1.dp, c.line, Radii.lg).padding(horizontal = 14.dp),
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(8.dp).background(swatch, Radii.sm))
-            Spacer(Modifier.width(6.dp))
-            Text(label, style = MoodyTheme.type.caption, color = c.text2, maxLines = 1)
+    Box(modifier.height(TileHeight).background(c.surface, Radii.lg).border(1.dp, c.line, Radii.lg).clip(Radii.lg).semantics(mergeDescendants = true) {}) {
+        Canvas(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(28.dp)) {
+            val max = series.maxOrNull() ?: 0L
+            if (series.size < 2 || max <= 0L) {
+                drawLine(c.line, Offset(0f, size.height - 1.dp.toPx()), Offset(size.width, size.height - 1.dp.toPx()), 1.dp.toPx())
+                return@Canvas
+            }
+            val top = 3.dp.toPx()
+            val pts = series.mapIndexed { i, v -> Offset(size.width * i / (series.size - 1), top + (size.height - top) * (1f - v / max.toFloat())) }
+            val line = Path().apply {
+                moveTo(pts[0].x, pts[0].y)
+                for (i in 1 until pts.size) {
+                    val a = pts[i - 1]; val b = pts[i]; val mx = (a.x + b.x) / 2
+                    cubicTo(mx, a.y, mx, b.y, b.x, b.y)
+                }
+            }
+            val area = Path().apply { addPath(line); lineTo(size.width, size.height); lineTo(0f, size.height); close() }
+            drawPath(area, swatch.copy(alpha = 0.12f))
+            drawPath(line, swatch.copy(alpha = 0.7f), style = androidx.compose.ui.graphics.drawscope.Stroke(1.5.dp.toPx()))
         }
-        Spacer(Modifier.height(4.dp))
-        Text(value, style = MoodyTheme.type.display, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(icon, null, Modifier.size(14.dp), tint = swatch)
+                Spacer(Modifier.width(6.dp))
+                Text(label, style = MoodyTheme.type.caption, color = c.text2, maxLines = 1)
+            }
+            Spacer(Modifier.height(2.dp))
+            Text(value, style = MoodyTheme.type.display, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
     }
 }
 
 @Composable
-private fun Heading(text: String) =
-    Text(text, style = MoodyTheme.type.title, color = MoodyTheme.colors.text, modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 24.dp, bottom = 4.dp))
+private fun Heading(text: String) {
+    val c = MoodyTheme.colors
+    Row(Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(MoodyIcons.Medal, null, Modifier.size(18.dp), tint = c.accent)
+        Spacer(Modifier.width(8.dp))
+        Text(text, style = MoodyTheme.type.title, color = c.text)
+    }
+}
 
 @Composable
-private fun TopRow(rank: Int, t: TopItem) {
+private fun TopList(items: List<TopItem>, icon: androidx.compose.ui.graphics.vector.ImageVector) {
     val c = MoodyTheme.colors
-    Row(Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text("$rank", style = MoodyTheme.type.mono, color = c.text3, modifier = Modifier.widthIn(min = 24.dp))
+    Column(Modifier.padding(horizontal = 16.dp).fillMaxWidth().background(c.surface, Radii.lg).border(1.dp, c.line, Radii.lg)) {
+        items.forEachIndexed { i, t ->
+            if (i > 0) Box(Modifier.padding(start = 56.dp).fillMaxWidth().height(1.dp).background(c.line))
+            TopRow(i + 1, t, icon)
+        }
+    }
+}
+
+@Composable
+private fun TopRow(rank: Int, t: TopItem, icon: androidx.compose.ui.graphics.vector.ImageVector) {
+    val c = MoodyTheme.colors
+    Row(Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 12.dp).semantics(mergeDescendants = true) {}, verticalAlignment = Alignment.CenterVertically) {
+        Text("$rank", style = MoodyTheme.type.mono, color = c.text3, modifier = Modifier.width(12.dp))
+        Spacer(Modifier.width(8.dp))
+        Box(Modifier.size(32.dp).background(c.raised, Radii.md), contentAlignment = Alignment.Center) {
+            Icon(icon, null, Modifier.size(16.dp), tint = c.text2)
+        }
+        Spacer(Modifier.width(10.dp))
         Text(t.title.ifBlank { "Untitled" }, style = MoodyTheme.type.body, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.width(10.dp))
         Text(
             formatSpent(t.ms) + if (t.plays > 0) " · ${t.plays} ${if (t.plays == 1) "play" else "plays"}" else "",
-            style = MoodyTheme.type.caption, color = c.text2,
+            style = MoodyTheme.type.caption, color = c.text2, maxLines = 1,
         )
     }
 }
@@ -248,7 +313,7 @@ private fun dayLong(day: Long): String = LocalDate.ofEpochDay(day).let { "${dayN
  * a rounded top end. Tap a day to read its numbers. Bars grow in when the range changes.
  */
 @Composable
-private fun DayChart(days: List<DayTotal>, range: StatsRange) {
+private fun DayChart(days: List<DayTotal>, range: StatsRange, totalMs: Long) {
     val c = MoodyTheme.colors
     val watch = watchColor()
     val listen = listenColor()
@@ -260,6 +325,7 @@ private fun DayChart(days: List<DayTotal>, range: StatsRange) {
     val sel = days.getOrNull(picked)
 
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+    Column(Modifier.fillMaxWidth().background(c.surface, Radii.lg).border(1.dp, c.line, Radii.lg).padding(horizontal = 12.dp, vertical = 12.dp)) {
         // Legend (two series) and the picked day's numbers, in text colours; the swatches carry identity.
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(10.dp).background(watch, Radii.sm)); Spacer(Modifier.width(6.dp))
@@ -267,12 +333,12 @@ private fun DayChart(days: List<DayTotal>, range: StatsRange) {
             Box(Modifier.size(10.dp).background(listen, Radii.sm)); Spacer(Modifier.width(6.dp))
             Text("Listening", style = MoodyTheme.type.caption, color = c.text2)
             Spacer(Modifier.weight(1f))
-            Text(formatSpent(max), style = MoodyTheme.type.caption, color = c.text3)
+            Text(formatSpent(totalMs), style = MoodyTheme.type.bodyStrong, color = c.text)
         }
         Spacer(Modifier.height(10.dp))
         val desc = days.joinToString("; ") { "${dayLong(it.day)}: watched ${formatSpent(it.videoMs)}, listened ${formatSpent(it.musicMs)}" }
         Canvas(
-            Modifier.fillMaxWidth().height(176.dp)
+            Modifier.fillMaxWidth().height(160.dp)
                 .semantics { contentDescription = "Play time by day. $desc" }
                 .pointerInput(days) {
                     detectTapGestures { o -> picked = (o.x / (size.width / days.size.toFloat())).toInt().coerceIn(0, days.lastIndex) }
@@ -282,11 +348,13 @@ private fun DayChart(days: List<DayTotal>, range: StatsRange) {
             val barW = minOf(20.dp.toPx(), slot * 0.62f)
             val gap = 2.dp.toPx()
             val r = minOf(4.dp.toPx(), barW / 2)
-            // Recessive guide at the top value and the baseline.
-            drawLine(c.line, Offset(0f, 0f), Offset(size.width, 0f), 1.dp.toPx())
+            // Recessive baseline.
             drawLine(c.line2, Offset(0f, size.height), Offset(size.width, size.height), 1.dp.toPx())
             // The picked day sits on a soft band; the bars themselves keep their full, checked colours.
             if (picked in days.indices) drawRoundRect(band, Offset(picked * slot + 1.dp.toPx(), 0f), Size(slot - 2.dp.toPx(), size.height), CornerRadius(6.dp.toPx()))
+            // Every day has a faint track at full height, so empty days still read as days.
+            val track = CornerRadius(r)
+            days.indices.forEach { i -> drawRoundRect(c.line, Offset(i * slot + (slot - barW) / 2, 0f), Size(barW, size.height), track) }
             days.forEachIndexed { i, d ->
                 val x = i * slot + (slot - barW) / 2
                 val vh = size.height * (d.videoMs / max.toFloat()) * grow.value
@@ -335,11 +403,19 @@ private fun DayChart(days: List<DayTotal>, range: StatsRange) {
             }
             layout(constraints.maxWidth, h) { placeables.forEachIndexed { k, p -> if (keep[k]) p.place(lefts[k], 0) } }
         }
-        Spacer(Modifier.height(12.dp))
+    }
+        Spacer(Modifier.height(8.dp))
         if (sel != null) {
             Row(Modifier.fillMaxWidth().background(c.surface, Radii.md).border(1.dp, c.line, Radii.md).padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(if (sel.day == PlayStats.today()) "Today" else dayLong(sel.day), style = MoodyTheme.type.bodyStrong, color = c.text, modifier = Modifier.weight(1f))
-                Text("${formatSpent(sel.videoMs)} watched · ${formatSpent(sel.musicMs)} listened", style = MoodyTheme.type.caption, color = c.text2)
+                Icon(MoodyIcons.Calendar, null, Modifier.size(16.dp), tint = c.text3)
+                Spacer(Modifier.width(10.dp))
+                Text(if (sel.day == PlayStats.today()) "Today" else dayLong(sel.day), style = MoodyTheme.type.bodyStrong, color = c.text, maxLines = 1)
+                Spacer(Modifier.width(12.dp))
+                // Wraps under itself on narrow phones instead of running into the date.
+                Text(
+                    "${formatSpent(sel.videoMs)} watched · ${formatSpent(sel.musicMs)} listened", style = MoodyTheme.type.caption, color = c.text2,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.End, modifier = Modifier.weight(1f),
+                )
             }
         }
     }

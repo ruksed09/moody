@@ -164,4 +164,15 @@ object MoodyIcons {
     val Key by lazy { icon("key", "M7.5 12a4.5 4.5 0 1 0 0 9a4.5 4.5 0 1 0 0-9z", "M10.7 13.3L21 3M17 7l3 3M14 10l2 2") }
     val Storage by lazy { icon("storage", "M7 2h10a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z", "M11 18h2") }
     val Layers by lazy { icon("layers", "M12 2l9 5-9 5-9-5z", "M3 12l9 5 9-5", "M3 17l9 5 9-5") }
+    val Clock by lazy { icon("clock", CIRCLE10, "M12 6v6l4 2") }
+    val Calendar by lazy {
+        icon("calendar", "M8 2v4", "M16 2v4", "M3 10h18", "M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z")
+    }
+    val Headphones by lazy {
+        icon("headphones", "M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3")
+    }
+    val Medal by lazy { icon("medal", "M15.5 12.9L17 22l-5-3-5 3 1.5-9.1", "M12 2a6 6 0 1 0 0 12a6 6 0 1 0 0-12z") }
+    val ShieldCheck by lazy { icon("shield-check", SHIELD, "M9 12l2 2 4-4") }
+    val Scan by lazy { icon("scan", "M3 7V5a2 2 0 0 1 2-2h2", "M17 3h2a2 2 0 0 1 2 2v2", "M21 17v2a2 2 0 0 1-2 2h-2", "M7 21H5a2 2 0 0 1-2-2v-2", "M7 12h10") }
+    val Warning by lazy { icon("warning", "M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z", "M12 9v4", "M12 17h.01") }
 }

@@ -153,7 +153,7 @@ enum class SettingsSection(val id: String, val title: String, val summary: Strin
  * so its scroll position survives opening a sub-page and coming back.
  */
 @Composable
-fun SettingsPage(title: String, onBack: () -> Unit, content: LazyListScope.() -> Unit) {
+fun SettingsPage(title: String, onBack: () -> Unit, trailing: (@Composable () -> Unit)? = null, content: LazyListScope.() -> Unit) {
     val c = MoodyTheme.colors
     val list = rememberLazyListState()
     val lineAlpha by animateFloatAsState(if (list.canScrollBackward) 1f else 0f, label = "header-line")
@@ -161,7 +161,8 @@ fun SettingsPage(title: String, onBack: () -> Unit, content: LazyListScope.() ->
         Row(Modifier.statusBarsPadding().fillMaxWidth().height(48.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             IconAction(MoodyIcons.ArrowBack, "Back", onBack, tint = c.text, size = 22.dp)
             Spacer(Modifier.width(4.dp))
-            Text(title, style = MoodyTheme.type.title, color = c.text, maxLines = 1)
+            Text(title, style = MoodyTheme.type.title, color = c.text, maxLines = 1, modifier = Modifier.weight(1f))
+            trailing?.invoke()
         }
         Box(Modifier.fillMaxWidth().height(1.dp).alpha(lineAlpha).background(c.line))
         LazyColumn(

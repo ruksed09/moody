@@ -252,4 +252,53 @@ class ScreenshotTest {
     @Test fun videoLoading() = shot("video-loading-dark", ThemeMode.DARK) { VideoLibraryContent(VideoUiState(), noop, nav) }
     @Test fun videoEmpty() = shot("video-empty-dark", ThemeMode.DARK) { VideoLibraryContent(VideoUiState(loading = false), noop, nav) }
     @Test fun videoNoAccessLight() = shot("video-noaccess-light", ThemeMode.LIGHT) { VideoLibraryContent(VideoUiState(loading = false, access = AccessLevel.NONE), noop, nav) }
+
+    // ---- Media health, Your stats (redesign), sorting and mix options ----
+    private fun healthUi(problems: Boolean, firstRun: Boolean = false): com.moody.player.ui.health.HealthUi {
+        if (firstRun) return com.moody.player.ui.health.HealthUi(loaded = true)
+        val now = System.currentTimeMillis()
+        val f = com.moody.player.domain.Finding("x", com.moody.player.domain.Severity.CRITICAL, "The file ends early", "d", emptyList())
+        val w = com.moody.player.domain.Finding("y", com.moody.player.domain.Severity.WARNING, "Sound can't be played here", "d", emptyList())
+        val reports = (0 until 71).map { com.moody.player.domain.HealthReport("content://v/$it", "Holiday clip $it.mp4", com.moody.player.domain.MediaKind.VIDEO, emptyList(), now) } +
+            if (problems) listOf(
+                com.moody.player.domain.HealthReport("content://v/c", "Concert recording, part two (cut short).mp4", com.moody.player.domain.MediaKind.VIDEO, listOf(f), now),
+                com.moody.player.domain.HealthReport("content://a/w", "Voice memo 14.m4a", com.moody.player.domain.MediaKind.AUDIO, listOf(w), now),
+            ) else emptyList()
+        val sorted = reports.sortedByDescending { it.severity }
+        return com.moody.player.ui.health.HealthUi(
+            reports = sorted,
+            counts = com.moody.player.domain.Severity.entries.associateWith { s -> sorted.count { it.severity == s } },
+            lastScan = now - 21 * 3_600_000L, loaded = true,
+            removed = listOf(
+                com.moody.player.ui.health.RemovedFile("content://v/r1", "Screen recording 2026-10-02.mp4", 48_300_000, com.moody.player.domain.MediaKind.VIDEO),
+                com.moody.player.ui.health.RemovedFile("content://a/r2", "Ringtone draft.mp3", null, com.moody.player.domain.MediaKind.AUDIO),
+            ),
+        )
+    }
+    @Composable private fun health(u: com.moody.player.ui.health.HealthUi) = com.moody.player.ui.health.HealthContent(u, {}, {}, {}, {}, {}, {})
+    @Config(qualifiers = "w320dp-h720dp-xhdpi")
+    @Test fun healthCleanDark() = bare("health-clean-dark-320", ThemeMode.DARK) { health(healthUi(problems = false)) }
+    @Test fun healthCleanLight() = bare("health-clean-light", ThemeMode.LIGHT) { health(healthUi(problems = false)) }
+    @Test fun healthProblemsMidnight() = bare("health-problems-midnight", ThemeMode.MIDNIGHT) { health(healthUi(problems = true)) }
+    @Test fun healthFirstRunDark() = bare("health-first-dark", ThemeMode.DARK) { health(healthUi(problems = false, firstRun = true)) }
+    @Config(qualifiers = "w320dp-h720dp-xhdpi")
+    @Test fun statsWeekDark320() = bare("stats-week-dark-320", ThemeMode.DARK) { com.moody.player.ui.stats.StatsContent(statsUi(com.moody.player.ui.stats.StatsRange.WEEK), {}, {}, {}, {}) }
+    @Test fun statsOffLight() = bare("stats-off-light", ThemeMode.LIGHT) {
+        com.moody.player.ui.stats.StatsContent(statsUi(com.moody.player.ui.stats.StatsRange.WEEK).copy(keepStats = false), {}, {}, {}, {})
+    }
+    @Test fun sortChoicesDark() = bare("sort-songs-dark", ThemeMode.DARK) {
+        androidx.compose.foundation.layout.Column(Modifier.padding(24.dp)) {
+            com.moody.player.ui.components.SortChoices(
+                listOf(com.moody.player.domain.SortKey.TITLE to "Title") + com.moody.player.ui.components.FileSorts,
+                com.moody.player.domain.SortSpec(com.moody.player.domain.SortKey.DATE, false), {},
+            )
+        }
+    }
+    @Test fun mixesBringBackDark() = bare("mixes-bring-back-dark", ThemeMode.DARK) {
+        val mixes = listOf(
+            com.moody.player.domain.MoodMix("now", "Rainy drive", "What you usually play around this time", songs.take(5)),
+            com.moody.player.domain.MoodMix("repeat", "On repeat", "Your most played this month", songs.drop(2).take(4)),
+        )
+        com.moody.player.ui.music.MoodMixesRow(mixes, {}, hidden = 2, onBringBack = {})
+    }
 }

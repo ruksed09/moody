@@ -176,6 +176,29 @@ fun EmptyState(
     }
 }
 
+/* ---------- cards ---------- */
+
+/** The app's card: surface, a 1 dp hairline (it carries the edge on the midnight theme) and the large radius. */
+fun Modifier.moodyCard(colors: com.moody.player.design.MoodyColors, padding: Dp = 16.dp): Modifier =
+    this.background(colors.surface, Radii.lg).border(1.dp, colors.line, Radii.lg).padding(padding)
+
+/** A round, quiet icon button for a page header's right side. */
+@Composable
+fun RoundIconAction(icon: ImageVector, contentDescription: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val c = MoodyTheme.colors
+    Box(
+        modifier
+            .size(48.dp)
+            .clickable(role = Role.Button, onClick = onClick, interactionSource = remember { MutableInteractionSource() }, indication = ripple(bounded = false, radius = 20.dp))
+            .semantics { this.contentDescription = contentDescription },
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(Modifier.size(36.dp).clip(androidx.compose.foundation.shape.CircleShape).background(c.surface).border(1.dp, c.line, androidx.compose.foundation.shape.CircleShape), contentAlignment = Alignment.Center) {
+            Icon(icon, null, Modifier.size(18.dp), tint = c.text2)
+        }
+    }
+}
+
 /* ---------- buttons ---------- */
 
 @Composable
@@ -272,7 +295,11 @@ fun IconAction(
 
 /** Selectable option chip, as in the mockup's track desk: hairline, accent when selected. */
 @Composable
-fun ChoiceChip(text: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier, icon: ImageVector? = null, height: Dp = 32.dp) {
+fun ChoiceChip(
+    text: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier, icon: ImageVector? = null, height: Dp = 32.dp,
+    /** A fixed icon colour (a status colour, say); null follows the selection. */
+    iconTint: Color? = null,
+) {
     val c = MoodyTheme.colors
     Row(
         modifier
@@ -285,7 +312,7 @@ fun ChoiceChip(text: String, selected: Boolean, onClick: () -> Unit, modifier: M
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (icon != null) {
-            Icon(icon, null, Modifier.size(16.dp), tint = if (selected) c.accent else c.text2)
+            Icon(icon, null, Modifier.size(16.dp), tint = iconTint ?: if (selected) c.accent else c.text2)
             if (text.isNotEmpty()) Spacer(Modifier.width(6.dp))
         }
         if (text.isNotEmpty()) {

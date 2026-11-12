@@ -58,6 +58,14 @@ import com.moody.player.design.components.PrimaryButton
 import com.moody.player.design.components.QuietButton
 import com.moody.player.design.components.ReelLine
 import com.moody.player.design.components.SecondaryButton
+import com.moody.player.design.components.EmptyState
+import com.moody.player.design.components.RoundIconAction
+import com.moody.player.design.components.moodyCard
+import com.moody.player.design.illustrations.HealthClearArt
+import com.moody.player.design.illustrations.HealthScanArt
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.shape.CircleShape
 import com.moody.player.design.icons.MoodyIcons
 import com.moody.player.domain.HealthReport
 import com.moody.player.domain.MediaKind
@@ -80,7 +88,8 @@ val LocalOpenHealth = androidx.compose.runtime.staticCompositionLocalOf<(Uri) ->
 
 enum class HealthFilter(val label: String) { PROBLEMS("Problems"), CRITICAL("Critical"), WARNING("Warning"), HEALTHY("Healthy"), ALL("All") }
 
-data class RemovedFile(val uri: String, val name: String)
+/** A file removed from the library. [sizeBytes] and [kind] are null when the phone no longer reports them. */
+data class RemovedFile(val uri: String, val name: String, val sizeBytes: Long? = null, val kind: MediaKind? = null)
 
 data class HealthUi(
     val reports: List<HealthReport> = emptyList(),
@@ -113,7 +122,7 @@ class HealthViewModel @Inject constructor(
     saved: SavedStateHandle,
 ) : ViewModel() {
     private val filter = MutableStateFlow(HealthFilter.PROBLEMS)
-    private val names = MutableStateFlow<Map<String, String>>(emptyMap())
+    private val names = MutableStateFlow<Map<String, RemovedFile>>(emptyMap())
     /** The report sheet that's open, by URI. */
     val open = MutableStateFlow<String?>(null)
 
@@ -134,7 +143,7 @@ class HealthViewModel @Inject constructor(
             checking = r.checking,
             lastScan = r.lastScan,
             filter = f,
-            removed = s.removedMedia.map { RemovedFile(it, n[it] ?: "") }.sortedBy { it.name.lowercase() },
+            removed = s.removedMedia.map { n[it] ?: RemovedFile(it, "") }.sortedBy { it.name.lowercase() },
             loaded = r.loaded,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HealthUi())
@@ -151,7 +160,7 @@ class HealthViewModel @Inject constructor(
         viewModelScope.launch {
             settings.settings.collect { s ->
                 val missing = s.removedMedia.filter { it !in names.value }
-                if (missing.isNotEmpty()) names.value = names.value + withContext(Dispatchers.IO) { missing.associateWith { displayName(it) } }
+                if (missing.isNotEmpty()) names.value = names.value + withContext(Dispatchers.IO) { missing.associateWith { describe(it) } }
             }
         }
     }
@@ -169,21 +178,34 @@ class HealthViewModel @Inject constructor(
     fun remove(r: HealthReport) = viewModelScope.launch { open.value = null; repo.removeFromLibrary(r.uri) }
     fun restore(uri: String) = viewModelScope.launch { repo.restoreToLibrary(uri) }
 
-    private fun displayName(uri: String): String = runCatching {
-        context.contentResolver.query(Uri.parse(uri), arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
-            if (c.moveToFirst()) c.getString(0) else null
+    /** Name, size and kind of a removed file, read without opening it. */
+    private fun describe(uri: String): RemovedFile {
+        val u = Uri.parse(uri)
+        val (name, size) = runCatching {
+            context.contentResolver.query(u, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { c ->
+                if (c.moveToFirst()) c.getString(0) to (if (c.isNull(1)) null else c.getLong(1).takeIf { it > 0 }) else null
+            }
+        }.getOrNull() ?: (null to null)
+        val mime = runCatching { context.contentResolver.getType(u) }.getOrNull().orEmpty()
+        val kind = when {
+            mime.startsWith("video/") || "/video/" in uri -> MediaKind.VIDEO
+            mime.startsWith("audio/") || "/audio/" in uri -> MediaKind.AUDIO
+            else -> null
         }
-    }.getOrNull() ?: "File no longer on this phone"
+        return RemovedFile(uri, name ?: "File no longer on this phone", size, kind)
+    }
 }
 
 @Composable
 fun HealthScreen(vm: HealthViewModel, onBack: () -> Unit) {
     val s by vm.state.collectAsStateWithLifecycle()
     val openUri by vm.open.collectAsStateWithLifecycle()
+    var about by remember { mutableStateOf(false) }
     HealthContent(
         s, onBack = onBack, onScan = vm::scan, onStop = vm::stop, onFilter = vm::setFilter,
-        onOpen = { vm.open.value = it.uri }, onRestore = { vm.restore(it) },
+        onOpen = { vm.open.value = it.uri }, onRestore = { vm.restore(it) }, onAbout = { about = true },
     )
+    if (about) AboutSheet { about = false }
     val report = openUri?.let { u -> s.reports.firstOrNull { it.uri == u } }
     val checkingOpen = openUri != null && openUri in s.checking
     if (openUri != null && (report != null || checkingOpen)) {
@@ -201,51 +223,97 @@ fun HealthContent(
     onFilter: (HealthFilter) -> Unit,
     onOpen: (HealthReport) -> Unit,
     onRestore: (String) -> Unit,
+    onAbout: () -> Unit = {},
 ) {
     val c = MoodyTheme.colors
-    SettingsPage("Media health", onBack) {
+    SettingsPage("Media health", onBack, trailing = { RoundIconAction(MoodyIcons.ShieldCheck, "What Media health checks", onAbout) }) {
         item(key = "head") { Summary(s, onScan, onStop) }
         if (s.reports.isNotEmpty()) {
             item(key = "filters") {
-                Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    HealthFilter.entries.forEach { f -> ChoiceChip(f.label, s.filter == f, { onFilter(f) }) }
+                Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    HealthFilter.entries.forEach { f ->
+                        val sev = f.severity()
+                        ChoiceChip(
+                            f.label, s.filter == f, { onFilter(f) },
+                            icon = sev?.icon() ?: if (f == HealthFilter.PROBLEMS) MoodyIcons.Warning else null,
+                            iconTint = sev?.color(),
+                        )
+                    }
                 }
             }
             val shown = s.shown
             if (shown.isEmpty()) item(key = "none") {
-                Text(
-                    when (s.filter) {
-                        HealthFilter.PROBLEMS -> "No problems found. Every checked file looks healthy."
-                        HealthFilter.HEALTHY -> "No healthy files in the last check."
-                        else -> "Nothing in this group."
-                    },
-                    style = MoodyTheme.type.body, color = c.text2, modifier = Modifier.padding(horizontal = 16.dp, vertical = 24.dp),
-                )
+                if (s.filter == HealthFilter.PROBLEMS) {
+                    EmptyState({ HealthClearArt() }, "No problems found", "Every checked file looks healthy", Modifier.padding(top = 4.dp))
+                } else {
+                    Text(
+                        if (s.filter == HealthFilter.HEALTHY) "No healthy files in the last check" else "Nothing in this group",
+                        style = MoodyTheme.type.body, color = c.text2, modifier = Modifier.padding(horizontal = 16.dp, vertical = 24.dp),
+                    )
+                }
             }
             items(shown, key = { it.uri }) { r -> ReportRow(r, checking = r.uri in s.checking) { onOpen(r) } }
         }
         if (s.removed.isNotEmpty()) {
             item(key = "removed-h") {
-                Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 28.dp, bottom = 4.dp)) {
-                    Text("Removed from library", style = MoodyTheme.type.title, color = c.text)
-                    Text("Still on your phone, just not listed in Moody.", style = MoodyTheme.type.caption, color = c.text3)
+                Row(Modifier.padding(start = 16.dp, end = 16.dp, top = 24.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(36.dp).background(c.raised, CircleShape), contentAlignment = Alignment.Center) {
+                        Icon(MoodyIcons.Delete, null, Modifier.size(18.dp), tint = c.text2)
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Column {
+                        Text("Removed from library", style = MoodyTheme.type.heading, color = c.text)
+                        Text("Still on your phone, just not listed in Moody", style = MoodyTheme.type.caption, color = c.text3)
+                    }
                 }
             }
-            items(s.removed, key = { "rm-" + it.uri }) { f ->
-                Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(f.name.ifBlank { "Loading name" }, style = MoodyTheme.type.body, color = c.text2, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                    QuietButton("Restore", { onRestore(f.uri) }, color = c.accent)
-                }
-            }
+            items(s.removed, key = { "rm-" + it.uri }) { f -> RemovedRow(f) { onRestore(f.uri) } }
         }
     }
+}
+
+private fun HealthFilter.severity(): Severity? = when (this) {
+    HealthFilter.CRITICAL -> Severity.CRITICAL
+    HealthFilter.WARNING -> Severity.WARNING
+    HealthFilter.HEALTHY -> Severity.HEALTHY
+    else -> null
+}
+
+@Composable
+private fun RemovedRow(f: RemovedFile, onRestore: () -> Unit) {
+    val c = MoodyTheme.colors
+    Row(
+        Modifier.padding(horizontal = 16.dp, vertical = 4.dp).fillMaxWidth().moodyCard(c, padding = 0.dp).heightIn(min = 60.dp).padding(start = 12.dp, end = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(36.dp).background(c.raised, Radii.md), contentAlignment = Alignment.Center) {
+            Icon(
+                when (f.kind) { MediaKind.VIDEO -> MoodyIcons.Film; MediaKind.AUDIO -> MoodyIcons.Music; null -> MoodyIcons.Folder },
+                null, Modifier.size(18.dp), tint = c.text2,
+            )
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f).padding(vertical = 10.dp)) {
+            Text(f.name.ifBlank { "Loading name" }, style = MoodyTheme.type.bodyStrong, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            f.sizeBytes?.let { Text(sizeLabel(it), style = MoodyTheme.type.caption, color = c.text3, maxLines = 1) }
+        }
+        Spacer(Modifier.width(8.dp))
+        SecondaryButton("Restore", onRestore, Modifier.height(36.dp))
+    }
+}
+
+private fun sizeLabel(b: Long): String = when {
+    b >= 1L shl 30 -> "%.1f GB".format(b / (1L shl 30).toDouble())
+    b >= 1L shl 20 -> "%.1f MB".format(b / (1L shl 20).toDouble())
+    b >= 1L shl 10 -> "${b shr 10} KB"
+    else -> "$b B"
 }
 
 @Composable
 private fun Summary(s: HealthUi, onScan: () -> Unit, onStop: () -> Unit) {
     val c = MoodyTheme.colors
     val p = s.progress
-    Column(Modifier.padding(16.dp).fillMaxWidth().background(c.surface, Radii.lg).border(1.dp, c.line, Radii.lg).padding(16.dp)) {
+    Column(Modifier.padding(16.dp).fillMaxWidth().moodyCard(c)) {
         when {
             p != null -> {
                 Text(if (p.total == 0) "Getting ready" else "Checking ${p.done + 1} of ${p.total}", style = MoodyTheme.type.title, color = c.text)
@@ -257,44 +325,95 @@ private fun Summary(s: HealthUi, onScan: () -> Unit, onStop: () -> Unit) {
                 SecondaryButton("Stop", onStop)
             }
             s.lastScan == null && s.reports.isEmpty() -> {
-                Text("Check your library", style = MoodyTheme.type.title, color = c.text)
-                Spacer(Modifier.height(4.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    HealthScanArt()
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Check your library", style = MoodyTheme.type.title, color = c.text)
+                        Spacer(Modifier.height(2.dp))
+                        Text("Finds damaged, incomplete or unsupported videos and songs", style = MoodyTheme.type.caption, color = c.text2)
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
                 Text(
-                    "Finds damaged, incomplete or unsupported videos and songs, and explains what to do about each. Moody only reads your files; it never changes or deletes them. Vault videos and hidden folders are skipped.",
-                    style = MoodyTheme.type.caption, color = c.text2,
+                    "Moody only reads your files; it never changes or deletes them. Vault videos and hidden folders are skipped.",
+                    style = MoodyTheme.type.caption, color = c.text3,
                 )
-                Spacer(Modifier.height(16.dp))
-                PrimaryButton("Scan library", onScan, icon = MoodyIcons.Health)
+                Spacer(Modifier.height(14.dp))
+                PrimaryButton("Scan library", onScan, Modifier.fillMaxWidth(), icon = MoodyIcons.Scan)
             }
             else -> {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Severity.entries.reversed().forEach { sev -> CountTile(sev, s.counts[sev] ?: 0, Modifier.weight(1f)) }
+                Row(Modifier.height(IntrinsicSize.Min), verticalAlignment = Alignment.CenterVertically) {
+                    Severity.entries.reversed().forEachIndexed { i, sev ->
+                        if (i > 0) Box(Modifier.width(1.dp).fillMaxHeight().padding(vertical = 4.dp).background(c.line))
+                        CountColumn(sev, s.counts[sev] ?: 0, Modifier.weight(1f))
+                    }
                 }
                 Spacer(Modifier.height(12.dp))
+                Box(Modifier.fillMaxWidth().height(1.dp).background(c.line))
+                Spacer(Modifier.height(12.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(MoodyIcons.Clock, null, Modifier.size(14.dp), tint = c.text3)
+                    Spacer(Modifier.width(6.dp))
                     Text(
                         s.lastScan?.let { "Last full check ${agoLabel(it)}" } ?: "Some files checked; no full check yet",
-                        style = MoodyTheme.type.caption, color = c.text3, modifier = Modifier.weight(1f),
+                        style = MoodyTheme.type.caption, color = c.text2, modifier = Modifier.weight(1f), maxLines = 2,
                     )
-                    SecondaryButton("Scan again", onScan)
+                    Spacer(Modifier.width(8.dp))
+                    PrimaryButton("Scan again", onScan, Modifier.height(36.dp), icon = MoodyIcons.Refresh)
                 }
             }
         }
     }
 }
 
+/** One count in the summary: the number, then its status in its colour with an icon and a word. */
 @Composable
-private fun CountTile(sev: Severity, n: Int, modifier: Modifier) {
+private fun CountColumn(sev: Severity, n: Int, modifier: Modifier) {
     val c = MoodyTheme.colors
     Column(
-        modifier.height(64.dp).background(c.raised, Radii.md).padding(horizontal = 12.dp).semantics(mergeDescendants = true) {},
-        verticalArrangement = Arrangement.Center,
+        modifier.padding(vertical = 2.dp).semantics(mergeDescendants = true) {},
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text("$n", style = MoodyTheme.type.display, color = c.text)
+        Text("$n", style = MoodyTheme.type.display, color = c.text, maxLines = 1)
+        Spacer(Modifier.height(2.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(sev.icon(), null, Modifier.size(12.dp), tint = sev.color())
             Spacer(Modifier.width(4.dp))
             Text(sev.label, style = MoodyTheme.type.caption, color = c.text2, maxLines = 1)
+        }
+    }
+}
+
+/** What Media health does, behind the shield in the header. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AboutSheet(onDismiss: () -> Unit) {
+    val c = MoodyTheme.colors
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = c.surface) {
+        Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 24.dp).padding(bottom = 24.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(MoodyIcons.ShieldCheck, null, Modifier.size(20.dp), tint = c.accent)
+                Spacer(Modifier.width(10.dp))
+                Text("What Media health checks", style = MoodyTheme.type.title, color = c.text)
+            }
+            Spacer(Modifier.height(12.dp))
+            listOf(
+                "Whether each video and song opens, and whether its sound and picture can be played",
+                "Whether the file reads through to the end, so cut-off downloads and copies show up",
+                "Each problem comes with what you can do about it",
+            ).forEach { line ->
+                Row(Modifier.padding(bottom = 8.dp)) {
+                    Icon(MoodyIcons.Check, null, Modifier.padding(top = 2.dp).size(14.dp), tint = c.text3)
+                    Spacer(Modifier.width(10.dp))
+                    Text(line, style = MoodyTheme.type.body, color = c.text2)
+                }
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Moody only reads your files. It never changes, moves or deletes them. Vault videos and hidden folders are skipped.",
+                style = MoodyTheme.type.caption, color = c.text3,
+            )
         }
     }
 }
