@@ -274,7 +274,8 @@ class VlcEngine @Inject constructor(@ApplicationContext private val context: Con
             MediaPlayer.Event.Stopped -> { setNoisy(false); abandonFocus(); _state.update { it.copy(playing = false) } }
             MediaPlayer.Event.Buffering -> _state.update { it.copy(buffering = e.buffering < 100f) }
             MediaPlayer.Event.TimeChanged -> {
-                if (!sawTime) { sawTime = true; main.removeCallbacks(stallCheck) }
+                // First frame of time: re-read the tracks, as the audio track list can fill in after its ESAdded event.
+                if (!sawTime) { sawTime = true; main.removeCallbacks(stallCheck); refreshTracks(mp) }
                 _state.update { it.copy(positionMs = e.timeChanged, buffering = false) }
             }
             MediaPlayer.Event.LengthChanged -> _state.update { it.copy(durationMs = e.lengthChanged) }

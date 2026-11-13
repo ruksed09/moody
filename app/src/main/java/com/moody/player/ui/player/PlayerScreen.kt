@@ -177,9 +177,15 @@ fun PlayerScreen(vm: PlayerViewModel, host: PlayerHost, inPip: Boolean) {
         }
 
         // A video without a sound track (a silent screen recording, say) still plays; say so once, in the middle.
-        val silent = st.uri != null && st.error == null && st.videoWidth > 0 && st.positionMs >= 1_200 && st.audioTracks.none { it.id >= 0 }
+        val hasAudio = st.audioTracks.any { it.id >= 0 }
+        val silent = st.uri != null && st.error == null && st.playing && st.videoWidth > 0 && st.positionMs >= 1_200 && !hasAudio
         var noAudio by remember(st.uri) { mutableStateOf(false) }
-        LaunchedEffect(st.uri, silent) { if (silent) { noAudio = true; delay(2_500); noAudio = false } }
+        var noAudioDone by remember(st.uri) { mutableStateOf(false) } // shown (or audio seen) once for this video
+        // Only after it has stayed silent for a while: libVLC can report the audio track a moment late.
+        LaunchedEffect(st.uri, silent) { if (silent && !noAudioDone) { delay(1_500); noAudioDone = true; noAudio = true } }
+        // Fades away on its own; keyed only on itself, so later state changes can't cancel the timer and leave it stuck.
+        LaunchedEffect(noAudio) { if (noAudio) { delay(2_500); noAudio = false } }
+        LaunchedEffect(st.uri, hasAudio) { if (hasAudio) { noAudioDone = true; noAudio = false } }
         AnimatedVisibility(
             noAudio && !st.buffering, Modifier.align(Alignment.Center),
             enter = fadeIn(Motion.base()) + androidx.compose.animation.scaleIn(Motion.base(), initialScale = 0.92f),
