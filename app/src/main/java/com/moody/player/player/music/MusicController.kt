@@ -227,6 +227,16 @@ class MusicController @Inject constructor(
         f.addListener({ disconnect() }, ContextCompat.getMainExecutor(context))
     }
 
+    /**
+     * Moody was swiped away from Recents (called by the music service once it has stopped and saved the queue):
+     * let go of the session so the service can end. The next launch connects again and gets the saved queue.
+     */
+    fun release() {
+        sleepIn(null)
+        pendingActions.clear()
+        disconnect()
+    }
+
     /** Lets go of the session; the service ends once nothing holds it. */
     private fun disconnect() {
         ticker?.cancel()

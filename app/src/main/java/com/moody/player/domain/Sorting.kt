@@ -1,7 +1,10 @@
 package com.moody.player.domain
 
-/** NAME is the file name; TITLE is a song's title tag (Music only); DATE is when the file was last modified. */
-enum class SortKey { NAME, DATE, SIZE, DURATION, TITLE }
+/**
+ * NAME is the file name; TITLE is a song's title tag (Music only); DATE is when the file was last modified;
+ * COUNT is how many items a folder holds (folder lists only).
+ */
+enum class SortKey { NAME, DATE, SIZE, DURATION, TITLE, COUNT }
 
 data class SortSpec(val key: SortKey, val ascending: Boolean)
 
@@ -41,6 +44,7 @@ fun <T> List<T>.sortedBy(
     size: (T) -> Long,
     duration: (T) -> Long,
     title: (T) -> String = name,
+    count: (T) -> Long = { 0L },
 ): List<T> {
     val cmp: Comparator<T> = when (spec.key) {
         SortKey.NAME -> Comparator { a, b -> NaturalOrder.compare(name(a), name(b)) }
@@ -48,6 +52,7 @@ fun <T> List<T>.sortedBy(
         SortKey.DATE -> compareBy(date)
         SortKey.SIZE -> compareBy(size)
         SortKey.DURATION -> compareBy(duration)
+        SortKey.COUNT -> compareBy(count)
     }
     return sortedWith(if (spec.ascending) cmp else cmp.reversed())
 }

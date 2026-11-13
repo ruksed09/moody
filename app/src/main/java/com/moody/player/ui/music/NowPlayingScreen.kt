@@ -190,13 +190,13 @@ fun NowPlayingScreen(vm: NowPlayingViewModel, onClose: () -> Unit, onEqualizer: 
                     modifier = Modifier.fillMaxSize().padding(vertical = 12.dp),
                 )
             } else
-            BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            BoxWithConstraints(Modifier.fillMaxSize().swipeSong(settings.swipeSong && item != null, vm.music::next, vm.music::prev), contentAlignment = Alignment.Center) {
                 // The song's disc, as large as fits, turning while it plays.
                 val side = minOf(maxWidth - 48.dp, maxHeight - 32.dp).coerceIn(120.dp, 320.dp)
                 Disc(item, side, spinning = s.playing, sharedKey = NOW_PLAYING_DISC, current = true)
             }
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.swipeSong(settings.swipeSong && item != null, vm.music::next, vm.music::prev), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(item?.title ?: "Nothing playing", style = MoodyTheme.type.display, color = c.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     Spacer(Modifier.height(2.dp))

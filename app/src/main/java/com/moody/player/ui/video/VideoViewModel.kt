@@ -10,6 +10,7 @@ import com.moody.player.data.media.Folder
 import com.moody.player.data.media.MediaRepository
 import com.moody.player.data.media.VideoItem
 import com.moody.player.data.media.groupIntoFolders
+import com.moody.player.data.media.sortFolders
 import com.moody.player.data.prefs.Settings
 import com.moody.player.data.prefs.SettingsStore
 import com.moody.player.domain.LayoutMode
@@ -33,6 +34,7 @@ data class VideoUiState(
     val view: VideoView = VideoView.FOLDERS,
     val layout: LayoutMode = LayoutMode.GRID,
     val sort: SortSpec = Settings().sort,
+    val folderSort: SortSpec = Settings().videoFolderSort,
     val query: String = "",
     val all: List<VideoItem> = emptyList(),
     val shown: List<VideoItem> = emptyList(),
@@ -67,10 +69,11 @@ class VideoViewModel @Inject constructor(
             view = s.videoView,
             layout = s.videoLayout,
             sort = s.sort,
+            folderSort = s.videoFolderSort,
             query = q,
             all = list,
             shown = shown,
-            folders = groupIntoFolders(list, s.hiddenFolders),
+            folders = sortFolders(groupIntoFolders(list, s.hiddenFolders), s.videoFolderSort),
             continueWatching = positions
                 .filter { !it.watched && it.positionMs > 5_000 }
                 .sortedByDescending { it.updatedAt }
@@ -88,6 +91,7 @@ class VideoViewModel @Inject constructor(
     override fun setView(v: VideoView) { viewModelScope.launch { settingsStore.update { it.copy(videoView = v) } } }
     override fun setLayout(l: LayoutMode) { viewModelScope.launch { settingsStore.update { it.copy(videoLayout = l) } } }
     override fun setSort(s: SortSpec) { viewModelScope.launch { settingsStore.update { it.copy(sort = s) } } }
+    override fun setFolderSort(s: SortSpec) { viewModelScope.launch { settingsStore.update { it.copy(videoFolderSort = s) } } }
     override fun refresh() { viewModelScope.launch { repo.rescan() } }
     fun refreshAccess() = repo.refreshAccess()
     override fun hideFolder(path: String) { viewModelScope.launch { settingsStore.update { it.copy(hiddenFolders = it.hiddenFolders + path) } } }

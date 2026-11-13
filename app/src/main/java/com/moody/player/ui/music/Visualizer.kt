@@ -10,6 +10,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -330,10 +331,18 @@ fun VizStylePicker(style: VizStyle, onPick: (VizStyle) -> Unit, modifier: Modifi
 /** Sensitivity, bass, mids, treble and motion. Changes apply while the music plays. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun VizTuneSheet(s: Settings, onChange: ((Settings) -> Settings) -> Unit, onDismiss: () -> Unit) {
+fun VizTuneSheet(
+    s: Settings, onChange: ((Settings) -> Settings) -> Unit, onDismiss: () -> Unit,
+    /** Also offer the backdrop of the visual in use. Only the full-screen visualizer has backdrops. */
+    backdrops: Boolean = false,
+) {
     val c = MoodyTheme.colors
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = c.surface) {
-        Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp).padding(bottom = 16.dp)) {
+        // Scrolls, so the last rows stay in reach on a short screen or in landscape.
+        Column(
+            Modifier.fillMaxWidth().navigationBarsPadding().verticalScroll(androidx.compose.foundation.rememberScrollState())
+                .padding(horizontal = 20.dp).padding(bottom = 16.dp),
+        ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Visualizer", style = MoodyTheme.type.title, color = c.text, modifier = Modifier.weight(1f))
                 QuietButton("Reset", { onChange { it.copy(vizSensitivity = 1f, vizBass = 1f, vizMids = 1f, vizTreble = 1f, vizIntensity = 1f) } })
@@ -345,6 +354,21 @@ fun VizTuneSheet(s: Settings, onChange: ((Settings) -> Settings) -> Unit, onDism
             TuneSlider("Mids", s.vizMids) { v -> onChange { it.copy(vizMids = v) } }
             TuneSlider("Treble", s.vizTreble) { v -> onChange { it.copy(vizTreble = v) } }
             TuneSlider("Motion", s.vizIntensity) { v -> onChange { it.copy(vizIntensity = v) } }
+            if (backdrops) {
+                val now = com.moody.player.domain.backdropOf(s.vizStyle, s.vizBackdrops)
+                Text("Background", style = MoodyTheme.type.body, color = c.text, modifier = Modifier.padding(top = 8.dp))
+                Text("Behind ${s.vizStyle.label}. Each visual keeps its own.", style = MoodyTheme.type.caption, color = c.text3)
+                Spacer(Modifier.height(8.dp))
+                @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+                androidx.compose.foundation.layout.FlowRow(
+                    horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+                    verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+                ) {
+                    (listOf(com.moody.player.domain.VizBackdrop.NONE) + com.moody.player.domain.backdropsFor(s.vizStyle)).forEach { b ->
+                        com.moody.player.design.components.ChoiceChip(b.label, b == now, { onChange { st -> st.copy(vizBackdrops = st.vizBackdrops + (st.vizStyle to b)) } })
+                    }
+                }
+            }
         }
     }
 }

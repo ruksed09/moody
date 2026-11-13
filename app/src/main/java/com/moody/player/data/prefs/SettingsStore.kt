@@ -31,16 +31,25 @@ data class Settings(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val fontMode: FontMode = FontMode.APP,
     val backgrounds: Boolean = false,
+    /** How discs are drawn across Music (mood mixes keep their own look). */
+    val discStyle: com.moody.player.domain.DiscStyle = com.moody.player.domain.DiscStyle.PICTURE,
+    val discPalette: com.moody.player.domain.DiscPalette = com.moody.player.domain.DiscPalette.CRIMSON,
     val videoView: VideoView = VideoView.FOLDERS,
     val videoLayout: LayoutMode = LayoutMode.GRID,
     val sort: SortSpec = SortSpec(SortKey.DATE, ascending = false),
     /** How the Music tab's Songs list is ordered. */
     val songSort: SortSpec = SortSpec(SortKey.TITLE, ascending = true),
+    /** How the Videos tab's Folders list is ordered. */
+    val videoFolderSort: SortSpec = SortSpec(SortKey.DATE, ascending = false),
+    /** How the Music tab's Folders list is ordered. */
+    val songFolderSort: SortSpec = SortSpec(SortKey.NAME, ascending = true),
     // Player
     val decoder: Decoder = Decoder.HW,
     val doubleTapSeekSec: Int = 10,
     val gestures: Boolean = true,
     val disabledGestures: Set<com.moody.player.domain.PlayerGesture> = emptySet(),
+    /** What a sideways swipe over the video does. */
+    val swipeAction: com.moody.player.domain.SwipeAction = com.moody.player.domain.SwipeAction.SEEK,
     val resume: Boolean = true,
     /** Seconds to step back when resuming a video (0 = off). */
     val smartResumeSec: Int = 5,
@@ -72,6 +81,8 @@ data class Settings(
     val vizMids: Float = 1f,
     val vizTreble: Float = 1f,
     val vizIntensity: Float = 1f,
+    /** The backdrop picked for each visual on the full-screen visualizer; a visual without one shows its usual backdrop. */
+    val vizBackdrops: Map<com.moody.player.domain.VizStyle, com.moody.player.domain.VizBackdrop> = emptyMap(),
     // Media Health: files taken out of Moody's library (the files themselves are untouched).
     val removedMedia: Set<String> = emptySet(),
     // Music
@@ -80,6 +91,8 @@ data class Settings(
     val sleepFade: Boolean = true,
     /** Count play time for the Stats screen and mood mixes. */
     val keepStats: Boolean = true,
+    /** Swiping sideways on Now Playing or the mini-player changes song. */
+    val swipeSong: Boolean = true,
     val minSongSec: Int = 30,
     // Library
     val hiddenFolders: Set<String> = emptySet(),
@@ -100,20 +113,28 @@ private object K {
     val theme = stringPreferencesKey("theme")
     val font = stringPreferencesKey("font")
     val backgrounds = booleanPreferencesKey("backgrounds")
+    val discStyle = stringPreferencesKey("disc_style")
+    val discPalette = stringPreferencesKey("disc_palette")
     val videoView = stringPreferencesKey("video_view")
     val videoLayout = stringPreferencesKey("video_layout")
     val sortKey = stringPreferencesKey("sort_key")
     val sortAsc = booleanPreferencesKey("sort_asc")
     val songSortKey = stringPreferencesKey("song_sort_key")
     val songSortAsc = booleanPreferencesKey("song_sort_asc")
+    val videoFolderSortKey = stringPreferencesKey("video_folder_sort_key")
+    val videoFolderSortAsc = booleanPreferencesKey("video_folder_sort_asc")
+    val songFolderSortKey = stringPreferencesKey("song_folder_sort_key")
+    val songFolderSortAsc = booleanPreferencesKey("song_folder_sort_asc")
     val decoder = stringPreferencesKey("decoder")
     val doubleTap = intPreferencesKey("double_tap_sec")
     val gestures = booleanPreferencesKey("gestures")
     val gesturesOff = stringSetPreferencesKey("gestures_off")
+    val swipeAction = stringPreferencesKey("swipe_action")
     val resume = booleanPreferencesKey("resume")
     val smartResume = intPreferencesKey("smart_resume_sec")
     val sleepFade = booleanPreferencesKey("sleep_fade")
     val keepStats = booleanPreferencesKey("keep_stats")
+    val swipeSong = booleanPreferencesKey("swipe_song")
     val perFile = booleanPreferencesKey("per_file")
     val bgPlay = booleanPreferencesKey("bg_play")
     val autoPip = booleanPreferencesKey("auto_pip")
@@ -135,6 +156,7 @@ private object K {
     val vizMids = androidx.datastore.preferences.core.floatPreferencesKey("viz_mids")
     val vizTreble = androidx.datastore.preferences.core.floatPreferencesKey("viz_treble")
     val vizIntensity = androidx.datastore.preferences.core.floatPreferencesKey("viz_intensity")
+    val vizBackdrops = stringPreferencesKey("viz_backdrops")
     val removed = stringSetPreferencesKey("removed_media")
     val gapless = booleanPreferencesKey("gapless")
     val minSong = intPreferencesKey("min_song_sec")
@@ -156,18 +178,24 @@ internal fun Preferences.toSettings(): Settings {
         themeMode = enum(K.theme, d.themeMode),
         fontMode = enum(K.font, d.fontMode),
         backgrounds = this[K.backgrounds] ?: d.backgrounds,
+        discStyle = enum(K.discStyle, d.discStyle),
+        discPalette = enum(K.discPalette, d.discPalette),
         videoView = enum(K.videoView, d.videoView),
         videoLayout = enum(K.videoLayout, d.videoLayout),
         sort = SortSpec(enum(K.sortKey, d.sort.key), this[K.sortAsc] ?: d.sort.ascending),
         songSort = SortSpec(enum(K.songSortKey, d.songSort.key), this[K.songSortAsc] ?: d.songSort.ascending),
+        videoFolderSort = SortSpec(enum(K.videoFolderSortKey, d.videoFolderSort.key), this[K.videoFolderSortAsc] ?: d.videoFolderSort.ascending),
+        songFolderSort = SortSpec(enum(K.songFolderSortKey, d.songFolderSort.key), this[K.songFolderSortAsc] ?: d.songFolderSort.ascending),
         decoder = enum(K.decoder, d.decoder),
         doubleTapSeekSec = this[K.doubleTap] ?: d.doubleTapSeekSec,
         gestures = this[K.gestures] ?: d.gestures,
         disabledGestures = this[K.gesturesOff]?.let { com.moody.player.domain.decodeGestures(it) } ?: d.disabledGestures,
+        swipeAction = enum(K.swipeAction, d.swipeAction),
         resume = this[K.resume] ?: d.resume,
         smartResumeSec = this[K.smartResume] ?: d.smartResumeSec,
         sleepFade = this[K.sleepFade] ?: d.sleepFade,
         keepStats = this[K.keepStats] ?: d.keepStats,
+        swipeSong = this[K.swipeSong] ?: d.swipeSong,
         perFileSettings = this[K.perFile] ?: d.perFileSettings,
         backgroundPlay = this[K.bgPlay] ?: d.backgroundPlay,
         autoPip = this[K.autoPip] ?: d.autoPip,
@@ -189,6 +217,7 @@ internal fun Preferences.toSettings(): Settings {
         vizMids = this[K.vizMids] ?: d.vizMids,
         vizTreble = this[K.vizTreble] ?: d.vizTreble,
         vizIntensity = this[K.vizIntensity] ?: d.vizIntensity,
+        vizBackdrops = this[K.vizBackdrops]?.let { com.moody.player.domain.decodeBackdrops(it) } ?: d.vizBackdrops,
         removedMedia = this[K.removed] ?: d.removedMedia,
         gapless = this[K.gapless] ?: d.gapless,
         minSongSec = this[K.minSong] ?: d.minSongSec,
@@ -206,20 +235,28 @@ internal fun MutablePreferences.write(s: Settings) {
     this[K.theme] = s.themeMode.name
     this[K.font] = s.fontMode.name
     this[K.backgrounds] = s.backgrounds
+    this[K.discStyle] = s.discStyle.name
+    this[K.discPalette] = s.discPalette.name
     this[K.videoView] = s.videoView.name
     this[K.videoLayout] = s.videoLayout.name
     this[K.sortKey] = s.sort.key.name
     this[K.sortAsc] = s.sort.ascending
     this[K.songSortKey] = s.songSort.key.name
     this[K.songSortAsc] = s.songSort.ascending
+    this[K.videoFolderSortKey] = s.videoFolderSort.key.name
+    this[K.videoFolderSortAsc] = s.videoFolderSort.ascending
+    this[K.songFolderSortKey] = s.songFolderSort.key.name
+    this[K.songFolderSortAsc] = s.songFolderSort.ascending
     this[K.decoder] = s.decoder.name
     this[K.doubleTap] = s.doubleTapSeekSec
     this[K.gestures] = s.gestures
     this[K.gesturesOff] = com.moody.player.domain.encodeGestures(s.disabledGestures)
+    this[K.swipeAction] = s.swipeAction.name
     this[K.resume] = s.resume
     this[K.smartResume] = s.smartResumeSec
     this[K.sleepFade] = s.sleepFade
     this[K.keepStats] = s.keepStats
+    this[K.swipeSong] = s.swipeSong
     this[K.perFile] = s.perFileSettings
     this[K.bgPlay] = s.backgroundPlay
     this[K.autoPip] = s.autoPip
@@ -241,6 +278,7 @@ internal fun MutablePreferences.write(s: Settings) {
     this[K.vizMids] = s.vizMids
     this[K.vizTreble] = s.vizTreble
     this[K.vizIntensity] = s.vizIntensity
+    this[K.vizBackdrops] = com.moody.player.domain.encodeBackdrops(s.vizBackdrops)
     this[K.removed] = s.removedMedia
     this[K.gapless] = s.gapless
     this[K.minSong] = s.minSongSec

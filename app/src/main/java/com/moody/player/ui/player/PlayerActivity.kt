@@ -57,6 +57,8 @@ import javax.inject.Inject
 class PlayerActivity : ComponentActivity() {
     private val vm: PlayerViewModel by viewModels()
     @Inject lateinit var coordinator: PlaybackCoordinator
+    /** How the rest of Moody closes this screen (see [PlaybackCoordinator.closeVideo]). */
+    private val closeVideo: () -> Unit = { vm.engine.pause(); finishAndRemoveTask() }
     private var inPip by mutableStateOf(false)
     /** null = follow the video; otherwise the user's choice from the rotate button. */
     private var userOrientation: Int? = null
@@ -91,6 +93,7 @@ class PlayerActivity : ComponentActivity() {
         if (vm.isVault) window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         hideSystemBars()
         coordinator.videoStarted()
+        coordinator.closeVideo = closeVideo
         ContextCompat.registerReceiver(this, pipReceiver, IntentFilter(ACTION_PIP), ContextCompat.RECEIVER_NOT_EXPORTED)
 
         if (vm.queue.isEmpty()) { finish(); return }
@@ -332,6 +335,8 @@ class PlayerActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        // A newer player screen may have taken over already: only take back what is still ours.
+        if (coordinator.closeVideo === closeVideo) coordinator.closeVideo = null
         runCatching { unregisterReceiver(pipReceiver) }
         if (isFinishing && !VideoBackgroundService.running) vm.engine.stopIfOwner(vm.token)
         super.onDestroy()

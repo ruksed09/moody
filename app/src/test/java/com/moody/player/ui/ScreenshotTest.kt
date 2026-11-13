@@ -74,6 +74,7 @@ class ScreenshotTest {
         override fun setView(v: VideoView) {}
         override fun setLayout(l: LayoutMode) {}
         override fun setSort(s: SortSpec) {}
+        override fun setFolderSort(s: SortSpec) {}
         override fun refresh() {}
         override fun hideFolder(path: String) {}
     }
@@ -252,6 +253,49 @@ class ScreenshotTest {
     @Test fun playerTopBar320() = bare("player-top-bar-320", ThemeMode.DARK) { playerTopBar() }
     @Test fun discsDark() = bare("discs-dark", ThemeMode.DARK) { discs() }
     @Test fun discsLight() = bare("discs-light", ThemeMode.LIGHT) { discs() }
+    /** Every disc style at card size, without a cover, in four colours; then the smallest size. */
+    @Composable private fun discStyles() {
+        val palettes = listOf(com.moody.player.domain.DiscPalette.CRIMSON, com.moody.player.domain.DiscPalette.AMBER, com.moody.player.domain.DiscPalette.COBALT, com.moody.player.domain.DiscPalette.SAND)
+        Column(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp)) {
+            com.moody.player.domain.DiscStyle.entries.forEach { st ->
+                androidx.compose.foundation.layout.Row(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    palettes.forEach { p -> com.moody.player.ui.music.Disc(null, 76.dp, look = com.moody.player.domain.DiscLook(st, p)) }
+                    com.moody.player.ui.music.Disc(null, 40.dp, look = com.moody.player.domain.DiscLook(st, palettes[0]))
+                }
+            }
+            com.moody.player.domain.DiscStyle.entries.chunked(3).forEach { row ->
+                androidx.compose.foundation.layout.Row(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp)) {
+                    row.forEach { st -> com.moody.player.ui.music.Disc(null, 150.dp, look = com.moody.player.domain.DiscLook(st, com.moody.player.domain.DiscPalette.LAGOON)) }
+                }
+            }
+        }
+    }
+    /** Every visualizer backdrop on the visualizer's black, in a strip each. */
+    @Test fun vizBackdropsDark() = bare("viz-backdrops-dark", ThemeMode.DARK) {
+        val all = com.moody.player.domain.VizBackdrop.entries.drop(1)
+        Column(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color(0xFF040506))) {
+            all.chunked(3).forEach { row ->
+                androidx.compose.foundation.layout.Row(Modifier.weight(1f)) {
+                    row.forEach { b ->
+                        Box(Modifier.weight(1f).fillMaxSize()) {
+                            com.moody.player.ui.music.VizBackdropLayer(b, androidx.compose.ui.graphics.Color(0xFFDC143C), androidx.compose.ui.graphics.Color(0xFF4FD1C5), moving = false, modifier = Modifier.fillMaxSize())
+                            androidx.compose.material3.Text(b.label, color = androidx.compose.ui.graphics.Color(0x99FFFFFF), modifier = Modifier.padding(6.dp))
+                        }
+                    }
+                }
+            }
+        }
+    }
+    @Test fun discStylesDark() = bare("disc-styles-dark", ThemeMode.DARK) { discStyles() }
+    @Test fun discStylesLight() = bare("disc-styles-light", ThemeMode.LIGHT) { discStyles() }
+    @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+    @Test fun discPickerDark() = bare("disc-picker-dark", ThemeMode.DARK) {
+        val look = com.moody.player.domain.DiscLook(com.moody.player.domain.DiscStyle.VINYL, com.moody.player.domain.DiscPalette.AMBER)
+        Column(Modifier.padding(16.dp)) {
+            androidx.compose.foundation.layout.FlowRow { com.moody.player.ui.music.DiscStyleChoices(look, {}) }
+            androidx.compose.foundation.layout.FlowRow { com.moody.player.ui.music.DiscPaletteChoices(look, {}) }
+        }
+    }
 
     @Test fun welcomeDark() = bare("welcome-dark", ThemeMode.DARK) { com.moody.player.ui.onboarding.WelcomePager {} }
     @Test fun welcomeLight() = bare("welcome-light", ThemeMode.LIGHT) { com.moody.player.ui.onboarding.WelcomePager {} }

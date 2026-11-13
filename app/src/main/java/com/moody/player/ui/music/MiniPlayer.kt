@@ -9,6 +9,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -21,13 +23,17 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -41,9 +47,10 @@ import com.moody.player.player.music.MusicState
 /**
  * Docks above the tab bar while something is queued: the song's disc (turning while it plays) inside a
  * thin ring that fills with progress. Tap opens Now Playing; X stops the music and hides the bar.
+ * With [swipe] on, a sideways swipe changes song.
  */
 @Composable
-fun MiniPlayer(s: MusicState, onOpen: () -> Unit, onToggle: () -> Unit, onNext: () -> Unit, onClose: () -> Unit) {
+fun MiniPlayer(s: MusicState, onOpen: () -> Unit, onToggle: () -> Unit, onNext: () -> Unit, onClose: () -> Unit, onPrev: () -> Unit, swipe: Boolean) {
     val c = MoodyTheme.colors
     AnimatedVisibility(s.current != null && !s.dismissed, enter = expandVertically(Motion.enter()) + fadeIn(Motion.enter()), exit = shrinkVertically(Motion.base()) + fadeOut(Motion.fast())) {
         val item = s.current ?: return@AnimatedVisibility
@@ -56,6 +63,7 @@ fun MiniPlayer(s: MusicState, onOpen: () -> Unit, onToggle: () -> Unit, onNext: 
                 .background(c.surface)
                 .border(1.dp, c.line, Radii.lg)
                 .height(56.dp)
+                .swipeSong(swipe, onNext, onPrev)
                 .clickable(role = Role.Button, onClickLabel = "Open now playing", onClick = onOpen)
                 .padding(start = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -79,6 +87,38 @@ fun MiniPlayer(s: MusicState, onOpen: () -> Unit, onToggle: () -> Unit, onNext: 
             IconAction(MoodyIcons.Next, "Next", onNext, tint = c.text2)
             // Close stops the music and hides this bar; the queue is kept.
             IconAction(MoodyIcons.Close, "Close player", onClose, tint = c.text3, size = 18.dp)
+        }
+    }
+}
+
+/**
+ * Swipe sideways to change song: right for the next one, left for the previous one, the same way round as on
+ * a video. Only a mostly sideways drag counts, and only past a short distance; taps and up-and-down drags are
+ * left to whatever is underneath.
+ */
+internal fun Modifier.swipeSong(enabled: Boolean, onNext: () -> Unit, onPrev: () -> Unit): Modifier = if (!enabled) this else composed {
+    val next by rememberUpdatedState(onNext)
+    val prev by rememberUpdatedState(onPrev)
+    pointerInput(Unit) {
+        val slop = viewConfiguration.touchSlop
+        val far = 56.dp.toPx()
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false)
+            var decided = false
+            var sideways = false
+            var dx = 0f
+            while (true) {
+                val p = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: break
+                if (!p.pressed) break
+                val d = p.position - down.position
+                if (!decided && (kotlin.math.abs(d.x) > slop || kotlin.math.abs(d.y) > slop)) {
+                    decided = true
+                    // Something inside (a list, a slider) may already be using this drag.
+                    sideways = !p.isConsumed && kotlin.math.abs(d.x) > kotlin.math.abs(d.y)
+                }
+                if (sideways) { dx = d.x; p.consume() }
+            }
+            if (sideways) { if (dx > far) next() else if (dx < -far) prev() }
         }
     }
 }

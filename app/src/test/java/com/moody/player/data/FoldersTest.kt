@@ -3,6 +3,10 @@ package com.moody.player.data
 import android.net.Uri
 import com.moody.player.data.media.VideoItem
 import com.moody.player.data.media.groupIntoFolders
+import com.moody.player.data.media.sortFolders
+import com.moody.player.data.prefs.Settings
+import com.moody.player.domain.SortKey
+import com.moody.player.domain.SortSpec
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -35,6 +39,20 @@ class FoldersTest {
 
     @Test fun orderedByNewestVideoFirst() {
         assertEquals(listOf("DCIM/Camera/", "Movies/Anime/"), groupIntoFolders(videos, emptySet()).map { it.path })
+    }
+
+    private fun sorted(k: SortKey, asc: Boolean) = sortFolders(groupIntoFolders(videos, emptySet()), SortSpec(k, asc)).map { it.name }
+
+    @Test fun defaultFolderSort_keepsNewestFirst() {
+        val folders = groupIntoFolders(videos, emptySet())
+        assertEquals(folders, sortFolders(folders, Settings().videoFolderSort))
+    }
+
+    @Test fun folderSort_byNameSizeCountAndDate() {
+        assertEquals(listOf("Anime", "Camera"), sorted(SortKey.NAME, true))
+        assertEquals(listOf("Anime", "Camera"), sorted(SortKey.SIZE, false))
+        assertEquals(listOf("Camera", "Anime"), sorted(SortKey.COUNT, false))
+        assertEquals(listOf("Anime", "Camera"), sorted(SortKey.DATE, true))
     }
 
     @Test fun rootFiles_getReadableName() {

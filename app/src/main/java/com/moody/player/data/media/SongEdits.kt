@@ -57,8 +57,11 @@ class SongEdits @Inject constructor(@ApplicationContext private val context: Con
 private val Context.mixCoverStore by preferencesDataStore("mix_covers")
 private val Context.mixPrefStore by preferencesDataStore("mix_prefs")
 
-/** Names the user gave mood mixes, and the mixes they removed, by mix id. */
-data class MixPrefs(val names: Map<String, String> = emptyMap(), val hidden: Set<String> = emptySet())
+/** Names the user gave mood mixes, the mixes they removed and the discs they picked for them, by mix id. */
+data class MixPrefs(
+    val names: Map<String, String> = emptyMap(), val hidden: Set<String> = emptySet(),
+    val looks: Map<String, com.moody.player.domain.DiscLook> = emptyMap(),
+)
 
 /** Renamed and removed mood mixes. Mixes are rebuilt from play history, so removing one only hides it. */
 @Singleton
@@ -66,19 +69,27 @@ class MixNames @Inject constructor(@ApplicationContext private val context: Cont
     val all: Flow<MixPrefs> = context.mixPrefStore.data.map { p ->
         val names = HashMap<String, String>()
         val hidden = HashSet<String>()
+        val looks = HashMap<String, com.moody.player.domain.DiscLook>()
         p.asMap().forEach { (k, v) ->
             when {
                 k.name.startsWith("name:") && v is String -> names[k.name.removePrefix("name:")] = v
                 k.name.startsWith("hide:") && v == true -> hidden += k.name.removePrefix("hide:")
+                k.name.startsWith("look:") && v is String -> com.moody.player.domain.decodeDiscLook(v)?.let { looks[k.name.removePrefix("look:")] = it }
             }
         }
-        MixPrefs(names, hidden)
+        MixPrefs(names, hidden, looks)
     }
 
     /** A blank or null name goes back to Moody's own name for the mix. */
     suspend fun rename(mixId: String, name: String?) {
         val key = stringPreferencesKey("name:$mixId")
         context.mixPrefStore.edit { if (name.isNullOrBlank()) it.remove(key) else it[key] = name.trim() }
+    }
+
+    /** The disc picked for a mix; null goes back to the one Moody gives it. A removed mix keeps its disc, for when it is brought back. */
+    suspend fun setLook(mixId: String, look: com.moody.player.domain.DiscLook?) {
+        val key = stringPreferencesKey("look:$mixId")
+        context.mixPrefStore.edit { if (look == null) it.remove(key) else it[key] = com.moody.player.domain.encodeDiscLook(look) }
     }
 
     suspend fun setHidden(mixId: String, hidden: Boolean) {

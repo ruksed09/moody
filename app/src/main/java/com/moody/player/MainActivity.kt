@@ -54,6 +54,7 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var settingsStore: SettingsStore
     @Inject lateinit var media: MediaRepository
     @Inject lateinit var music: MusicController
+    @Inject lateinit var coordinator: com.moody.player.player.PlaybackCoordinator
     @Inject lateinit var vault: VaultManager
     @Inject lateinit var updates: UpdateManager
 
@@ -61,10 +62,13 @@ class MainActivity : ComponentActivity() {
     private var openNowPlaying by mutableIntStateOf(0)
     /** The last request already acted on, so a screen coming back never replays it. */
     private var handledNowPlaying = 0
+    /** The task this screen was created in, to tell later whether that task was swiped away. */
+    private var ownTask = -1
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val splash = installSplashScreen()
         super.onCreate(savedInstanceState)
+        ownTask = taskId
         var firstSettings: Settings? = null
         splash.setKeepOnScreenCondition { firstSettings == null }
         lifecycleScope.launch { firstSettings = settingsStore.settings.first() }
@@ -111,7 +115,7 @@ class MainActivity : ComponentActivity() {
                         )
                     },
                     miniPlayer = { nav ->
-                        MiniPlayer(musicState, onOpen = { nav.navigate(Routes.NOW_PLAYING) { launchSingleTop = true } }, onToggle = music::toggle, onNext = music::next, onClose = music::close)
+                        MiniPlayer(musicState, onOpen = { nav.navigate(Routes.NOW_PLAYING) { launchSingleTop = true } }, onToggle = music::toggle, onNext = music::next, onClose = music::close, onPrev = music::prev, swipe = settings.swipeSong)
                     },
                     extraRoutes = { nav ->
                         composable(Routes.ONBOARDING) {
@@ -227,7 +231,25 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         // After Close the music service is shut down; it starts again only when something is played.
-        if (!music.state.value.dismissed) music.connect()
+        if (!music.state.value.dismissed) {
+            music.connect()
+            // Bound alone, the music service is never told when Moody is swiped away from Recents, and its
+            // notification would stay behind. Started (a plain start: no foreground, no notification), it is.
+            com.moody.player.player.music.MusicService.watchTask(this)
+        }
+    }
+
+    override fun onDestroy() {
+        // Swiped away from Recents: this screen is finishing and its task is gone (after Back the task stays).
+        // A video still showing in its own window closes too; closing Moody stops everything.
+        val task = ownTask
+        val swiped = isFinishing && task != -1 && runCatching {
+            getSystemService(android.app.ActivityManager::class.java).appTasks.none {
+                (if (android.os.Build.VERSION.SDK_INT >= 29) it.taskInfo.taskId else it.taskInfo.persistentId) == task
+            }
+        }.getOrDefault(false)
+        if (swiped) coordinator.closeVideo?.invoke()
+        super.onDestroy()
     }
 
     override fun onResume() {

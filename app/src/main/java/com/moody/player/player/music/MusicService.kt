@@ -70,6 +70,9 @@ fun AudioItem.toMediaItem(): MediaItem = MediaItem.Builder()
 class MusicService : MediaSessionService() {
     @Inject lateinit var media: MediaRepository
     @Inject lateinit var stats: com.moody.player.data.stats.PlayStats
+    /** The app's own handle on this session; only needed to let go of it when Moody is swiped away. */
+    @Inject lateinit var appController: dagger.Lazy<MusicController>
+    @Inject lateinit var coordinator: dagger.Lazy<com.moody.player.player.PlaybackCoordinator>
     private var statsJob: Job? = null
     private val sitting = com.moody.player.data.stats.SittingCounter()
     private var session: MediaSession? = null
@@ -284,9 +287,55 @@ class MusicService : MediaSessionService() {
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
 
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val result = super.onStartCommand(intent, flags, startId)
+        // A start from [watchTask] only keeps this service on Android's list for onTaskRemoved: there is nothing
+        // to bring back if the process dies.
+        return if (intent?.action == ACTION_WATCH_TASK) START_NOT_STICKY else result
+    }
+
+    /**
+     * Moody was swiped away from Recents: the music stops with it. Everything that matters happens before this
+     * returns, because Android may end the process straight after: the queue is noted, the player stopped, the
+     * notification taken down, the app's own connection let go and the service told to end. Only writing the
+     * noted queue (for the next launch) is left to finish afterwards.
+     */
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     override fun onTaskRemoved(rootIntent: Intent?) {
         val p = session?.player
-        if (p == null || !p.playWhenReady || p.mediaItemCount == 0) stopSelf()
+        // A closed picture-in-picture window (or a video opened from another app) is a removed task too, but Moody
+        // itself may still be open: then music that is playing carries on, as it always did.
+        val videoTask = rootIntent?.component?.className == com.moody.player.ui.player.PlayerActivity::class.java.name
+        val stillOpen = runCatching { getSystemService(android.app.ActivityManager::class.java).appTasks.isNotEmpty() }.getOrDefault(false)
+        if (videoTask && stillOpen) {
+            if (p == null || !p.playWhenReady || p.mediaItemCount == 0) stopSelf()
+            return
+        }
+        // Moody itself is going: a video still showing in its own window (picture-in-picture) closes with it.
+        if (rootIntent?.component?.className == MainActivity::class.java.name) coordinator.get().closeVideo?.invoke()
+        var queue: Triple<String, Int, Long>? = null
+        if (p != null) {
+            if (p.mediaItemCount > 0) {
+                queue = Triple((0 until p.mediaItemCount).joinToString("\n") { p.getMediaItemAt(it).mediaId }, p.currentMediaItemIndex, p.currentPosition)
+            }
+            p.pause()
+            p.stop()
+        }
+        // Media3 takes the notification of a stopped player down by itself, but a moment later; do it now.
+        runCatching {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            getSystemService(android.app.NotificationManager::class.java).cancel(DefaultMediaNotificationProvider.DEFAULT_NOTIFICATION_ID)
+        }
+        queue?.let { (ids, index, position) ->
+            // Not cancelled with the scope: onDestroy may come before the write is through.
+            scope.launch {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                    runCatching { musicState.edit { it[KEY_QUEUE] = ids; it[KEY_INDEX] = index; it[KEY_POS] = position } }
+                }
+            }
+        }
+        appController.get().release()
+        pauseAllPlayersAndStopSelf()
     }
 
     override fun onDestroy() {
@@ -297,6 +346,19 @@ class MusicService : MediaSessionService() {
         vlc?.release()
         session = null
         super.onDestroy()
+    }
+
+    companion object {
+        private const val ACTION_WATCH_TASK = "com.moody.player.WATCH_TASK"
+
+        /**
+         * Starts the service (as well as binding it) while Moody's own screen is in front, so Android tells it
+         * when Moody is swiped away from Recents. A plain start: no foreground service, no notification. Android
+         * may refuse a start from the background; then nothing changes.
+         */
+        fun watchTask(context: Context) {
+            runCatching { context.startService(Intent(context, MusicService::class.java).setAction(ACTION_WATCH_TASK)) }
+        }
     }
 }
 

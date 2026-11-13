@@ -2,7 +2,11 @@ package com.moody.player.ui
 
 import android.net.Uri
 import com.moody.player.data.media.AudioItem
+import com.moody.player.data.prefs.Settings
+import com.moody.player.domain.SortKey
+import com.moody.player.domain.SortSpec
 import com.moody.player.ui.music.groupMusic
+import com.moody.player.ui.music.sortSongFolders
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -39,5 +43,17 @@ class MusicGroupingTest {
     @Test fun folders_groupByPath() {
         val folders = groupMusic(songs).third
         assertEquals(listOf("Frahm", "Music"), folders.map { it.name })
+    }
+
+    @Test fun folders_defaultSortKeepsNameOrder() {
+        val folders = groupMusic(songs).third
+        assertEquals(folders, sortSongFolders(folders, Settings().songFolderSort))
+    }
+
+    @Test fun folders_sortByCountAndNewestSong() {
+        val folders = groupMusic(songs).third
+        assertEquals(listOf("Music", "Frahm"), sortSongFolders(folders, SortSpec(SortKey.COUNT, false)).map { it.name })
+        assertEquals(listOf("Music", "Frahm"), sortSongFolders(folders, SortSpec(SortKey.DATE, false)).map { it.name })
+        assertEquals(listOf("Frahm", "Music"), sortSongFolders(folders, SortSpec(SortKey.DATE, true)).map { it.name })
     }
 }

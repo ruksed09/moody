@@ -114,6 +114,7 @@ interface VideoActions {
     fun setView(v: VideoView)
     fun setLayout(l: LayoutMode)
     fun setSort(s: SortSpec)
+    fun setFolderSort(s: SortSpec)
     fun refresh()
     fun hideFolder(path: String)
 }
@@ -140,6 +141,7 @@ fun VideoLibraryContent(
 ) {
     var searching by rememberSaveable { mutableStateOf(false) }
     var sortSheet by remember { mutableStateOf(false) }
+    var folderSortSheet by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf(setOf<String>()) }
     var hidingFolder by remember { mutableStateOf<com.moody.player.data.media.Folder?>(null) }
     var actionsFor by remember { mutableStateOf<VideoItem?>(null) }
@@ -204,7 +206,7 @@ fun VideoLibraryContent(
                     }
                     !searching && s.view == VideoView.FOLDERS -> {
                         continueRow(s, nav)
-                        full { SectionHeader("Folders", s.layout, vm::setLayout, inset = if (grid) 0.dp else 16.dp) }
+                        full { SectionHeader("Folders", s.layout, vm::setLayout, inset = if (grid) 0.dp else 16.dp, onSort = { folderSortSheet = true }, sortLabel = "Sort folders") }
                         items(s.folders, key = { it.path }) { f ->
                             val long = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); hidingFolder = f }
                             if (grid) FolderGridCard(f, { nav.openFolder(f.path) }, long)
@@ -263,7 +265,12 @@ fun VideoLibraryContent(
 
     if (sortSheet) {
         ModalBottomSheet(onDismissRequest = { sortSheet = false }, containerColor = MoodyTheme.colors.surface) {
-            SortSheet(s.sort, vm::setSort)
+            SortSheet("Sort videos", com.moody.player.ui.components.FileSorts, s.sort, vm::setSort)
+        }
+    }
+    if (folderSortSheet) {
+        ModalBottomSheet(onDismissRequest = { folderSortSheet = false }, containerColor = MoodyTheme.colors.surface) {
+            SortSheet("Sort folders", com.moody.player.ui.components.FolderSorts, s.folderSort, vm::setFolderSort)
         }
     }
 }
@@ -338,7 +345,10 @@ private fun Header(s: VideoUiState, onView: (VideoView) -> Unit, onVault: () -> 
 
 /** Section title with sort (when the list can be sorted) and the grid / list switch on the right. */
 @Composable
-private fun SectionHeader(title: String, layout: LayoutMode, onLayout: (LayoutMode) -> Unit, inset: androidx.compose.ui.unit.Dp, onSort: (() -> Unit)? = null) {
+private fun SectionHeader(
+    title: String, layout: LayoutMode, onLayout: (LayoutMode) -> Unit, inset: androidx.compose.ui.unit.Dp,
+    onSort: (() -> Unit)? = null, sortLabel: String = "Sort videos",
+) {
     val c = MoodyTheme.colors
     Row(
         Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(start = inset, end = inset, top = 8.dp),
@@ -346,7 +356,7 @@ private fun SectionHeader(title: String, layout: LayoutMode, onLayout: (LayoutMo
     ) {
         Text(title, style = MoodyTheme.type.heading, color = c.text, modifier = Modifier.weight(1f))
         // The sort button's 48 dp target leaves about 9 dp of air on each side of its circle, so no spacer.
-        if (onSort != null) com.moody.player.design.components.SortButton("Sort videos", onSort)
+        if (onSort != null) com.moody.player.design.components.SortButton(sortLabel, onSort)
         Row(Modifier.height(30.dp).clip(Radii.pill).border(1.dp, c.line2, Radii.pill).padding(2.dp)) {
             listOf(LayoutMode.GRID to MoodyIcons.Grid, LayoutMode.LIST to MoodyIcons.ListView).forEach { (m, icon) ->
                 val on = layout == m
@@ -444,11 +454,11 @@ internal fun SelectionBar(count: Int, onClose: () -> Unit, onAll: () -> Unit, on
 
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun SortSheet(sort: SortSpec, onSort: (SortSpec) -> Unit) {
+private fun SortSheet(title: String, keys: List<Pair<SortKey, String>>, sort: SortSpec, onSort: (SortSpec) -> Unit) {
     val c = MoodyTheme.colors
     Column(Modifier.padding(horizontal = 24.dp).padding(bottom = 32.dp)) {
-        Text("Sort videos", style = MoodyTheme.type.title, color = c.text)
+        Text(title, style = MoodyTheme.type.title, color = c.text)
         Spacer(Modifier.height(20.dp))
-        com.moody.player.ui.components.SortChoices(com.moody.player.ui.components.FileSorts, sort, onSort)
+        com.moody.player.ui.components.SortChoices(keys, sort, onSort)
     }
 }

@@ -11,6 +11,12 @@ enum class PlayerGesture(val label: String, val detail: String) {
     PINCH_ZOOM("Pinch to zoom", "Pinch out to fill the screen, in to fit."),
 }
 
+/** What a sideways swipe over the video does, while [PlayerGesture.SWIPE_SEEK] is on. */
+enum class SwipeAction(val label: String) {
+    SEEK("Seek (rewind / forward)"),
+    CHANGE_VIDEO("Next / previous video"),
+}
+
 enum class TapZone { LEFT, CENTER, RIGHT }
 
 /** Left and right thirds seek; the middle third plays or pauses. */

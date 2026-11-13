@@ -64,7 +64,11 @@ data class AppSlots(
 @Composable
 fun MoodyRoot(settings: Settings, slots: AppSlots, toaster: Toaster = remember { Toaster() }) {
     MoodyTheme(settings.themeMode, settings.fontMode) {
-        CompositionLocalProvider(LocalToaster provides toaster) {
+        CompositionLocalProvider(
+            LocalToaster provides toaster,
+            // The disc style and colour picked in Settings > Appearance, for every disc that has no look of its own.
+            com.moody.player.ui.music.LocalDiscLook provides com.moody.player.domain.DiscLook(settings.discStyle, settings.discPalette),
+        ) {
             val nav = rememberNavController()
             val openHealth = remember(nav) { { uri: android.net.Uri -> nav.navigate(Routes.health(uri)) { launchSingleTop = true } } }
             CompositionLocalProvider(com.moody.player.ui.health.LocalOpenHealth provides openHealth) {

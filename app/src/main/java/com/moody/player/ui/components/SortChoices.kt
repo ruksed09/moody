@@ -24,6 +24,14 @@ val FileSorts: List<Pair<SortKey, String>> = listOf(
     SortKey.DURATION to "Duration",
 )
 
+/** The sorts a list of folders offers. Date is the newest item in the folder, size the total of its items. */
+val FolderSorts: List<Pair<SortKey, String>> = listOf(
+    SortKey.DATE to "Date",
+    SortKey.NAME to "Name",
+    SortKey.SIZE to "Size",
+    SortKey.COUNT to "Item count",
+)
+
 /** Names sort A to Z first; dates, sizes and lengths newest, largest and longest first. */
 fun defaultAscending(k: SortKey): Boolean = k == SortKey.NAME || k == SortKey.TITLE
 
@@ -32,6 +40,7 @@ fun orderLabels(k: SortKey): Pair<String, String> = when (k) {
     SortKey.DATE -> "Oldest first" to "Newest first"
     SortKey.SIZE -> "Smallest first" to "Largest first"
     SortKey.DURATION -> "Shortest first" to "Longest first"
+    SortKey.COUNT -> "Fewest first" to "Most first"
 }
 
 /** "Sort by" chips, then the two orders for the picked sort. */

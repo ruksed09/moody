@@ -92,10 +92,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import com.moody.player.domain.PlayerGesture
+import com.moody.player.domain.SwipeAction
 import com.moody.player.domain.TapZone
 import com.moody.player.domain.tapZone
 
-private enum class Drag { NONE, SEEK, BRIGHTNESS, VOLUME, PINCH }
+private enum class Drag { NONE, SEEK, SWITCH, BRIGHTNESS, VOLUME, PINCH }
 
 private const val DOUBLE_TAP_MS = 260L
 
@@ -103,7 +104,9 @@ private const val DOUBLE_TAP_MS = 260L
  * MX-style gestures over the video:
  * tap toggles controls; double-tap left/right seeks (taps add up), double-tap the middle plays/pauses;
  * long-press plays at 2x while held;
- * vertical swipe left = brightness, right = volume; horizontal swipe seeks with a preview; pinch switches Fit/Fill.
+ * vertical swipe left = brightness, right = volume; pinch switches Fit/Fill;
+ * horizontal swipe seeks with a preview, or (Settings > Gestures > Swiping sideways) changes video:
+ * right for the next one, left for the previous one.
  */
 @Composable
 fun GestureLayer(
@@ -114,6 +117,8 @@ fun GestureLayer(
     modifier: Modifier = Modifier,
     /** After each double-tap or swipe seek: forward (right side) or back, and where the video now is. */
     onSideSeek: (right: Boolean, atMs: Long) -> Unit = { _, _ -> },
+    /** While a swipe seek is being dragged: where it points now. Null once the finger is up. */
+    onSeekPreview: (atMs: Long?) -> Unit = {},
 ) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -125,9 +130,13 @@ fun GestureLayer(
     val st by rememberUpdatedState(state)
     val tap by rememberUpdatedState(onTap)
     val sideSeek by rememberUpdatedState(onSideSeek)
+    val previewAt by rememberUpdatedState(onSeekPreview)
 
     var level by remember { mutableStateOf<Pair<Drag, Float>?>(null) }
     var seekPreview by remember { mutableStateOf<Pair<Long, Long>?>(null) }
+    // Swiping to change video, far enough to count: true for next, false for previous.
+    var switchHint by remember { mutableStateOf<Boolean?>(null) }
+    var lastSwitch by remember { mutableStateOf(true) }
     var ping by remember { mutableStateOf<Pair<Boolean, Int>?>(null) } // (right side, seconds)
     // Where a run of double-taps started: the player's position lags a seek, so later taps count from here.
     var chainFrom by remember { mutableLongStateOf(0L) }
@@ -166,12 +175,17 @@ fun GestureLayer(
     val off = settings.disabledGestures
     fun on(g: PlayerGesture) = gesturesOn && g !in off
     val stepSec = settings.doubleTapSeekSec
+    val changeVideo = settings.swipeAction == SwipeAction.CHANGE_VIDEO
+    // The same test the Next button uses.
+    fun canNext() = vm.hasNext || (vm.shuffle.value && vm.queue.size > 1)
+    // A drag cut short (controls locked or a gesture setting changed mid-swipe) must not leave its preview behind.
+    LaunchedEffect(gesturesOn, stepSec, off, changeVideo) { seekPreview = null; switchHint = null; previewAt(null) }
 
     Box(modifier) {
         Box(
             Modifier
                 .fillMaxSize()
-                .pointerInput(gesturesOn, stepSec, off) {
+                .pointerInput(gesturesOn, stepSec, off, changeVideo) {
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
                         val start = down.position
@@ -183,6 +197,9 @@ fun GestureLayer(
                         var startPos = 0L
                         var pinchStart = 0f
                         var pinchRatio = 1f
+                        var switchDx = 0f
+                        // How far a swipe must travel to change video.
+                        val switchAt = maxOf(w * 0.15f, 64.dp.toPx())
                         var longPress: Job? = null
                         // Drags that start in the system gesture areas (back swipe edges, Home bar, status bar)
                         // belong to Android, not the player.
@@ -206,7 +223,7 @@ fun GestureLayer(
                             val pressed = event.changes.filter { it.pressed }
                             if (pressed.isEmpty()) break
                             if (!gesturesOn) continue
-                            if (pressed.size >= 2 && mode != Drag.SEEK && on(PlayerGesture.PINCH_ZOOM)) {
+                            if (pressed.size >= 2 && mode != Drag.SEEK && mode != Drag.SWITCH && on(PlayerGesture.PINCH_ZOOM)) {
                                 val d = (pressed[0].position - pressed[1].position).getDistance()
                                 if (mode != Drag.PINCH) { mode = Drag.PINCH; pinchStart = d; moved = true; longPress?.cancel() }
                                 else if (pinchStart > 0f) pinchRatio = d / pinchStart
@@ -220,7 +237,11 @@ fun GestureLayer(
                                 longPress?.cancel()
                                 mode = when {
                                     inSystemEdge -> Drag.NONE
-                                    abs(delta.x) > abs(delta.y) -> if (on(PlayerGesture.SWIPE_SEEK)) Drag.SEEK.also { startPos = st.positionMs } else Drag.NONE
+                                    abs(delta.x) > abs(delta.y) -> when {
+                                        !on(PlayerGesture.SWIPE_SEEK) -> Drag.NONE
+                                        changeVideo -> Drag.SWITCH
+                                        else -> Drag.SEEK.also { startPos = st.positionMs }
+                                    }
                                     start.x < w / 2 -> if (on(PlayerGesture.BRIGHTNESS)) Drag.BRIGHTNESS.also { startLevel = currentBrightness() } else Drag.NONE
                                     else -> if (on(PlayerGesture.VOLUME)) Drag.VOLUME.also {
                                         startLevel = audio.getStreamVolume(AudioManager.STREAM_MUSIC) / audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC).toFloat()
@@ -233,6 +254,18 @@ fun GestureLayer(
                                     val target = (startPos + d).coerceIn(0, st.durationMs.coerceAtLeast(0))
                                     seekPreview = target to (target - startPos)
                                     lastPreview = target to (target - startPos)
+                                    previewAt(target)
+                                    p.consume()
+                                }
+                                Drag.SWITCH -> {
+                                    switchDx = delta.x
+                                    // Right is next and left is previous, on purpose. The hint shows only when there is a video to go to.
+                                    switchHint = when {
+                                        switchDx > switchAt && canNext() -> true
+                                        switchDx < -switchAt && vm.hasPrev -> false
+                                        else -> null
+                                    }
+                                    switchHint?.let { lastSwitch = it }
                                     p.consume()
                                 }
                                 Drag.BRIGHTNESS -> {
@@ -262,6 +295,21 @@ fun GestureLayer(
                             mode == Drag.SEEK -> {
                                 seekPreview?.let { (target, delta) -> vm.engine.seekTo(target); if (delta != 0L) sideSeek(delta > 0, target) }
                                 seekPreview = null
+                                previewAt(null)
+                            }
+                            mode == Drag.SWITCH -> {
+                                switchHint = null
+                                when {
+                                    switchDx > switchAt -> if (canNext()) {
+                                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        vm.next()
+                                    } else vm.toast("No next video")
+                                    // Always the video before this one; the Previous button's "back to the start" is not wanted here.
+                                    switchDx < -switchAt -> if (vm.hasPrev) {
+                                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        vm.open(vm.index.value - 1)
+                                    } else vm.toast("No previous video")
+                                }
                             }
                             mode == Drag.PINCH -> {
                                 val a = when {
@@ -360,6 +408,22 @@ fun GestureLayer(
             Column(Modifier.clip(Radii.md).background(OnVideo.ink).padding(horizontal = 20.dp, vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text("${formatDuration(previewTarget).let { if (it == "--:--") "0:00" else it } } / ${formatDuration(st.durationMs)}", style = MoodyTheme.type.heading, color = OnVideo.text)
                 Text(formatDelta(previewDelta), style = MoodyTheme.type.mono, color = MoodyTheme.colors.accent)
+            }
+        }
+
+        AnimatedVisibility(
+            switchHint != null, Modifier.align(Alignment.Center),
+            enter = fadeIn(Motion.fast()) + scaleIn(Motion.base(), initialScale = 0.94f),
+            exit = fadeOut(Motion.base()) + scaleOut(Motion.base(), targetScale = 0.97f),
+        ) {
+            val next = switchHint ?: lastSwitch
+            Row(
+                Modifier.clip(Radii.pill).background(OnVideo.ink).padding(horizontal = 14.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (!next) { Chevrons(right = false, size = 12.dp); Spacer(Modifier.width(8.dp)) }
+                Text(if (next) "Next video" else "Previous video", style = MoodyTheme.type.label, color = OnVideo.text)
+                if (next) { Spacer(Modifier.width(8.dp)); Chevrons(right = true, size = 12.dp) }
             }
         }
 

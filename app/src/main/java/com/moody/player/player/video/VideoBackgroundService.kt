@@ -95,6 +95,18 @@ class VideoBackgroundService : Service() {
             .build()
     }
 
+    /** Moody was swiped away from Recents: background play stops with it and the notification goes. */
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        // First, so the pause below cannot post the notification again.
+        watch?.cancel()
+        engine.pause()
+        running = false
+        VideoBackgroundState.active = false
+        VideoBackgroundState.session = null
+        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+        stopSelf()
+    }
+
     override fun onDestroy() {
         running = false
         VideoBackgroundState.active = false

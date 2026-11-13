@@ -98,6 +98,11 @@ fun VisualizerScreen(vm: NowPlayingViewModel, onBack: () -> Unit) {
                 if (locked) { chip = true; chipPoke++ } else { chrome = !chrome; poke++ }
             },
     ) {
+        // Only here, never behind the small visualizer on Now Playing.
+        VizBackdropLayer(
+            com.moody.player.domain.backdropOf(settings.vizStyle, settings.vizBackdrops),
+            glow = discColor(settings.discPalette), line = c.accent, moving = s.playing, modifier = Modifier.fillMaxSize(),
+        )
         if (fallback && sideFailed) VizUnavailable(Modifier.fillMaxSize())
         else VisualizerCanvas(
             settings.vizStyle, frames, c.accent, c.accentHi, settings.vizIntensity,
@@ -141,7 +146,7 @@ fun VisualizerScreen(vm: NowPlayingViewModel, onBack: () -> Unit) {
             HoldToUnlockChip(onHolding = { holding = it }) { locked = false; chip = false; chrome = true; poke++ }
         }
     }
-    if (tuneOpen) VizTuneSheet(settings, { f -> vm.updateViz(f) }, onDismiss = { tuneOpen = false; poke++ })
+    if (tuneOpen) VizTuneSheet(settings, { f -> vm.updateViz(f) }, onDismiss = { tuneOpen = false; poke++ }, backdrops = true)
     }
 }
 

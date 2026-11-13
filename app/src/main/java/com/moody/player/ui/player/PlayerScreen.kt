@@ -101,6 +101,8 @@ fun PlayerScreen(vm: PlayerViewModel, host: PlayerHost, inPip: Boolean) {
     var markTip by remember { mutableStateOf<Pair<Boolean, com.moody.player.data.db.Bookmark>?>(null) }
     var markTipTick by remember { androidx.compose.runtime.mutableIntStateOf(0) }
     var scrubbing by remember { mutableStateOf(false) }
+    // Where a sideways seek swipe points while the finger is down: the seek bar and the elapsed time follow it.
+    var swipeSeekAt by remember { mutableStateOf<Long?>(null) }
     var menu by remember { mutableStateOf<PlayerMenu?>(null) }
     var showRemaining by remember { mutableStateOf(false) }
     var poke by remember { mutableStateOf(0) }
@@ -138,8 +140,8 @@ fun PlayerScreen(vm: PlayerViewModel, host: PlayerHost, inPip: Boolean) {
     }
 
     // Controls hide 3 s after the last touch while playing.
-    LaunchedEffect(controls, st.playing, scrubbing, menu, tracks, poke, transcript, lockHolding) {
-        if (controls && st.playing && !scrubbing && menu == null && tracks == null && !transcript && !lockHolding) { delay(3_000); controls = false }
+    LaunchedEffect(controls, st.playing, scrubbing, menu, tracks, poke, transcript, lockHolding, swipeSeekAt != null) {
+        if (controls && st.playing && !scrubbing && menu == null && tracks == null && !transcript && !lockHolding && swipeSeekAt == null) { delay(3_000); controls = false }
     }
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
@@ -161,6 +163,8 @@ fun PlayerScreen(vm: PlayerViewModel, host: PlayerHost, inPip: Boolean) {
             onSideSeek = { right, at ->
                 if (settings.showBookmarks && !locked) nearestBookmark(bookmarks, at, right)?.let { markTip = right to it; markTipTick++ }
             },
+            // A seek swipe brings the controls up, so its target can be watched on the seek bar.
+            onSeekPreview = { at -> if (at != null && !locked) controls = true; swipeSeekAt = at },
         )
         // After a double-tap or swipe seek: a tip on that side to jump straight to a bookmark.
         LaunchedEffect(markTipTick) { if (markTipTick > 0) { delay(3_500); markTip = null } }
@@ -224,7 +228,7 @@ fun PlayerScreen(vm: PlayerViewModel, host: PlayerHost, inPip: Boolean) {
                     }
                     Spacer(Modifier.weight(1f))
                     BottomControls(
-                        st = st, showRemaining = showRemaining, ab = ab, marks = seekMarks,
+                        st = swipeSeekAt?.let { st.copy(positionMs = it) } ?: st, showRemaining = showRemaining, ab = ab, marks = seekMarks,
                         canPrev = vm.hasPrev || st.positionMs > 5_000, hasNext = vm.hasNext || (shuffle && vm.queue.size > 1),
                         onPrev = { vm.prev(); poke++ },
                         onToggle = { vm.dismissResume(); vm.engine.toggle(); poke++ },

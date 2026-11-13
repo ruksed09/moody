@@ -78,6 +78,7 @@ import com.moody.player.domain.PinHasher
 import com.moody.player.domain.PlayerGesture
 import com.moody.player.domain.SEEK_STEPS
 import com.moody.player.domain.SubBg
+import com.moody.player.domain.SwipeAction
 import com.moody.player.domain.SubSize
 import com.moody.player.domain.formatBytes
 import com.moody.player.ui.vault.Field
@@ -233,6 +234,17 @@ fun SettingsSectionScreen(
                         ChoiceChip("List", s.videoLayout == LayoutMode.LIST, { vm.update { it.copy(videoLayout = LayoutMode.LIST) } })
                     }
                 }
+                item { Label("Discs") }
+                item {
+                    Choice("CD style", MoodyIcons.Music, "How discs look across Music: Now Playing, the mini-player, albums and songs. Mood mixes keep their own.") {
+                        com.moody.player.ui.music.DiscStyleChoices(com.moody.player.domain.DiscLook(s.discStyle, s.discPalette), { v -> vm.update { it.copy(discStyle = v) } })
+                    }
+                }
+                item {
+                    Choice("CD colour", MoodyIcons.Palette) {
+                        com.moody.player.ui.music.DiscPaletteChoices(com.moody.player.domain.DiscLook(s.discStyle, s.discPalette), { v -> vm.update { it.copy(discPalette = v) } })
+                    }
+                }
             }
             SettingsSection.VIDEO -> {
                 item { Label("Controls") }
@@ -286,6 +298,7 @@ fun SettingsSectionScreen(
                     }
                 }
                 item { Toggle("Fade out with the sleep timer", "The music gets quieter over the last minute instead of stopping all at once.", s.sleepFade, MoodyIcons.Timer) { v -> vm.update { it.copy(sleepFade = v) } } }
+                item { Toggle("Swipe to change song", "On Now Playing and the mini-player: swipe right for the next song, left for the previous one.", s.swipeSong, MoodyIcons.Hand) { v -> vm.update { it.copy(swipeSong = v) } } }
                 item { Note("The mini-player has a close button: it stops the music and hides the bar. Your queue stays.") }
             }
             SettingsSection.LIBRARY -> {
@@ -380,7 +393,7 @@ fun SettingsSectionScreen(
     }
 }
 
-/** Settings > Video player > Gestures: each gesture on its own, plus how far a double-tap jumps. */
+/** Settings > Video player > Gestures: each gesture on its own, plus how far a double-tap jumps and what a sideways swipe does. */
 @Composable
 fun GesturesScreen(vm: SettingsViewModel, onBack: () -> Unit) {
     val s by vm.settings.collectAsStateWithLifecycle()
@@ -391,11 +404,22 @@ fun GesturesScreen(vm: SettingsViewModel, onBack: () -> Unit) {
                 SEEK_STEPS.forEach { n -> ChoiceChip("$n s", s.doubleTapSeekSec == n, { vm.update { it.copy(doubleTapSeekSec = n) } }) }
             }
         }
+        item {
+            Choice("Swiping sideways", MoodyIcons.Next, body = if (s.swipeAction == SwipeAction.CHANGE_VIDEO) "Swipe right for the next video, left for the previous one." else null) {
+                SwipeAction.entries.forEach { a -> ChoiceChip(a.label, s.swipeAction == a, { vm.update { it.copy(swipeAction = a) } }) }
+            }
+        }
         item { Label("Gestures") }
         PlayerGesture.entries.forEach { g ->
             item(key = g.name) {
+                // The sideways swipe is one gesture with two jobs: its switch names the job picked above.
+                val changes = g == PlayerGesture.SWIPE_SEEK && s.swipeAction == SwipeAction.CHANGE_VIDEO
                 Box(Modifier.alpha(if (s.gestures) 1f else 0.45f)) {
-                    Toggle(g.label, g.detail, s.gestures && g !in s.disabledGestures, null) { v ->
+                    Toggle(
+                        if (changes) "Swipe to change video" else g.label,
+                        if (changes) "Slide right for the next video, left for the previous one." else g.detail,
+                        s.gestures && g !in s.disabledGestures, null,
+                    ) { v ->
                         if (s.gestures) vm.update { it.copy(disabledGestures = if (v) it.disabledGestures - g else it.disabledGestures + g) }
                     }
                 }

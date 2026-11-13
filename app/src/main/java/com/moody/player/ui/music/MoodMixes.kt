@@ -42,7 +42,9 @@ import com.moody.player.design.MoodyTheme
 import com.moody.player.design.Radii
 import com.moody.player.design.components.Motion
 import com.moody.player.design.icons.MoodyIcons
+import com.moody.player.domain.DiscLook
 import com.moody.player.domain.MoodMix
+import com.moody.player.domain.autoDiscLook
 
 private val CardSide = 132.dp
 private val DiscSide = 116.dp
@@ -56,6 +58,8 @@ fun MoodMixesRow(
     mixes: List<MoodMix<AudioItem>>, onPlay: (MoodMix<AudioItem>) -> Unit,
     covers: Map<String, String> = emptyMap(), onCover: ((MoodMix<AudioItem>) -> Unit)? = null,
     hidden: Int = 0, onBringBack: (() -> Unit)? = null,
+    /** Discs picked for mixes, by mix id. Every other mix gets its own from [autoDiscLook]. */
+    looks: Map<String, DiscLook> = emptyMap(),
 ) {
     val c = MoodyTheme.colors
     Column(Modifier.fillMaxWidth()) {
@@ -75,7 +79,7 @@ fun MoodMixesRow(
             return@Column
         }
         LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            items(mixes, key = { it.id }) { m -> MixCard(m, covers[m.id], onCover?.let { f -> { f(m) } }) { onPlay(m) } }
+            items(mixes, key = { it.id }) { m -> MixCard(m, covers[m.id], looks[m.id] ?: autoDiscLook(m.id), onCover?.let { f -> { f(m) } }) { onPlay(m) } }
         }
         Spacer(Modifier.height(16.dp))
     }
@@ -83,7 +87,7 @@ fun MoodMixesRow(
 
 @Composable
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
-private fun MixCard(m: MoodMix<AudioItem>, cover: String?, onCover: (() -> Unit)?, onClick: () -> Unit) {
+private fun MixCard(m: MoodMix<AudioItem>, cover: String?, look: DiscLook, onCover: (() -> Unit)?, onClick: () -> Unit) {
     val c = MoodyTheme.colors
     val src = remember { MutableInteractionSource() }
     val pressed by src.collectIsPressedAsState()
@@ -93,7 +97,7 @@ private fun MixCard(m: MoodMix<AudioItem>, cover: String?, onCover: (() -> Unit)
             .width(CardSide)
             .graphicsLayer { scaleX = scale; scaleY = scale }
             .clip(Radii.lg)
-            // Hold a card to rename it, give it a cover of your own or remove it.
+            // Hold a card to rename it, give it a cover or a disc of your own, or remove it.
             .combinedClickable(src, ripple(), role = Role.Button, onLongClickLabel = "Mix options", onLongClick = onCover, onClick = onClick)
             .semantics(mergeDescendants = true) {
                 contentDescription = "Play ${m.title}, ${m.songs.size} songs. ${m.basis}"
@@ -107,9 +111,9 @@ private fun MixCard(m: MoodMix<AudioItem>, cover: String?, onCover: (() -> Unit)
                 m.songs.distinctBy { it.albumId }.take(3).let { l -> if (cover != null && l.isNotEmpty()) listOf(l[0].copy(cover = cover)) + l.drop(1) else l }
             }
             covers.indices.reversed().forEach { i ->
-                Disc(covers[i], DiscSide, Modifier.align(Alignment.CenterStart).offset(x = 4.dp + 6.dp * i), behind = c.surface)
+                Disc(covers[i], DiscSide, Modifier.align(Alignment.CenterStart).offset(x = 4.dp + 6.dp * i), behind = c.surface, look = look)
             }
-            if (covers.isEmpty()) Disc(null, DiscSide, Modifier.align(Alignment.CenterStart).offset(x = 4.dp), behind = c.surface)
+            if (covers.isEmpty()) Disc(null, DiscSide, Modifier.align(Alignment.CenterStart).offset(x = 4.dp), behind = c.surface, look = look)
             Box(
                 Modifier.align(Alignment.BottomEnd).padding(6.dp).size(32.dp).clip(CircleShape).background(c.accent),
                 contentAlignment = Alignment.Center,
