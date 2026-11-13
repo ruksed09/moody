@@ -25,8 +25,8 @@ android {
         applicationId = "com.moody.player"
         minSdk = 26
         targetSdk = 35
-        versionCode = 7
-        versionName = "1.1.5"
+        versionCode = 8
+        versionName = "1.1.6"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "UPDATE_REPO", "\"ruksed09/moody\"")
         ndk { abiFilters += "arm64-v8a" }

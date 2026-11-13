@@ -28,6 +28,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -219,6 +220,8 @@ class UpdateManager @Inject constructor(
         }
         _promptOpen.value = true
         download?.cancel()
+        // Pending: the button turns at once, before the server has answered.
+        _state.value = UpdateState.Downloading(info, 0, info.apkSize)
         download = scope.launch(Dispatchers.IO) {
             val dir = File(context.cacheDir, "updates").apply { mkdirs(); listFiles()?.forEach { it.delete() } }
             val out = File(dir, "moody-${info.version}.apk")
@@ -246,13 +249,19 @@ class UpdateManager @Inject constructor(
                     }
                     if (info.apkSize > 0 && out.length() != info.apkSize) error("The download came out a different size")
                 }
+                coroutineContext.ensureActive() // cancelled at the last moment: stay cancelled
                 cancelNotification()
                 _state.value = UpdateState.Ready(info, out)
             } catch (e: Exception) {
+                // A cancelled job leaves state and files alone: cancelDownload already reset the state, and a new
+                // download may be writing the same file by now (the next download clears the folder anyway).
+                if (e is kotlinx.coroutines.CancellationException || !isActive) {
+                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    return@launch
+                }
                 out.delete()
                 cancelNotification()
-                _state.value = if (e is kotlinx.coroutines.CancellationException) UpdateState.Available(info) else UpdateState.Failed(e.message ?: "Download failed")
-                if (e is kotlinx.coroutines.CancellationException) throw e
+                _state.value = UpdateState.Failed(e.message ?: "Download failed")
             }
         }
     }
@@ -260,6 +269,9 @@ class UpdateManager @Inject constructor(
     fun cancelDownload() {
         download?.cancel()
         download = null
+        // Back to the choice straight away, even while the request is still connecting.
+        val s = _state.value
+        if (s is UpdateState.Downloading) { cancelNotification(); _state.value = UpdateState.Available(s.info) }
     }
 
     /** True when Android still needs the user to allow installs from Moody (Settings > Install unknown apps). */

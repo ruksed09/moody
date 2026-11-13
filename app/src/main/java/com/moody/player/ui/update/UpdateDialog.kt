@@ -12,7 +12,17 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -57,7 +67,6 @@ import com.moody.player.design.components.IconAction
 import com.moody.player.design.components.LocalToaster
 import com.moody.player.design.components.Motion
 import com.moody.player.design.components.PrimaryButton
-import com.moody.player.design.components.QuietButton
 import com.moody.player.design.components.ReelLine
 import com.moody.player.design.components.SecondaryButton
 import com.moody.player.design.icons.MoodyIcons
@@ -188,19 +197,35 @@ fun UpdateModal(
             Text(meta, style = t.monoSmall, color = c.text3)
             if (info.notes.isNotBlank()) {
                 Spacer(Modifier.height(14.dp))
-                // Capped, and it gives way first when the screen is short (a phone on its side).
-                Column(Modifier.weight(1f, fill = false).heightIn(max = 132.dp).verticalScroll(rememberScrollState())) { Notes(info.notes) }
+                // Capped, and it gives way first when the screen is short (a phone on its side). A thin bar on the
+                // right shows there is more whenever the notes run longer than the box.
+                val scroll = rememberScrollState()
+                val thumb = c.text3
+                val rail = c.line
+                Column(
+                    Modifier.weight(1f, fill = false).heightIn(max = 148.dp)
+                        .background(c.raised, Radii.md)
+                        .drawWithContent {
+                            drawContent()
+                            if (scroll.maxValue > 0) {
+                                val w = 3.dp.toPx()
+                                val inset = 8.dp.toPx()
+                                val x = size.width - w - 4.dp.toPx()
+                                val railH = size.height - inset * 2
+                                val thumbH = (railH * size.height / (size.height + scroll.maxValue)).coerceAtLeast(20.dp.toPx()).coerceAtMost(railH)
+                                val y = inset + (railH - thumbH) * scroll.value / scroll.maxValue
+                                val r = CornerRadius(w / 2)
+                                drawRoundRect(rail, Offset(x, inset), Size(w, railH), r)
+                                drawRoundRect(thumb, Offset(x, y), Size(w, thumbH), r)
+                            }
+                        }
+                        .verticalScroll(scroll)
+                        .padding(start = 12.dp, end = 18.dp, top = 10.dp, bottom = 10.dp),
+                ) { Notes(info.notes) }
             }
             Spacer(Modifier.height(18.dp))
             when (state) {
-                is UpdateState.Downloading -> {
-                    ReelLine(if (state.total > 0) state.done / state.total.toFloat() else null, height = 3.dp)
-                    Spacer(Modifier.height(8.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("${formatBytes(state.done)} of ${formatBytes(state.total)}", style = t.mono, color = c.text2, modifier = Modifier.weight(1f))
-                        QuietButton("Cancel", onCancelDownload)
-                    }
-                }
+                is UpdateState.Downloading -> DownloadRow(state, onCancelDownload)
                 is UpdateState.Ready -> {
                     if (needsInstallPermission) {
                         Text(
@@ -247,6 +272,45 @@ private fun ChoiceButtons(onDontShowAgain: () -> Unit, onUpdate: () -> Unit) {
                 SecondaryButton(quiet, onDontShowAgain, Modifier.fillMaxWidth())
             }
         }
+    }
+}
+
+/**
+ * What "Update now" turns into once tapped: "Pending" until the first bytes arrive, then the same pill filling with
+ * the progress, and a close icon on the same line that cancels the download.
+ */
+@Composable
+private fun DownloadRow(state: UpdateState.Downloading, onCancel: () -> Unit) {
+    val c = MoodyTheme.colors
+    val t = MoodyTheme.type
+    val pending = state.done <= 0
+    val target = if (!pending && state.total > 0) (state.done / state.total.toFloat()).coerceIn(0f, 1f) else 0f
+    val still = rememberReducedMotion()
+    val progress by animateFloatAsState(target, if (still) snap() else tween(250), label = "update-progress")
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            Modifier.weight(1f).height(40.dp).clip(Radii.md).background(c.raised).border(1.dp, c.line, Radii.md)
+                .semantics(mergeDescendants = true) {},
+        ) {
+            Box(Modifier.fillMaxHeight().fillMaxWidth(progress).background(c.accentWash))
+            Row(Modifier.fillMaxSize().padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (pending) {
+                    Text("Pending\u2026", style = t.bodyStrong, color = c.text2, modifier = Modifier.weight(1f))
+                } else {
+                    Text(
+                        // The title already says "Downloading update"; the percent alone always fits.
+                        "${(target * 100).toInt()}%", style = t.bodyStrong, color = c.text, maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
+                    )
+                    if (state.total > 0) {
+                        Spacer(Modifier.width(8.dp))
+                        Text("${formatBytes(state.done)} / ${formatBytes(state.total)}", style = t.monoSmall, color = c.text2, maxLines = 1, softWrap = false)
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.width(4.dp))
+        IconAction(MoodyIcons.Close, "Cancel download", onCancel, tint = c.text2)
     }
 }
 

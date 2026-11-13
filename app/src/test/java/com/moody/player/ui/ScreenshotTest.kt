@@ -396,6 +396,12 @@ class ScreenshotTest {
     @Test fun updateModal320() = bare("update-modal-dark-320", ThemeMode.DARK) { updateModal() }
     @Test fun updateModalRequiredLight() = bare("update-modal-required-light", ThemeMode.LIGHT) { updateModal(release.copy(required = true, notes = "- A fix Moody needs to keep playing your library")) }
     @Config(qualifiers = "w320dp-h640dp-xhdpi")
+    @Test fun updateModalPending320() = bare("update-modal-pending-320", ThemeMode.MIDNIGHT) { updateModal(state = com.moody.player.data.update.UpdateState.Downloading(release, 0, 36_700_160)) }
+    @Config(qualifiers = "w320dp-h640dp-xhdpi")
+    @Test fun updateModalLongNotes320() = bare("update-modal-long-notes-320", ThemeMode.DARK) {
+        updateModal(release.copy(notes = (1..14).joinToString(separator = "\n") { "- Change number $it in this release, described in a line or two" }))
+    }
+    @Config(qualifiers = "w320dp-h640dp-xhdpi")
     @Test fun updateModalDownloading320() = bare("update-modal-downloading-320", ThemeMode.MIDNIGHT) { updateModal(state = com.moody.player.data.update.UpdateState.Downloading(release, 12_400_000, 36_700_160)) }
     @Test fun updateModalReadyDark() = bare("update-modal-ready-dark", ThemeMode.DARK) { updateModal(state = com.moody.player.data.update.UpdateState.Ready(release, File("moody-1.3.0.apk"))) }
     @Test fun updateBadgeVideosDark() = shot("update-badge-videos-dark", ThemeMode.DARK) { withBadge { VideoLibraryContent(state(VideoView.FOLDERS), noop, nav) } }
