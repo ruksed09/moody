@@ -43,6 +43,8 @@ data class PlayerState(
     val displayWidth: Int = 0,
     val displayHeight: Int = 0,
     val muted: Boolean = false,
+    /** Loudness on top of the phone's volume, 1 to 3. Goes back to 1 when the player closes. */
+    val boost: Float = 1f,
     val rate: Float = 1f,
     val aspect: Aspect = Aspect.FIT,
     val decoder: Decoder = Decoder.HW,
@@ -77,11 +79,21 @@ class VlcEngine @Inject constructor(@ApplicationContext private val context: Con
     private var pendingPlay = false
     /** Set once libVLC reports playback time; if it never does, the decoder is treated as stuck. */
     private var sawTime = false
+    /**
+     * Set once this media has a video output. Until then libVLC may still be scanning the system fonts, and
+     * stopping it (or giving it new media) would block the caller until that scan ends. See [dropPlayer].
+     */
+    private var sawVout = false
+    /** A media was handed to the player and not stopped since. */
+    private var opened = false
+    private val fonts = FontCacheState(context)
     private val main = android.os.Handler(android.os.Looper.getMainLooper())
     private val stallCheck = Runnable {
         val st = _state.value
         if (!sawTime && st.error == null && !userPaused && player != null) {
             android.util.Log.w("Moody", "Playback stalled on ${st.decoder}; retrying")
+            // No picture yet: it may be the font scan, so the retry must not be given up on early.
+            if (!sawVout) fonts.markCold()
             onError()
         }
     }
@@ -90,14 +102,16 @@ class VlcEngine @Inject constructor(@ApplicationContext private val context: Con
     // Audio focus: libVLC doesn't ask for it, so the engine does. Calls and other apps pause or duck the video.
     private val audio = context.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
     private var pausedByFocus = false
+    private var ducked = false
     private var hasFocus = false
     private val focusListener = android.media.AudioManager.OnAudioFocusChangeListener { change ->
         when (change) {
             android.media.AudioManager.AUDIOFOCUS_LOSS -> { pausedByFocus = false; player?.pause(); abandonFocus() }
             android.media.AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> if (_state.value.playing) { pausedByFocus = true; player?.pause() }
-            android.media.AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> player?.volume = 30
+            android.media.AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> { ducked = true; applyVolume() }
             android.media.AudioManager.AUDIOFOCUS_GAIN -> {
-                player?.volume = 100
+                ducked = false
+                applyVolume()
                 if (pausedByFocus) { pausedByFocus = false; player?.play() }
             }
         }
@@ -120,6 +134,7 @@ class VlcEngine @Inject constructor(@ApplicationContext private val context: Con
     private fun abandonFocus() {
         if (!hasFocus) return
         audio.abandonAudioFocusRequest(focusRequest)
+        ducked = false
         hasFocus = false
     }
 
@@ -161,14 +176,16 @@ class VlcEngine @Inject constructor(@ApplicationContext private val context: Con
         val p = player
         if (p != null && style == s) return p
         val wasAttached = layout
-        releasePlayer()
-        val lib = LibVLC(context, options(s))
+        val sameLib = if (p == null && style == s) libVlc else null
+        if (sameLib == null) releasePlayer()
+        val lib = sameLib ?: LibVLC(context, options(s))
         val mp = MediaPlayer(lib)
         mp.setEventListener(::onEvent)
         libVlc = lib
         player = mp
         style = s
-        if (!viewsSuspended) wasAttached?.let { mp.attachViews(it, null, true, false) }
+        if (!viewsSuspended) wasAttached?.let { mp.attachViews(it, null, true, false); applyAspect(_state.value.aspect) }
+        equalizer?.let { mp.setEqualizer(it) }
         return mp
     }
 
@@ -224,6 +241,7 @@ class VlcEngine @Inject constructor(@ApplicationContext private val context: Con
      * that file itself, so it never shows twice.
      */
     fun open(uri: Uri, startMs: Long, decoder: Decoder, subStyle: SubStyle, extraSubtitle: Uri? = null, noAutoSubs: Boolean = false) {
+        if (opened && !sawVout) dropPlayer()
         val mp = ensure(subStyle)
         lastExtraSub = extraSubtitle
         lastNoAutoSubs = noAutoSubs
@@ -254,12 +272,15 @@ class VlcEngine @Inject constructor(@ApplicationContext private val context: Con
         media.release()
         extraSubtitle?.let { mp.addSlave(IMedia.Slave.Type.Subtitle, it, true) }
         val keep = _state.value
-        _state.value = PlayerState(uri = uri, positionMs = startMs, buffering = true, rate = keep.rate, aspect = keep.aspect, decoder = decoder)
+        _state.value = PlayerState(uri = uri, positionMs = startMs, buffering = true, rate = keep.rate, aspect = keep.aspect, decoder = decoder, muted = keep.muted, boost = keep.boost)
         mp.rate = keep.rate
         sawTime = false
+        sawVout = false
+        opened = true
         userPaused = false
         main.removeCallbacks(stallCheck)
-        main.postDelayed(stallCheck, if (uri.scheme == "http" || uri.scheme == "https" || uri.scheme?.startsWith("rt") == true) 20_000L else 8_000L)
+        val network = uri.scheme == "http" || uri.scheme == "https" || uri.scheme?.startsWith("rt") == true
+        main.postDelayed(stallCheck, stallLimitMs(network, fonts.warm))
         if (layout != null) mp.play() else pendingPlay = true
     }
 
@@ -267,7 +288,7 @@ class VlcEngine @Inject constructor(@ApplicationContext private val context: Con
         val mp = player ?: return
         when (e.type) {
             MediaPlayer.Event.Playing -> {
-                requestFocus(); setNoisy(true)
+                requestFocus(); setNoisy(true); applyVolume()
                 _state.update { it.copy(playing = true, buffering = false, ended = false, error = null) }
             }
             MediaPlayer.Event.Paused -> { setNoisy(false); if (!pausedByFocus) abandonFocus(); _state.update { it.copy(playing = false) } }
@@ -275,7 +296,7 @@ class VlcEngine @Inject constructor(@ApplicationContext private val context: Con
             MediaPlayer.Event.Buffering -> _state.update { it.copy(buffering = e.buffering < 100f) }
             MediaPlayer.Event.TimeChanged -> {
                 // First frame of time: re-read the tracks, as the audio track list can fill in after its ESAdded event.
-                if (!sawTime) { sawTime = true; main.removeCallbacks(stallCheck); refreshTracks(mp) }
+                if (!sawTime) { sawTime = true; main.removeCallbacks(stallCheck); refreshTracks(mp); applyVolume() }
                 _state.update { it.copy(positionMs = e.timeChanged, buffering = false) }
             }
             MediaPlayer.Event.LengthChanged -> _state.update { it.copy(durationMs = e.lengthChanged) }
@@ -284,7 +305,11 @@ class VlcEngine @Inject constructor(@ApplicationContext private val context: Con
                 _events.tryEmit(EngineEvent.Ended)
             }
             MediaPlayer.Event.EncounteredError -> onError()
-            MediaPlayer.Event.ESAdded, MediaPlayer.Event.ESDeleted, MediaPlayer.Event.ESSelected, MediaPlayer.Event.Vout -> refreshTracks(mp)
+            MediaPlayer.Event.Vout -> {
+                if (e.voutCount > 0 && !sawVout) { sawVout = true; fonts.markWarm() }
+                refreshTracks(mp)
+            }
+            MediaPlayer.Event.ESAdded, MediaPlayer.Event.ESDeleted, MediaPlayer.Event.ESSelected -> refreshTracks(mp)
         }
     }
 
@@ -319,7 +344,7 @@ class VlcEngine @Inject constructor(@ApplicationContext private val context: Con
     fun play() {
         userPaused = false
         val mp = player ?: return
-        if (_state.value.ended) { mp.stop(); lastOpen?.let { open(it.first, 0, it.third, style ?: SubStyle(), lastExtraSub, lastNoAutoSubs) }; return }
+        if (_state.value.ended) { if (opened && !sawVout) dropPlayer() else mp.stop(); lastOpen?.let { open(it.first, 0, it.third, style ?: SubStyle(), lastExtraSub, lastNoAutoSubs) }; return }
         mp.play()
     }
 
@@ -337,8 +362,23 @@ class VlcEngine @Inject constructor(@ApplicationContext private val context: Con
     fun seekBy(deltaMs: Long) = seekTo(_state.value.positionMs + deltaMs)
 
     fun setMuted(on: Boolean) {
-        player?.volume = if (on) 0 else 100
         _state.update { it.copy(muted = on) }
+        applyVolume()
+    }
+
+    fun setBoost(b: Float) {
+        _state.update { it.copy(boost = com.moody.player.domain.clampBoost(b)) }
+        applyVolume()
+    }
+
+    /** libVLC forgets the volume with each new audio output, so this is also called when playback starts. */
+    private fun applyVolume() {
+        val s = _state.value
+        player?.volume = when {
+            s.muted -> 0
+            ducked -> 30
+            else -> com.moody.player.domain.vlcVolume(s.boost)
+        }
     }
 
     /**
@@ -390,17 +430,22 @@ class VlcEngine @Inject constructor(@ApplicationContext private val context: Con
     fun setAudioDelayMs(ms: Long) { player?.audioDelay = ms * 1000; _state.update { it.copy(audioDelayMs = ms) } }
     fun setSubDelayMs(ms: Long) { player?.spuDelay = ms * 1000; _state.update { it.copy(subDelayMs = ms) } }
 
+    /** Kept so a fresh player gets the same sound. */
+    private var equalizer: MediaPlayer.Equalizer? = null
+
     /** [preset] index from [equalizerPresets], or custom [bands] in dB; both null turns the equalizer off. */
     fun setEqualizer(preset: Int?, bands: FloatArray?, preamp: Float? = null) {
         val mp = player ?: return
+        equalizer = null
         when {
             bands != null -> {
                 val eq = MediaPlayer.Equalizer.create()
                 bands.forEachIndexed { i, v -> eq.setAmp(i, v) }
                 preamp?.let { eq.setPreAmp(it) }
+                equalizer = eq
                 mp.setEqualizer(eq)
             }
-            preset != null -> mp.setEqualizer(MediaPlayer.Equalizer.createFromPreset(preset))
+            preset != null -> mp.setEqualizer(MediaPlayer.Equalizer.createFromPreset(preset).also { equalizer = it })
             else -> mp.setEqualizer(null)
         }
     }
@@ -422,12 +467,43 @@ class VlcEngine @Inject constructor(@ApplicationContext private val context: Con
     fun stop() {
         main.removeCallbacks(stallCheck)
         pendingPlay = false
-        player?.stop()
-        fd?.close(); fd = null
+        setBoost(1f)
+        if (opened && !sawVout) {
+            dropPlayer()
+            setNoisy(false); abandonFocus()
+        } else {
+            player?.stop()
+            fd?.close(); fd = null
+        }
+        opened = false
         _state.update { it.copy(playing = false) }
     }
 
+    /**
+     * Lets go of a player that may be stuck starting up. libVLC's stop waits for its input thread, which can be
+     * busy for a long time (it can be reading every system font), so it runs on its own thread and
+     * the next video gets a new player. Views are detached first: that needs a lock the stop holds.
+     */
+    private fun dropPlayer() {
+        val mp = player ?: return
+        val oldFd = fd
+        player = null
+        fd = null
+        opened = false
+        main.removeCallbacks(stallCheck)
+        mp.setEventListener(null)
+        if (layout != null && !viewsSuspended) mp.detachViews()
+        val t = kotlin.concurrent.thread(name = "vlc-drop") {
+            runCatching { mp.stop(); mp.release() }
+            runCatching { oldFd?.close() }
+        }
+        // Usually done at once; waiting a moment keeps the old and new player from sharing the decoder.
+        t.join(300)
+    }
+
     private fun releasePlayer() {
+        if (opened && !sawVout) dropPlayer()
+        opened = false
         player?.let {
             it.setEventListener(null)
             if (layout != null && !viewsSuspended) it.detachViews()
@@ -445,6 +521,25 @@ class VlcEngine @Inject constructor(@ApplicationContext private val context: Con
         layout = null
         _state.value = PlayerState()
     }
+}
+
+/** How long a start may take before the decoder is treated as stuck. The first start after a font change is slow. */
+internal fun stallLimitMs(network: Boolean, fontsWarm: Boolean): Long = when {
+    !fontsWarm -> 120_000L
+    network -> 20_000L
+    else -> 8_000L
+}
+
+/**
+ * libVLC reads all system fonts before its first picture and keeps the result until the fonts folder changes
+ * (new fonts folder or no kept result). This remembers which fonts folder the last finished scan was for.
+ */
+private class FontCacheState(context: Context) {
+    private val prefs = context.getSharedPreferences("vlc_fonts", Context.MODE_PRIVATE)
+    private fun stamp() = java.io.File("/system/fonts").lastModified()
+    val warm: Boolean get() = prefs.getLong("stamp", -1L) == stamp()
+    fun markCold() { prefs.edit().remove("stamp").apply() }
+    fun markWarm() { if (!warm) prefs.edit().putLong("stamp", stamp()).apply() }
 }
 
 /**

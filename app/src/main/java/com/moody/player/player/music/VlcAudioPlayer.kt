@@ -42,7 +42,7 @@ class VlcAudioPlayer(private val context: Context) : SimpleBasePlayer(Looper.get
     init {
         mp.setEventListener { e ->
             when (e.type) {
-                MediaPlayer.Event.Playing -> { state = Player.STATE_READY; mark(mp.time) }
+                MediaPlayer.Event.Playing -> { state = Player.STATE_READY; mark(mp.time); applyVolume() }
                 MediaPlayer.Event.Paused -> mark(mp.time)
                 MediaPlayer.Event.Buffering -> if (e.buffering < 100f && state != Player.STATE_READY) state = Player.STATE_BUFFERING
                 MediaPlayer.Event.TimeChanged -> mark(e.timeChanged)
@@ -62,6 +62,9 @@ class VlcAudioPlayer(private val context: Context) : SimpleBasePlayer(Looper.get
         val item = items.getOrNull(index)
         sidecar.follow(item?.let { it.localConfiguration?.uri ?: android.net.Uri.parse(it.mediaId) }, positionMs)
     }
+
+    /** The session's volume (sleep fade) with the booster on top. */
+    fun applyVolume() { mp.volume = com.moody.player.domain.vlcVolume(volume * MusicBoost.gain.value) }
 
     private fun mark(ms: Long) { positionMs = ms.coerceAtLeast(0); positionAt = android.os.SystemClock.elapsedRealtime() }
 
@@ -100,7 +103,7 @@ class VlcAudioPlayer(private val context: Context) : SimpleBasePlayer(Looper.get
         mp.media = media
         media.release()
         mp.rate = speed
-        mp.volume = (volume * 100).toInt()
+        applyVolume()
         if (play) mp.play()
     }
 
@@ -220,7 +223,7 @@ class VlcAudioPlayer(private val context: Context) : SimpleBasePlayer(Looper.get
 
     override fun handleSetVolume(volume: Float): ListenableFuture<*> {
         this.volume = volume.coerceIn(0f, 1f)
-        mp.volume = (this.volume * 100).toInt()
+        applyVolume()
         return done()
     }
 

@@ -77,7 +77,9 @@ import com.moody.player.design.icons.MoodyIcons
 import com.moody.player.domain.Aspect
 import com.moody.player.domain.formatDelta
 import com.moody.player.domain.formatDuration
+import com.moody.player.domain.boostForSwipe
 import com.moody.player.domain.levelDelta
+import com.moody.player.domain.volumeSwipe
 import com.moody.player.domain.seekDeltaMs
 import com.moody.player.player.video.PlayerState
 import kotlinx.coroutines.Job
@@ -194,6 +196,8 @@ fun GestureLayer(
                         var mode = Drag.NONE
                         var moved = false
                         var startLevel = 0f
+                        var startBoost = 1f
+                        var belowFull = true
                         var startPos = 0L
                         var pinchStart = 0f
                         var pinchRatio = 1f
@@ -245,6 +249,9 @@ fun GestureLayer(
                                     start.x < w / 2 -> if (on(PlayerGesture.BRIGHTNESS)) Drag.BRIGHTNESS.also { startLevel = currentBrightness() } else Drag.NONE
                                     else -> if (on(PlayerGesture.VOLUME)) Drag.VOLUME.also {
                                         startLevel = audio.getStreamVolume(AudioManager.STREAM_MUSIC) / audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC).toFloat()
+                                        startBoost = vm.engine.state.value.boost
+                                        belowFull = startLevel < 1f
+                                        if (!belowFull) startLevel = startBoost
                                     } else Drag.NONE
                                 }
                             }
@@ -277,10 +284,13 @@ fun GestureLayer(
                                 }
                                 Drag.VOLUME -> {
                                     val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-                                    val v = (startLevel + levelDelta(delta.y, h * 0.8f)).coerceIn(0f, 1f)
+                                    val v = volumeSwipe(startLevel, levelDelta(delta.y, h * 0.8f))
                                     // The bar follows the finger smoothly; the system volume moves only when its step changes.
-                                    val step = (v * max).toInt()
+                                    val step = (v.coerceAtMost(1f) * max).toInt()
                                     if (step != lastVolumeStep) { lastVolumeStep = step; audio.setStreamVolume(AudioManager.STREAM_MUSIC, step, 0) }
+                                    // Past full volume the swipe amplifies the video itself, up to 300%.
+                                    val b = boostForSwipe(v, belowFull, startBoost)
+                                    if (b != vm.engine.state.value.boost) vm.engine.setBoost(b)
                                     level = Drag.VOLUME to v
                                     lastLevel = Drag.VOLUME to v
                                     p.consume()
@@ -520,8 +530,11 @@ private fun LevelIndicator(icon: ImageVector, value: Float, modifier: Modifier =
         Canvas(Modifier.width(4.dp).height(120.dp)) {
             val r = CornerRadius(size.width / 2)
             drawRoundRect(OnVideo.rail, cornerRadius = r)
-            val fill = size.height * shown
+            val fill = size.height * shown.coerceIn(0f, 1f)
             drawRoundRect(accent, Offset(0f, size.height - fill), Size(size.width, fill), r)
+            // Above 100% a second, brighter fill rises over the full bar: its top is 300%.
+            val over = size.height * ((shown - 1f) / (com.moody.player.domain.MAX_BOOST - 1f)).coerceIn(0f, 1f)
+            if (over > 0f) drawRoundRect(OnVideo.text, Offset(0f, size.height - over), Size(size.width, over), r)
         }
         Icon(icon, null, Modifier.size(20.dp), tint = OnVideo.text)
     }

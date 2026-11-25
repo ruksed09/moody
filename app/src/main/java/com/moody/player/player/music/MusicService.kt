@@ -178,7 +178,7 @@ class MusicService : MediaSessionService() {
                 androidx.media3.exoplayer.audio.DefaultAudioSink.Builder(context)
                     .setEnableFloatOutput(enableFloatOutput)
                     .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
-                    .setAudioProcessors(arrayOf(TapProcessor()))
+                    .setAudioProcessors(arrayOf(TapProcessor(), BoostProcessor()))
                     .build()
         }
         // ADTS (.aac) files carry no length or seek table; constant-bitrate seeking gives them both.
@@ -234,6 +234,7 @@ class MusicService : MediaSessionService() {
             }
         }
         scope.launch { restore(player) }
+        scope.launch { MusicBoost.gain.collect { vlc?.applyVolume() } }
     }
 
     private suspend fun save(p: Player) {
@@ -339,6 +340,7 @@ class MusicService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        MusicBoost.set(1f)
         effects?.release()
         scope.cancel()
         session?.release()

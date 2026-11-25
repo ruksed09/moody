@@ -9,8 +9,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -21,11 +25,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.moody.player.design.MoodyTheme
 import com.moody.player.design.components.ChoiceChip
 import com.moody.player.design.components.ReelLine
+import com.moody.player.domain.MAX_BOOST
+import com.moody.player.domain.boostPercent
+import com.moody.player.player.music.MusicBoost
 import com.moody.player.player.music.MusicController
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -36,7 +47,7 @@ fun EqualizerSheet(music: MusicController, onDismiss: () -> Unit) {
     LaunchedEffect(Unit) { music.equalizer { info = it; loaded = true } }
     fun set(preset: Int, bass: Boolean) = music.equalizer(preset to bass) { info = it }
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = c.surface) {
-        Column(Modifier.padding(horizontal = 24.dp).padding(bottom = 32.dp)) {
+        Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).padding(bottom = 32.dp)) {
             Text("Equalizer", style = MoodyTheme.type.title, color = c.text)
             Spacer(Modifier.height(16.dp))
             val i = info
@@ -58,6 +69,21 @@ fun EqualizerSheet(music: MusicController, onDismiss: () -> Unit) {
                     }
                 }
             }
+            // Doesn't depend on the phone's own sound effects, so it is always here.
+            val boost by MusicBoost.gain.collectAsStateWithLifecycle()
+            val pct = boostPercent(boost)
+            Row(Modifier.fillMaxWidth().padding(top = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Volume booster", style = MoodyTheme.type.bodyStrong, color = c.text)
+                    Text("Loud sound can distort, and can harm your hearing on headphones", style = MoodyTheme.type.caption, color = c.text3)
+                }
+                Text("$pct%", style = MoodyTheme.type.mono, color = c.text2)
+            }
+            Slider(
+                value = boost, onValueChange = { MusicBoost.set((it * 20).roundToInt() / 20f) }, valueRange = 1f..MAX_BOOST,
+                modifier = Modifier.semantics { contentDescription = "Volume booster, $pct percent" },
+                colors = SliderDefaults.colors(thumbColor = c.accent, activeTrackColor = c.accent, inactiveTrackColor = c.line2),
+            )
         }
     }
 }

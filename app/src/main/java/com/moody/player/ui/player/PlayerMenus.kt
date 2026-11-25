@@ -84,6 +84,7 @@ import com.moody.player.domain.formatDuration
 import com.moody.player.player.video.PlayerState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -97,6 +98,7 @@ enum class PlayerMenu(val title: String, val parent: PlayerMenu? = null) {
     SPEED("Speed", MORE),
     DECODER("Decoder", MORE),
     EQUALIZER("Equalizer", MORE),
+    BOOST("Volume booster", MORE),
     AB("A-B repeat", MORE),
     LOOP("Loop", MORE),
     SLEEP("Sleep timer", MORE),
@@ -203,6 +205,7 @@ fun PlayerMenus(menu: PlayerMenu, vm: PlayerViewModel, st: PlayerState, host: Pl
                     PlayerMenu.SPEED -> SpeedMenu(vm, st)
                     PlayerMenu.DECODER -> DecoderMenu(vm, st, onDismiss)
                     PlayerMenu.EQUALIZER -> EqualizerMenu(vm)
+                    PlayerMenu.BOOST -> BoostMenu(vm, st)
                     PlayerMenu.AB -> AbMenu(vm)
                     PlayerMenu.LOOP -> LoopMenu(vm)
                     PlayerMenu.SLEEP -> SleepMenu(vm, onDismiss)
@@ -304,6 +307,7 @@ private fun MoreMenu(vm: PlayerViewModel, st: PlayerState, host: PlayerHost, go:
     SheetRow(MoodyIcons.AudioTrack, "Audio track", audioValue) { go(PlayerMenu.AUDIO) }
     SheetRow(MoodyIcons.Cc, "Subtitles", subValue) { go(PlayerMenu.SUBTITLES) }
     SheetRow(MoodyIcons.Equalizer, "Equalizer") { go(PlayerMenu.EQUALIZER) }
+    SheetRow(MoodyIcons.VolumeHigh, "Volume booster", if (st.boost == 1f) "Off" else "${com.moody.player.domain.boostPercent(st.boost)}%") { go(PlayerMenu.BOOST) }
     SectionDivider()
     GroupLabel("Playback")
     SheetRow(null, "A-B repeat", glyph = "AB", switch = ab.first != null) { vm.toggleAb() }
@@ -505,6 +509,24 @@ private fun EqualizerMenu(vm: PlayerViewModel) {
     val presets = remember { vm.engine.equalizerPresets() }
     OptionRow("Off", selected == -1) { selected = -1; vm.engine.setEqualizer(null, null); vm.toast("Equalizer off") }
     presets.forEachIndexed { i, name -> OptionRow(name, selected == i) { selected = i; vm.engine.setEqualizer(i, null); vm.toast(name) } }
+}
+
+@Composable
+private fun BoostMenu(vm: PlayerViewModel, st: PlayerState) {
+    val c = MoodyTheme.colors
+    val pct = com.moody.player.domain.boostPercent(st.boost)
+    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text("Loudness", style = MoodyTheme.type.caption, color = c.text2, modifier = Modifier.weight(1f))
+        Text("$pct%", style = MoodyTheme.type.mono, color = c.text2)
+    }
+    androidx.compose.material3.Slider(
+        value = st.boost, onValueChange = { vm.engine.setBoost((it * 20).roundToInt() / 20f) },
+        valueRange = 1f..com.moody.player.domain.MAX_BOOST,
+        modifier = Modifier.padding(horizontal = 12.dp).semantics { contentDescription = "Volume booster, $pct percent" },
+        colors = androidx.compose.material3.SliderDefaults.colors(thumbColor = c.accent, activeTrackColor = c.accent, inactiveTrackColor = c.line2),
+    )
+    Note("Goes back to 100% when the player closes. Loud sound can distort, and can harm your hearing on headphones.")
+    if (st.boost != 1f) OptionRow("Reset to 100%", false) { vm.engine.setBoost(1f) }
 }
 
 @Composable
